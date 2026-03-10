@@ -1,5 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchTrackingEvents, TrackingEvent } from '@/lib/supabase';
+
+export interface DateRange {
+  from: string | null; // ISO date string YYYY-MM-DD
+  to: string | null;
+}
 
 export interface DashboardStats {
   totalReceptacles: number;
@@ -40,6 +45,9 @@ export interface DashboardStats {
   departureByCentre: { centre: string; country: string; n: number; median: number; rfidBeforePct: number }[];
   // Arrival by dest centre
   arrivalByCentre: { centre: string; country: string; n: number; median: number; rfidBeforePct: number }[];
+  // Date range of the filtered data
+  minDate: string | null;
+  maxDate: string | null;
 }
 
 function median(arr: number[]): number {
@@ -70,6 +78,15 @@ function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
     acc[k].push(item);
     return acc;
   }, {} as Record<string, T[]>);
+}
+
+/** Get the "reference date" for a tracking event — the earliest non-null timestamp */
+function getEventDate(e: TrackingEvent): Date | null {
+  const candidates = [e.rfid_origin_time, e.predes_time, e.redes_time, e.rfid_dest_time]
+    .filter(Boolean)
+    .map(t => new Date(t!));
+  if (candidates.length === 0) return null;
+  return candidates.reduce((a, b) => (a < b ? a : b));
 }
 
 export function computeStats(events: TrackingEvent[]): DashboardStats {
@@ -126,11 +143,11 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
 
   // Coverage breakdown
   const coverageBreakdown = [
-    { type: 'FULL', count: full, pct: Math.round((full / total) * 100) },
-    { type: 'RFID_PREDES', count: rfidPredes, pct: Math.round((rfidPredes / total) * 100) },
-    { type: 'RFID_RESDES', count: rfidResdes, pct: Math.round((rfidResdes / total) * 100) },
-    { type: 'RFID_ONLY', count: rfidOnly, pct: Math.round((rfidOnly / total) * 100) },
-    { type: 'EDI_ONLY', count: ediOnly, pct: Math.round((ediOnly / total) * 100) },
+    { type: 'FULL', count: full, pct: total > 0 ? Math.round((full / total) * 100) : 0 },
+    { type: 'RFID_PREDES', count: rfidPredes, pct: total > 0 ? Math.round((rfidPredes / total) * 100) : 0 },
+    { type: 'RFID_RESDES', count: rfidResdes, pct: total > 0 ? Math.round((rfidResdes / total) * 100) : 0 },
+    { type: 'RFID_ONLY', count: rfidOnly, pct: total > 0 ? Math.round((rfidOnly / total) * 100) : 0 },
+    { type: 'EDI_ONLY', count: ediOnly, pct: total > 0 ? Math.round((ediOnly / total) * 100) : 0 },
   ];
 
   // Transit routes
@@ -178,6 +195,17 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     }))
     .sort((a, b) => b.n - a.n);
 
+  // Date range of filtered events
+  const allDates = events
+    .map(e => getEventDate(e))
+    .filter(Boolean) as Date[];
+  const minDate = allDates.length > 0
+    ? allDates.reduce((a, b) => (a < b ? a : b)).toISOString().slice(0, 10)
+    : null;
+  const maxDate = allDates.length > 0
+    ? allDates.reduce((a, b) => (a > b ? a : b)).toISOString().slice(0, 10)
+    : null;
+
   return {
     totalReceptacles: total,
     fullCoverage: full,
@@ -185,19 +213,19 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     ediOnly,
     rfidPredes,
     rfidResdes,
-    coverageRate: Math.round(((total - ediOnly) / total) * 100),
+    coverageRate: total > 0 ? Math.round(((total - ediOnly) / total) * 100) : 0,
     departurePairs: departurePairsData.length,
     departureMedianHours: Math.round(median(departureLags) * 10) / 10,
     departureMeanHours: Math.round(mean(departureLags) * 10) / 10,
     departureP25: Math.round(percentile(departureLags, 25) * 10) / 10,
     departureP75: Math.round(percentile(departureLags, 75) * 10) / 10,
     departureRfidBefore,
-    departureRfidBeforePct: Math.round((departureRfidBefore / departureLags.length) * 100),
+    departureRfidBeforePct: departureLags.length > 0 ? Math.round((departureRfidBefore / departureLags.length) * 100) : 0,
     arrivalPairs: arrivalPairsData.length,
     arrivalMedianHours: Math.round(median(arrivalLeads) * 10) / 10,
     arrivalMeanHours: Math.round(mean(arrivalLeads) * 10) / 10,
     arrivalRfidBefore,
-    arrivalRfidBeforePct: Math.round((arrivalRfidBefore / arrivalLeads.length) * 100),
+    arrivalRfidBeforePct: arrivalLeads.length > 0 ? Math.round((arrivalRfidBefore / arrivalLeads.length) * 100) : 0,
     transitPairs: transitData.length,
     rfidTransitMedian: Math.round(median(rfidTransits) * 10) / 10,
     ediTransitMedian: Math.round(median(ediTransits) * 10) / 10,
@@ -208,20 +236,85 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     transitRoutes,
     departureByCentre,
     arrivalByCentre,
+    minDate,
+    maxDate,
   };
 }
 
+/** Apply date range filter to events using the earliest timestamp of each event */
+export function filterEventsByDate(events: TrackingEvent[], dateRange: DateRange): TrackingEvent[] {
+  if (!dateRange.from && !dateRange.to) return events;
+  return events.filter(e => {
+    const d = getEventDate(e);
+    if (!d) return true;
+    const dateStr = d.toISOString().slice(0, 10);
+    if (dateRange.from && dateStr < dateRange.from) return false;
+    if (dateRange.to && dateStr > dateRange.to) return false;
+    return true;
+  });
+}
+
+/** Normalize country names to English to handle mixed Spanish/English values in the DB */
+const COUNTRY_NORM: Record<string, string> = {
+  // Spanish → English
+  'Turquía': 'Turkey',
+  'Brasil': 'Brazil',
+  'Catar': 'Qatar',
+  'Corea del Sur': 'South Korea',
+  'Estados Unidos': 'United States',
+  'Japón': 'Japan',
+  'Reino Unido': 'United Kingdom',
+  'Rumanía': 'Romania',
+  'Singapur': 'Singapore',
+  'Suiza': 'Switzerland',
+  'Tailandia': 'Thailand',
+  'Bosnia y Herzegovina': 'Bosnia and Herzegovina',
+  'Alemania': 'Germany',
+  'Montenegro': 'Montenegro',
+  'Rusia': 'Russia',
+  // Variant spellings → canonical English
+  'Hong-Kong': 'Hong Kong',
+  'Hong Kong': 'Hong Kong',
+  'Portugal': 'Portugal',
+};
+
+export function normalizeCountry(c: string | null | undefined): string | null {
+  if (!c) return null;
+  return COUNTRY_NORM[c] ?? c;
+}
+
+/** Apply origin/destination country filters */
+export function filterEventsByCountry(
+  events: TrackingEvent[],
+  originCountry: string | null,
+  destCountry: string | null
+): TrackingEvent[] {
+  let result = events;
+  if (originCountry) {
+    result = result.filter(e =>
+      normalizeCountry(e.rfid_origin_country || e.predes_origin_country) === originCountry
+    );
+  }
+  if (destCountry) {
+    result = result.filter(e =>
+      normalizeCountry(e.redes_dest_country || e.rfid_dest_country) === destCountry
+    );
+  }
+  return result;
+}
+
 export function useTrackingData() {
-  const [events, setEvents] = useState<TrackingEvent[]>([]);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [allEvents, setAllEvents] = useState<TrackingEvent[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
+  const [originCountry, setOriginCountry] = useState<string | null>(null);
+  const [destCountry, setDestCountry] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTrackingEvents()
       .then(data => {
-        setEvents(data);
-        setStats(computeStats(data));
+        setAllEvents(data);
         setLoading(false);
       })
       .catch(err => {
@@ -230,5 +323,78 @@ export function useTrackingData() {
       });
   }, []);
 
-  return { events, stats, loading, error };
+  // Step 1: date filter
+  const dateFiltered = useMemo(
+    () => filterEventsByDate(allEvents, dateRange),
+    [allEvents, dateRange]
+  );
+
+  // Step 2: country filters
+  const events = useMemo(
+    () => filterEventsByCountry(dateFiltered, originCountry, destCountry),
+    [dateFiltered, originCountry, destCountry]
+  );
+
+  const stats = useMemo(
+    () => (events.length > 0 ? computeStats(events) : null),
+    [events]
+  );
+
+  // Available origin countries — derived from date-filtered data so options reflect current date range
+  // When an origin is selected, dest options come from events filtered by that origin (and vice versa)
+  const allOriginCountries = useMemo(() => {
+    // Base pool: date-filtered, optionally narrowed by current destCountry selection
+    const pool = destCountry
+      ? filterEventsByCountry(dateFiltered, null, destCountry)
+      : dateFiltered;
+    const set = new Set<string>();
+    pool.forEach(e => {
+      const c = normalizeCountry(e.rfid_origin_country || e.predes_origin_country);
+      if (c) set.add(c);
+    });
+    return Array.from(set).sort();
+  }, [dateFiltered, destCountry]);
+
+  // Available destination countries — derived from date-filtered data, optionally narrowed by originCountry
+  const allDestCountries = useMemo(() => {
+    const pool = originCountry
+      ? filterEventsByCountry(dateFiltered, originCountry, null)
+      : dateFiltered;
+    const set = new Set<string>();
+    pool.forEach(e => {
+      const c = normalizeCountry(e.redes_dest_country || e.rfid_dest_country);
+      if (c) set.add(c);
+    });
+    return Array.from(set).sort();
+  }, [dateFiltered, originCountry]);
+
+  // Overall date bounds from all data (for the date picker range)
+  const allDataBounds = useMemo(() => {
+    if (allEvents.length === 0) return { min: null, max: null };
+    const dates = allEvents
+      .map(e => getEventDate(e))
+      .filter(Boolean) as Date[];
+    if (dates.length === 0) return { min: null, max: null };
+    return {
+      min: dates.reduce((a, b) => (a < b ? a : b)).toISOString().slice(0, 10),
+      max: dates.reduce((a, b) => (a > b ? a : b)).toISOString().slice(0, 10),
+    };
+  }, [allEvents]);
+
+  return {
+    events,
+    allEvents,
+    stats,
+    loading,
+    error,
+    dateRange,
+    setDateRange,
+    allDataBounds,
+    originCountry,
+    setOriginCountry,
+    destCountry,
+    setDestCountry,
+    allOriginCountries,
+    allDestCountries,
+  };
 }
