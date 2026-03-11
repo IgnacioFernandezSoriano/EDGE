@@ -1,19 +1,20 @@
 /**
- * useEpcisData — fetches datos EPCIS directly from Supabase and computes
+ * useEpcisData — fetches datos EPCIS + postal_readers from Supabase and computes
  * pure RFID metrics (no EDI dependency whatsoever).
  *
- * Logic:
- *   - Parse location field: "Country | City | Centre | Gate"
- *   - Group readings by s9id → identify origin (first centre) and destination (last centre)
- *   - rfid_origin_time = MAX reading at origin centre (departure moment)
- *   - rfid_dest_time   = MIN reading at destination centre (arrival moment)
+ * Logic (per user requirement):
+ *   - Join each EPCIS reading to postal_readers via read_point_id
+ *     → resolves the physical center_name (groups multiple IMPC readers at same centre)
+ *   - Group readings by s9id → identify distinct physical centres visited in time order
+ *   - rfid_origin_time  = LAST  reading at the FIRST  physical centre  (departure moment)
+ *   - rfid_dest_time    = FIRST reading at the SECOND physical centre  (arrival moment)
  *   - rfid_transit_hours = dest_time − origin_time
  *
  * Filters applied: date range, origin country, destination country
  */
 
 import { useState, useEffect, useMemo } from 'react';
-// Uses direct REST API (same pattern as supabase.ts) — no supabase-js client needed
+
 const SUPABASE_URL = 'https://ewyhmmixqcubqokphebh.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWhtbWl4cWN1YnFva3BoZWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5OTc3MjMsImV4cCI6MjA4ODU3MzcyM30.xMtcrn12c9r0Q_Q0e46Ptsci7Y31YnB5V9MSBHgj20k';
 const EPCIS_HEADERS = {
@@ -27,8 +28,23 @@ export interface EpcisReading {
   s9id: string;
   tag_id: string;
   record_time: string;
-  location: string;       // "Country | City | Centre | Gate"
+  location: string;
   read_point_id: string;
+  impc_code: string;
+}
+
+export interface PostalReader {
+  read_point_id: string;
+  impc_code: string;
+  country: string;
+  city: string;
+  center_name: string;
+  gate: string;
+}
+
+export interface ReaderInfo {
+  center_name: string;
+  country: string;
   impc_code: string;
 }
 
@@ -38,12 +54,12 @@ export interface RfidJourney {
   origin_country: string;
   origin_centre: string;
   origin_impc: string;
-  origin_time: string;       // ISO — last reading at origin
+  origin_time: string;
   origin_readings: number;
   dest_country: string | null;
   dest_centre: string | null;
   dest_impc: string | null;
-  dest_time: string | null;  // ISO — first reading at destination
+  dest_time: string | null;
   dest_readings: number;
   transit_hours: number | null;
   has_destination: boolean;
@@ -67,7 +83,10 @@ export interface EpcisStats {
   byDestCountry:   { country: string; count: number }[];
   byOriginCentre:  { centre: string; country: string; count: number; endToEnd: number }[];
   byDestCentre:    { centre: string; country: string; count: number }[];
-  byRoute:         { route: string; origin: string; dest: string; count: number; medianH: number | null }[];
+  departureByCentre: { centre: string; country: string; n: number; medianH: number }[];
+  arrivalByCentre:   { centre: string; country: string; n: number; medianH: number }[];
+  byRoute:           { route: string; origin: string; dest: string; count: number; medianH: number | null }[];
+  transitCdf:        { x: number; pct: number }[];
   dateRange: { min: string; max: string } | null;
 }
 
@@ -91,24 +110,14 @@ const COUNTRY_NORM: Record<string, string> = {
 function normalizeCountry(c: string): string {
   return COUNTRY_NORM[c] ?? c;
 }
-/* ─── Helpers ─── */
-function parseLocation(loc: string): { country: string; city: string; centre: string; gate: string } {
-  const parts = loc.split('|').map(s => s.trim());
-  return {
-    country: normalizeCountry(parts[0] || ''),
-    city:    parts[1] || '',
-    centre:  parts[2] || '',
-    gate:    parts[3] || '',
-  };
-}
 
+/* ─── Math helpers ─── */
 function median(arr: number[]): number | null {
   if (!arr.length) return null;
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
-
 function percentile(arr: number[], p: number): number | null {
   if (!arr.length) return null;
   const sorted = [...arr].sort((a, b) => a - b);
@@ -117,8 +126,23 @@ function percentile(arr: number[], p: number): number | null {
   const hi = Math.ceil(idx);
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
 }
+function buildCDF(values: number[], steps = 60): { x: number; pct: number }[] {
+  if (!values.length) return [];
+  const sorted = [...values].sort((a, b) => a - b);
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  if (min === max) return [{ x: Math.round(min * 10) / 10, pct: 100 }];
+  const stepSize = (max - min) / steps;
+  const result: { x: number; pct: number }[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const x = Math.round((min + i * stepSize) * 10) / 10;
+    const count = sorted.filter(v => v <= x).length;
+    result.push({ x, pct: Math.round((count / sorted.length) * 1000) / 10 });
+  }
+  return result;
+}
 
-/* ─── Fetch all pages from Supabase ─── */
+/* ─── Fetch helpers ─── */
 async function fetchAllEpcis(): Promise<EpcisReading[]> {
   const PAGE = 1000;
   let all: EpcisReading[] = [];
@@ -140,9 +164,31 @@ async function fetchAllEpcis(): Promise<EpcisReading[]> {
   return all;
 }
 
-/* ─── Build journeys from raw readings ─── */
-function buildJourneys(readings: EpcisReading[]): RfidJourney[] {
-  // Group by s9id
+async function fetchPostalReaders(): Promise<PostalReader[]> {
+  const url = `${SUPABASE_URL}/rest/v1/postal_readers?select=read_point_id,impc_code,country,city,center_name,gate&limit=500`;
+  const res = await fetch(url, { headers: EPCIS_HEADERS });
+  if (!res.ok) throw new Error(`postal_readers fetch error: ${res.status}`);
+  return res.json();
+}
+
+/* ─── Build reader lookup map ─── */
+function buildReaderMap(readers: PostalReader[]): Map<string, ReaderInfo> {
+  const map = new Map<string, ReaderInfo>();
+  for (const r of readers) {
+    map.set(r.read_point_id, {
+      center_name: r.center_name,
+      country: normalizeCountry(r.country),
+      impc_code: r.impc_code,
+    });
+  }
+  return map;
+}
+
+/* ─── Build journeys from raw readings + reader map ─── */
+function buildJourneys(
+  readings: EpcisReading[],
+  readerMap: Map<string, ReaderInfo>,
+): RfidJourney[] {
   const byS9: Map<string, EpcisReading[]> = new Map();
   for (const r of readings) {
     if (!r.s9id) continue;
@@ -153,42 +199,60 @@ function buildJourneys(readings: EpcisReading[]): RfidJourney[] {
   const journeys: RfidJourney[] = [];
 
   for (const [s9id, recs] of Array.from(byS9.entries())) {
-    // Sort by record_time ascending
-    recs.sort((a: EpcisReading, b: EpcisReading) => a.record_time.localeCompare(b.record_time));
+    recs.sort((a, b) => a.record_time.localeCompare(b.record_time));
 
-    // Identify sequence of distinct centres (by impc_code, falling back to location centre)
-    const centresSeq: { impc: string; country: string; centre: string }[] = [];
-    for (const r of recs) {
-      const loc = parseLocation(r.location);
-      const impc = r.impc_code || loc.centre;
-      if (!centresSeq.length || centresSeq[centresSeq.length - 1].impc !== impc) {
-        centresSeq.push({ impc, country: loc.country, centre: loc.centre });
+    // Resolve each reading to physical centre via postal_readers
+    const resolved = recs.map(r => {
+      const info = readerMap.get(r.read_point_id);
+      if (info) return { r, center_name: info.center_name, country: info.country, impc_code: info.impc_code };
+      // Fallback: parse location field
+      const parts = r.location.split('|').map((s: string) => s.trim());
+      return {
+        r,
+        center_name: parts[2] || r.impc_code || 'Unknown',
+        country: normalizeCountry(parts[0] || ''),
+        impc_code: r.impc_code || '',
+      };
+    });
+
+    // Identify sequence of distinct physical centres (by center_name)
+    const centresSeq: { center_name: string; country: string; impc_code: string }[] = [];
+    for (const item of resolved) {
+      if (!centresSeq.length || centresSeq[centresSeq.length - 1].center_name !== item.center_name) {
+        centresSeq.push({ center_name: item.center_name, country: item.country, impc_code: item.impc_code });
       }
     }
 
-    const originImpc = centresSeq[0]?.impc || '';
+    const originCentre = centresSeq[0]?.center_name || '';
     const originCountry = centresSeq[0]?.country || '';
-    const originCentre = centresSeq[0]?.centre || '';
-    const destImpc = centresSeq.length > 1 ? centresSeq[centresSeq.length - 1].impc : null;
-    const destCountry = centresSeq.length > 1 ? centresSeq[centresSeq.length - 1].country : null;
-    const destCentre = centresSeq.length > 1 ? centresSeq[centresSeq.length - 1].centre : null;
+    const originImpc = centresSeq[0]?.impc_code || '';
 
-    // Origin readings (all at origin impc)
-    const originRecs = recs.filter((r: EpcisReading) => (r.impc_code || parseLocation(r.location).centre) === originImpc);
-    const originTime = originRecs.reduce((max: string, r: EpcisReading) => r.record_time > max ? r.record_time : max, originRecs[0].record_time);
+    // Destination = second distinct physical centre
+    const destCentre = centresSeq.length > 1 ? centresSeq[1].center_name : null;
+    const destCountry = centresSeq.length > 1 ? centresSeq[1].country : null;
+    const destImpc = centresSeq.length > 1 ? centresSeq[1].impc_code : null;
 
-    // Destination readings
+    // Origin readings = all at origin centre; LAST = departure moment
+    const originRecs = resolved.filter(item => item.center_name === originCentre);
+    const originTime = originRecs.reduce(
+      (max, item) => item.r.record_time > max ? item.r.record_time : max,
+      originRecs[0].r.record_time
+    );
+
+    // Destination readings; FIRST = arrival moment
     let destTime: string | null = null;
     let destReadings = 0;
-    if (destImpc && destImpc !== originImpc) {
-      const destRecs = recs.filter((r: EpcisReading) => (r.impc_code || parseLocation(r.location).centre) === destImpc);
+    if (destCentre && destCentre !== originCentre) {
+      const destRecs = resolved.filter(item => item.center_name === destCentre);
       destReadings = destRecs.length;
       if (destRecs.length > 0) {
-        destTime = destRecs.reduce((min: string, r: EpcisReading) => r.record_time < min ? r.record_time : min, destRecs[0].record_time);
+        destTime = destRecs.reduce(
+          (min, item) => item.r.record_time < min ? item.r.record_time : min,
+          destRecs[0].r.record_time
+        );
       }
     }
 
-    // Transit hours
     let transitHours: number | null = null;
     if (originTime && destTime) {
       const diff = (new Date(destTime).getTime() - new Date(originTime).getTime()) / 3600000;
@@ -209,23 +273,24 @@ function buildJourneys(readings: EpcisReading[]): RfidJourney[] {
       dest_time: destTime,
       dest_readings: destReadings,
       transit_hours: transitHours,
-      has_destination: destImpc !== null && destImpc !== originImpc && destTime !== null,
-      centres_visited: centresSeq.map(c => c.impc),
+      has_destination: destCentre !== null && destCentre !== originCentre && destTime !== null,
+      centres_visited: centresSeq.map(c => c.center_name),
     });
   }
 
   return journeys;
 }
 
-/* ─── Compute stats from journeys ─── */
+/* ─── Compute stats ─── */
 function computeEpcisStats(
   journeys: RfidJourney[],
   allReadings: EpcisReading[],
 ): EpcisStats {
   const endToEnd = journeys.filter(j => j.has_destination);
-  const transitValues = endToEnd.map(j => j.transit_hours!).filter(h => h !== null) as number[];
+  const transitValues = endToEnd
+    .map(j => j.transit_hours!)
+    .filter(h => h !== null && h > 0) as number[];
 
-  // Date range from raw readings
   const times = allReadings.map(r => r.record_time).filter(Boolean).sort();
   const dateRange = times.length > 0 ? { min: times[0], max: times[times.length - 1] } : null;
 
@@ -255,7 +320,7 @@ function computeEpcisStats(
   // By origin centre
   const originCentreMap = new Map<string, { country: string; count: number; endToEnd: number }>();
   for (const j of journeys) {
-    const key = j.origin_centre || j.origin_impc || 'Unknown';
+    const key = j.origin_centre || 'Unknown';
     if (!originCentreMap.has(key)) originCentreMap.set(key, { country: j.origin_country, count: 0, endToEnd: 0 });
     const v = originCentreMap.get(key)!;
     v.count++;
@@ -268,13 +333,47 @@ function computeEpcisStats(
   // By dest centre
   const destCentreMap = new Map<string, { country: string; count: number }>();
   for (const j of endToEnd) {
-    const key = j.dest_centre || j.dest_impc || 'Unknown';
+    const key = j.dest_centre || 'Unknown';
     if (!destCentreMap.has(key)) destCentreMap.set(key, { country: j.dest_country || '', count: 0 });
     destCentreMap.get(key)!.count++;
   }
   const byDestCentre = Array.from(destCentreMap.entries())
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count }))
     .sort((a, b) => b.count - a.count);
+
+  // Departure by origin centre (only e2e pairs with valid transit)
+  const depCentreMap = new Map<string, { country: string; hours: number[] }>();
+  for (const j of endToEnd) {
+    if (j.transit_hours === null || j.transit_hours < 0) continue;
+    const key = j.origin_centre || 'Unknown';
+    if (!depCentreMap.has(key)) depCentreMap.set(key, { country: j.origin_country, hours: [] });
+    depCentreMap.get(key)!.hours.push(j.transit_hours);
+  }
+  const departureByCentre = Array.from(depCentreMap.entries())
+    .map(([centre, v]) => ({
+      centre,
+      country: v.country,
+      n: v.hours.length,
+      medianH: Math.round((median(v.hours) ?? 0) * 10) / 10,
+    }))
+    .sort((a, b) => b.n - a.n);
+
+  // Arrival by dest centre
+  const arrCentreMap = new Map<string, { country: string; hours: number[] }>();
+  for (const j of endToEnd) {
+    if (j.transit_hours === null || j.transit_hours < 0) continue;
+    const key = j.dest_centre || 'Unknown';
+    if (!arrCentreMap.has(key)) arrCentreMap.set(key, { country: j.dest_country || '', hours: [] });
+    arrCentreMap.get(key)!.hours.push(j.transit_hours);
+  }
+  const arrivalByCentre = Array.from(arrCentreMap.entries())
+    .map(([centre, v]) => ({
+      centre,
+      country: v.country,
+      n: v.hours.length,
+      medianH: Math.round((median(v.hours) ?? 0) * 10) / 10,
+    }))
+    .sort((a, b) => b.n - a.n);
 
   // By route
   const routeMap = new Map<string, { origin: string; dest: string; count: number; hours: number[] }>();
@@ -283,11 +382,19 @@ function computeEpcisStats(
     if (!routeMap.has(key)) routeMap.set(key, { origin: j.origin_country, dest: j.dest_country || '', count: 0, hours: [] });
     const v = routeMap.get(key)!;
     v.count++;
-    if (j.transit_hours !== null) v.hours.push(j.transit_hours);
+    if (j.transit_hours !== null && j.transit_hours > 0) v.hours.push(j.transit_hours);
   }
   const byRoute = Array.from(routeMap.entries())
-    .map(([route, v]) => ({ route, origin: v.origin, dest: v.dest, count: v.count, medianH: median(v.hours) }))
+    .map(([route, v]) => ({
+      route,
+      origin: v.origin,
+      dest: v.dest,
+      count: v.count,
+      medianH: v.hours.length > 0 ? Math.round((median(v.hours) ?? 0) * 10) / 10 : null,
+    }))
     .sort((a, b) => b.count - a.count);
+
+  const transitCdf = buildCDF(transitValues);
 
   return {
     totalReadings: allReadings.length,
@@ -296,17 +403,20 @@ function computeEpcisStats(
     uniqueDestinations: destCountryMap.size,
     endToEndPairs: endToEnd.length,
     endToEndPct: journeys.length > 0 ? Math.round(endToEnd.length / journeys.length * 100) : 0,
-    medianTransitHours: median(transitValues),
+    medianTransitHours: transitValues.length > 0 ? Math.round((median(transitValues) ?? 0) * 10) / 10 : null,
     meanTransitHours: transitValues.length > 0 ? Math.round(transitValues.reduce((a, b) => a + b, 0) / transitValues.length * 10) / 10 : null,
-    p25TransitHours: percentile(transitValues, 25),
-    p75TransitHours: percentile(transitValues, 75),
-    minTransitHours: transitValues.length > 0 ? Math.min(...transitValues) : null,
-    maxTransitHours: transitValues.length > 0 ? Math.max(...transitValues) : null,
+    p25TransitHours: transitValues.length > 0 ? Math.round((percentile(transitValues, 25) ?? 0) * 10) / 10 : null,
+    p75TransitHours: transitValues.length > 0 ? Math.round((percentile(transitValues, 75) ?? 0) * 10) / 10 : null,
+    minTransitHours: transitValues.length > 0 ? Math.round(Math.min(...transitValues) * 10) / 10 : null,
+    maxTransitHours: transitValues.length > 0 ? Math.round(Math.max(...transitValues) * 10) / 10 : null,
     byOriginCountry,
     byDestCountry,
     byOriginCentre,
     byDestCentre,
+    departureByCentre,
+    arrivalByCentre,
     byRoute,
+    transitCdf,
     dateRange,
   };
 }
@@ -322,18 +432,20 @@ export interface EpcisFilters {
 /* ─── Main hook ─── */
 export function useEpcisData(filters: EpcisFilters = {}) {
   const [allReadings, setAllReadings] = useState<EpcisReading[]>([]);
+  const [readerMap, setReaderMap] = useState<Map<string, ReaderInfo>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    fetchAllEpcis()
-      .then(data => { setAllReadings(data); setLoading(false); })
+    Promise.all([fetchAllEpcis(), fetchPostalReaders()])
+      .then(([readings, readers]) => {
+        setAllReadings(readings);
+        setReaderMap(buildReaderMap(readers));
+        setLoading(false);
+      })
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
-
-  // Build all journeys from unfiltered readings (needed for country lists)
-  const allJourneys = useMemo(() => buildJourneys(allReadings), [allReadings]);
 
   // Apply date filter to readings first, then rebuild journeys
   const dateFilteredReadings = useMemo(() => {
@@ -346,7 +458,10 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     return r;
   }, [allReadings, filters.dateFrom, filters.dateTo]);
 
-  const dateFilteredJourneys = useMemo(() => buildJourneys(dateFilteredReadings), [dateFilteredReadings]);
+  const dateFilteredJourneys = useMemo(
+    () => buildJourneys(dateFilteredReadings, readerMap),
+    [dateFilteredReadings, readerMap]
+  );
 
   // Available countries (from date-filtered journeys)
   const allOriginCountries = useMemo(() =>
@@ -376,7 +491,10 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     return dateFilteredReadings.filter(r => (s9ids as Set<string>).has(r.s9id));
   }, [dateFilteredReadings, filteredJourneys]);
 
-  const stats = useMemo(() => computeEpcisStats(filteredJourneys, filteredReadings), [filteredJourneys, filteredReadings]);
+  const stats = useMemo(
+    () => computeEpcisStats(filteredJourneys, filteredReadings),
+    [filteredJourneys, filteredReadings]
+  );
 
   return {
     loading,

@@ -6,8 +6,9 @@
  *   3. Destination:  Country | Centre | IMPC | Time (UTC) | Readings  (— when no dest)
  *   4. Transit:      Hours | Days  (— when no dest)
  * Includes search, pagination, sort, and CSV export.
+ * Pagination fix: useEffect resets page when journeys/filter/search/sort changes.
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Download } from 'lucide-react';
 import type { RfidJourney } from '@/hooks/useEpcisData';
 
@@ -125,13 +126,16 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
     return sortJourneys(data, sortCol, sortDir);
   }, [journeys, search, filterE2E, sortCol, sortDir]);
 
+  // Reset page to 0 whenever the filtered dataset changes to avoid being on a non-existent page
+  useEffect(() => { setPage(0); }, [filtered]);
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageData = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const safePage = Math.min(page, totalPages - 1);
+  const pageData = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   function handleSort(col: SortKey) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('asc'); }
-    setPage(0);
   }
 
   function SortIcon({ col }: { col: SortKey }) {
@@ -154,7 +158,7 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
           ] as const).map(f => (
             <button
               key={f.key}
-              onClick={() => { setFilterE2E(f.key); setPage(0); }}
+              onClick={() => setFilterE2E(f.key)}
               className={`px-3 py-1.5 text-xs rounded-md border font-medium transition-all duration-150 ${
                 filterE2E === f.key
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
@@ -173,7 +177,7 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
             type="search"
             placeholder="Search s9id, tag, country, centre…"
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(0); }}
+            onChange={e => setSearch(e.target.value)}
             className="h-8 px-3 text-xs rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 w-56"
           />
           <button
@@ -288,14 +292,14 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
       {/* ── Pagination ── */}
       <div className="flex items-center justify-between text-xs text-slate-500">
         <span>
-          Page {page + 1} of {totalPages} · {filtered.length.toLocaleString()} records
+          Page {safePage + 1} of {totalPages} · {filtered.length.toLocaleString()} records
           {filtered.length !== journeys.length && <span className="text-slate-400"> (filtered from {journeys.length.toLocaleString()})</span>}
         </span>
         <div className="flex gap-1">
-          <button onClick={() => setPage(0)} disabled={page === 0} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">«</button>
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">‹</button>
-          <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">›</button>
-          <button onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">»</button>
+          <button onClick={() => setPage(0)} disabled={safePage === 0} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">«</button>
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">‹</button>
+          <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={safePage >= totalPages - 1} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">›</button>
+          <button onClick={() => setPage(totalPages - 1)} disabled={safePage >= totalPages - 1} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">»</button>
         </div>
       </div>
     </div>
