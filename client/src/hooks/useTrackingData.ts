@@ -442,7 +442,6 @@ export function filterEventsByDate(events: TrackingEvent[], dateRange: DateRange
 /** Normalize country names to English to handle mixed Spanish/English values in the DB */
 const COUNTRY_NORM: Record<string, string> = {
   // Spanish → English
-  'Turquía': 'Turkey',
   'Brasil': 'Brazil',
   'Catar': 'Qatar',
   'Corea del Sur': 'South Korea',
@@ -461,6 +460,15 @@ const COUNTRY_NORM: Record<string, string> = {
   'Hong-Kong': 'Hong Kong',
   'Hong Kong': 'Hong Kong',
   'Portugal': 'Portugal',
+  // Additional missing entries
+  'Bután': 'Bhutan',
+  'Turquía': 'Turkey',
+  'Canadá': 'Canada',
+  'Emiratos Árabes Unidos': 'United Arab Emirates',
+  'Filipinas': 'Philippines',
+  'Malasia': 'Malaysia',
+  'Taiwán': 'Taiwan',
+  'Sri Lanka': 'Sri Lanka',
 };
 
 export function normalizeCountry(c: string | null | undefined): string | null {
