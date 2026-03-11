@@ -48,7 +48,7 @@ const COVERAGE_LABEL: Record<string, string> = {
   EDI_ONLY:    'EDI only (no RFID)',
 };
 
-const TABS = ['RFID', 'Overview', 'Departure', 'Arrival', 'Transit', 'Data'];
+const TABS = ['Overview', 'RFID', 'Departure', 'Arrival', 'Transit', 'Data'];
 
 /* ─── Tooltip ─── */
 function ChartTooltip({ active, payload, label }: any) {
