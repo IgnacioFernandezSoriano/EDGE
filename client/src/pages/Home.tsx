@@ -671,15 +671,15 @@ export default function Home() {
         {activeTab === 'RFID' && (
           <Section
             title="RFID Analysis"
-            subtitle={`Complete analysis based exclusively on datos EPCIS — ${epcis.stats.totalReadings.toLocaleString()} readings · ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles`}
+            subtitle={`Complete analysis based exclusively on datos EPCIS — ${stats.rfidDepartureTotal.toLocaleString()} readings · ${stats.rfidDepartureTotal.toLocaleString()} receptacles`}
           >
-            {epcis.loading && (
+            {loading && (
               <div className="flex items-center justify-center py-16">
                 <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
-                <span className="ml-3 text-sm text-slate-500">Loading EPCIS data…</span>
+                <span className="ml-3 text-sm text-slate-500">Loading RFID data…</span>
               </div>
             )}
-            {!epcis.loading && (
+            {!loading && (
               <>
                 {/* ── OVERVIEW ── */}
                 <div className="mb-2">
@@ -687,29 +687,29 @@ export default function Home() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                     <KpiCard
                       title="Total RFID Receptacles"
-                      value={epcis.stats.uniqueReceptacles.toLocaleString()}
+                      value={stats.rfidDepartureTotal.toLocaleString()}
                       subtitle="unique s9ids in datos EPCIS"
                       badge={{ label: 'rfid', color: 'blue' }}
                       tooltip="Total unique receptacles (s9ids) with at least one RFID reading in the datos EPCIS table, regardless of EDI coverage."
                     />
                     <KpiCard
                       title="RFID Departures"
-                      value={epcis.stats.uniqueReceptacles.toLocaleString()}
+                      value={stats.rfidDepartureTotal.toLocaleString()}
                       subtitle="with identified origin centre"
                       badge={{ label: 'origin', color: 'blue' }}
                       tooltip="Receptacles with a valid RFID reading at an identified origin postal centre (IMPC code resolved from location field)."
                     />
                     <KpiCard
                       title="RFID Arrivals"
-                      value={epcis.stats.endToEndPairs.toLocaleString()}
+                      value={stats.rfidPureWithDest.toLocaleString()}
                       subtitle="with destination centre reading"
                       badge={{ label: 'dest', color: 'green' }}
                       tooltip="Receptacles with RFID readings at two different centres — origin and destination — enabling end-to-end traceability."
                     />
                     <KpiCard
                       title="End-to-End Coverage"
-                      value={`${epcis.stats.endToEndPct}%`}
-                      subtitle={`${epcis.stats.endToEndPairs.toLocaleString()} of ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles`}
+                      value={`${stats.rfidDepartureTotal > 0 ? Math.round((stats.rfidPureWithDest / stats.rfidDepartureTotal) * 100) : 0}%`}
+                      subtitle={`${stats.rfidPureWithDest.toLocaleString()} of ${stats.rfidDepartureTotal.toLocaleString()} receptacles`}
                       badge={{ label: 'e2e', color: 'amber' }}
                       tooltip="Percentage of RFID receptacles with readings at two different postal centres (origin ≠ destination), enabling direct physical transit time measurement."
                     />
@@ -722,7 +722,7 @@ export default function Home() {
                       tooltip="Number of receptacles with an RFID origin reading, grouped by origin country. Derived from datos EPCIS location field."
                     >
                       <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={epcis.stats.byOriginCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                        <BarChart data={stats.rfidDepartureByOriginCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                           <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
@@ -740,7 +740,7 @@ export default function Home() {
                       tooltip="Number of receptacles with RFID readings at both origin and destination, grouped by destination country."
                     >
                       <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={epcis.stats.byDestCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                        <BarChart data={stats.rfidArrivalByDestCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                           <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
@@ -760,28 +760,28 @@ export default function Home() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                     <KpiCard
                       title="Total RFID Departures"
-                      value={epcis.stats.uniqueReceptacles.toLocaleString()}
+                      value={stats.rfidDepartureTotal.toLocaleString()}
                       subtitle="receptacles with origin reading"
                       badge={{ label: 'departures', color: 'blue' }}
                       tooltip="Total receptacles with at least one RFID scan at an identified origin postal centre."
                     />
                     <KpiCard
                       title="Origin Countries"
-                      value={epcis.stats.uniqueOrigins.toLocaleString()}
+                      value={stats.rfidDepartureByOriginCountry.length.toLocaleString()}
                       subtitle="distinct origin countries"
                       badge={{ label: 'countries', color: 'blue' }}
                       tooltip="Number of distinct origin countries from which RFID departure readings were recorded."
                     />
                     <KpiCard
                       title="Origin Centres"
-                      value={epcis.stats.byOriginCentre.length.toLocaleString()}
+                      value={stats.rfidDepartureByOriginCentre.length.toLocaleString()}
                       subtitle="distinct origin postal centres"
                       badge={{ label: 'centres', color: 'blue' }}
                       tooltip="Number of distinct origin postal centres with at least one RFID departure reading."
                     />
                     <KpiCard
                       title="Median Departure Time"
-                      value={epcis.stats.medianTransitHours !== null ? `${epcis.stats.medianTransitHours}h` : '—'}
+                      value={stats.rfidPureMedianHours > 0 ? `${stats.rfidPureMedianHours}h` : '—'}
                       subtitle="median RFID transit (e2e pairs)"
                       badge={{ label: 'transit', color: 'amber' }}
                       tooltip="Median physical transit time for end-to-end pairs. Departure time = last RFID scan at origin centre."
@@ -794,8 +794,8 @@ export default function Home() {
                       subtitle="Receptacles with RFID last scan at origin centre"
                       tooltip="Number of receptacles with a valid RFID departure reading at each origin postal centre. Sorted by volume."
                     >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.departureByCentre.length * 34)}>
-                        <BarChart data={epcis.stats.departureByCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                      <ResponsiveContainer width="100%" height={Math.max(220, stats.rfidPureByOriginCentre.length * 34)}>
+                        <BarChart data={stats.rfidPureByOriginCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
                           <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} />
@@ -812,8 +812,8 @@ export default function Home() {
                       subtitle="Median hours from last origin scan to first destination scan"
                       tooltip="Each bar shows the median RFID transit time for receptacles that departed from that origin centre and arrived at a destination centre. Only end-to-end pairs are included."
                     >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.departureByCentre.length * 34)}>
-                        <BarChart data={epcis.stats.departureByCentre} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
+                      <ResponsiveContainer width="100%" height={Math.max(220, stats.rfidPureByOriginCentre.length * 34)}>
+                        <BarChart data={stats.rfidPureByOriginCentre} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
                           <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} />
@@ -826,14 +826,14 @@ export default function Home() {
                     </ChartCard>
                   </div>
 
-                  {epcis.stats.transitCdf.length > 0 && (
+                  {stats.rfidPureCdf.length > 0 && (
                     <ChartCard
                       title="Cumulative Frequency: RFID Transit Time"
-                      subtitle={`Distribution of ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end transit values (hours)`}
+                      subtitle={`Distribution of ${stats.rfidPureWithDest.toLocaleString()} end-to-end transit values (hours)`}
                       tooltip="Cumulative distribution function (CDF) of RFID physical transit time. The Y axis shows the percentage of receptacles with a transit time ≤ X hours. Steeper curve = more concentrated distribution. Read: 'X% of receptacles have a transit time ≤ Y hours'."
                     >
                       <ResponsiveContainer width="100%" height={260}>
-                        <AreaChart data={epcis.stats.transitCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
+                        <AreaChart data={stats.rfidPureCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
                           <defs>
                             <linearGradient id="cdfRfidTransitGrad" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="5%" stopColor={C.indigo} stopOpacity={0.18} />
@@ -854,7 +854,7 @@ export default function Home() {
                   )}
 
                   <InfoBox color="indigo">
-                    <span className="font-semibold">Methodology:</span> Departure time = <span className="font-mono bg-white/60 px-1 rounded">last RFID scan at origin centre</span>. Centre identity is resolved via the <strong>postal_readers</strong> master table — multiple IMPC readers at the same physical centre are grouped correctly. Data source: <strong>datos EPCIS</strong> only.
+                    <span className="font-semibold">Methodology:</span> Departure time = <span className="font-mono bg-white/60 px-1 rounded">last RFID scan at origin centre</span>. Centre identity is resolved via the <strong>postal_readers</strong> master table — multiple IMPC readers at the same physical centre are grouped correctly. Data source: <strong>tracking_events</strong> (has_rfid = true).
                   </InfoBox>
                 </div>
 
@@ -864,29 +864,29 @@ export default function Home() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                     <KpiCard
                       title="Total RFID Arrivals"
-                      value={epcis.stats.endToEndPairs.toLocaleString()}
+                      value={stats.rfidPureWithDest.toLocaleString()}
                       subtitle="receptacles with destination reading"
                       badge={{ label: 'arrivals', color: 'green' }}
                       tooltip="Total receptacles with RFID readings at two different centres — the second centre is treated as the destination."
                     />
                     <KpiCard
                       title="Destination Countries"
-                      value={epcis.stats.uniqueDestinations.toLocaleString()}
+                      value={stats.rfidArrivalByDestCountry.length.toLocaleString()}
                       subtitle="distinct destination countries"
                       badge={{ label: 'countries', color: 'green' }}
                       tooltip="Number of distinct destination countries where RFID arrival readings were recorded."
                     />
                     <KpiCard
                       title="Destination Centres"
-                      value={epcis.stats.byDestCentre.length.toLocaleString()}
+                      value={stats.rfidArrivalByDestCentre.length.toLocaleString()}
                       subtitle="distinct destination postal centres"
                       badge={{ label: 'centres', color: 'green' }}
                       tooltip="Number of distinct destination postal centres with at least one RFID arrival reading."
                     />
                     <KpiCard
                       title="End-to-End Coverage"
-                      value={`${epcis.stats.endToEndPct}%`}
-                      subtitle={`${epcis.stats.endToEndPairs.toLocaleString()} of ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles`}
+                      value={`${stats.rfidDepartureTotal > 0 ? Math.round((stats.rfidPureWithDest / stats.rfidDepartureTotal) * 100) : 0}%`}
+                      subtitle={`${stats.rfidPureWithDest.toLocaleString()} of ${stats.rfidDepartureTotal.toLocaleString()} receptacles`}
                       badge={{ label: 'e2e', color: 'amber' }}
                       tooltip="Percentage of RFID receptacles with readings at two different postal centres (origin ≠ destination), enabling direct physical transit time measurement."
                     />
@@ -898,8 +898,8 @@ export default function Home() {
                       subtitle="Receptacles with RFID first scan at destination centre"
                       tooltip="Number of receptacles with a valid RFID arrival reading at each destination postal centre. Sorted by volume."
                     >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.arrivalByCentre.length * 34)}>
-                        <BarChart data={epcis.stats.arrivalByCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                      <ResponsiveContainer width="100%" height={Math.max(220, stats.rfidPureByDestCentre.length * 34)}>
+                        <BarChart data={stats.rfidPureByDestCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
                           <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} />
@@ -916,8 +916,8 @@ export default function Home() {
                       subtitle="Median hours from last origin scan to first destination scan"
                       tooltip="Each bar shows the median RFID transit time for receptacles that arrived at that destination centre. Only end-to-end pairs are included."
                     >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.arrivalByCentre.length * 34)}>
-                        <BarChart data={epcis.stats.arrivalByCentre} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
+                      <ResponsiveContainer width="100%" height={Math.max(220, stats.rfidPureByDestCentre.length * 34)}>
+                        <BarChart data={stats.rfidPureByDestCentre} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
                           <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} />
@@ -931,7 +931,7 @@ export default function Home() {
                   </div>
 
                   <InfoBox color="emerald">
-                    <span className="font-semibold">Methodology:</span> Arrival time = <span className="font-mono bg-white/60 px-1 rounded">first RFID scan at destination centre</span>. Centre identity resolved via <strong>postal_readers</strong>. End-to-end coverage stands at <strong>{epcis.stats.endToEndPct}%</strong> ({epcis.stats.endToEndPairs.toLocaleString()} receptacles). Data source: <strong>datos EPCIS</strong> only.
+                    <span className="font-semibold">Methodology:</span> Arrival time = <span className="font-mono bg-white/60 px-1 rounded">first RFID scan at destination centre</span>. Centre identity resolved via <strong>postal_readers</strong>. End-to-end coverage stands at <strong>{stats.rfidDepartureTotal > 0 ? Math.round((stats.rfidPureWithDest / stats.rfidDepartureTotal) * 100) : 0}%</strong> ({stats.rfidPureWithDest.toLocaleString()} receptacles). Data source: <strong>tracking_events</strong> (has_rfid = true).
                   </InfoBox>
                 </div>
 
@@ -941,38 +941,38 @@ export default function Home() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                     <KpiCard
                       title="End-to-End Pairs"
-                      value={epcis.stats.endToEndPairs.toLocaleString()}
+                      value={stats.rfidPureWithDest.toLocaleString()}
                       subtitle="Full origin→dest RFID"
                       badge={{ label: 'end-to-end', color: 'blue' }}
                       tooltip="Number of receptacles with RFID readings at both a distinct origin and destination centre. Only these enable direct physical transit time measurement."
                     />
                     <KpiCard
                       title="Median RFID Transit"
-                      value={epcis.stats.medianTransitHours !== null ? `${epcis.stats.medianTransitHours}h / ${(epcis.stats.medianTransitHours / 24).toFixed(1)}d` : '—'}
+                      value={stats.rfidPureMedianHours > 0 ? `${stats.rfidPureMedianHours}h / ${(stats.rfidPureMedianHours / 24).toFixed(1)}d` : '—'}
                       subtitle="last origin scan → first dest scan"
                       badge={{ label: 'median', color: 'blue' }}
                       tooltip="Median physical transit time measured by RFID: the time between the last RFID reading at the origin centre and the first RFID reading at the destination centre."
                     />
                     <KpiCard
                       title="IQR Range"
-                      value={epcis.stats.p25TransitHours !== null ? `${epcis.stats.p25TransitHours}h – ${epcis.stats.p75TransitHours}h` : '—'}
-                      subtitle={epcis.stats.p25TransitHours !== null ? `${(epcis.stats.p25TransitHours!/24).toFixed(1)}d – ${(epcis.stats.p75TransitHours!/24).toFixed(1)}d` : 'no data'}
+                      value={stats.rfidPureP25 > 0 ? `${stats.rfidPureP25}h – ${stats.rfidPureP75}h` : '—'}
+                      subtitle={stats.rfidPureP25 > 0 ? `${(stats.rfidPureP25/24).toFixed(1)}d – ${(stats.rfidPureP75/24).toFixed(1)}d` : 'no data'}
                       badge={{ label: 'IQR', color: 'slate' }}
                       tooltip="Interquartile Range: the range between the 25th and 75th percentile of RFID transit times. Shows the spread of the middle 50% of the data."
                     />
                     <KpiCard
                       title="Mean RFID Transit"
-                      value={epcis.stats.meanTransitHours !== null ? `${epcis.stats.meanTransitHours}h / ${(epcis.stats.meanTransitHours / 24).toFixed(1)}d` : '—'}
+                      value={stats.rfidPureMeanHours > 0 ? `${stats.rfidPureMeanHours}h / ${(stats.rfidPureMeanHours / 24).toFixed(1)}d` : '—'}
                       subtitle="average transit time"
                       badge={{ label: 'mean', color: 'amber' }}
                       tooltip="Average RFID transit time across all end-to-end pairs. More sensitive to outliers than the median."
                     />
                   </div>
 
-                  {epcis.stats.byRoute.length > 0 ? (
+                  {stats.rfidPureRoutes.length > 0 ? (
                     <ChartCard
                       title="RFID Transit by Route"
-                      subtitle={`${epcis.stats.byRoute.length} routes · median hours (last origin scan → first dest scan)`}
+                      subtitle={`${stats.rfidPureRoutes.length} routes · median hours (last origin scan → first dest scan)`}
                       tooltip="Each row is a unique origin country → destination country pair observed via RFID. Median transit is calculated from RFID timestamps only. Logic: last scan at origin centre → first scan at destination centre."
                     >
                       <div className="overflow-x-auto">
@@ -985,10 +985,10 @@ export default function Home() {
                             </tr>
                           </thead>
                           <tbody>
-                            {epcis.stats.byRoute.map((r, i) => (
+                            {stats.rfidPureRoutes.map((r, i) => (
                               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                                 <td className="py-2 pr-4 font-medium text-slate-800">{r.route}</td>
-                                <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.count}</td>
+                                <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.n}</td>
                                 <td className="py-2 text-right">
                                   {r.medianH !== null ? (
                                     <>
@@ -1007,19 +1007,19 @@ export default function Home() {
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
                       <p className="font-semibold text-amber-800 text-sm mb-1">Limited transit data</p>
                       <p className="text-xs text-amber-700 leading-relaxed">
-                        End-to-end transit measurement requires RFID coverage at both origin and destination. Only {epcis.stats.endToEndPairs} fully validated routes were found in the selected date range.
+                        End-to-end transit measurement requires RFID coverage at both origin and destination. Only {stats.rfidPureWithDest} fully validated routes were found in the selected date range.
                       </p>
                     </div>
                   )}
 
-                  {epcis.stats.transitCdf.length > 0 && (
+                  {stats.rfidPureCdf.length > 0 && (
                     <ChartCard
                       title="Cumulative Frequency: RFID Transit Time"
-                      subtitle={`Distribution of ${epcis.stats.endToEndPairs.toLocaleString()} RFID transit values (hours)`}
+                      subtitle={`Distribution of ${stats.rfidPureWithDest.toLocaleString()} RFID transit values (hours)`}
                       tooltip="Cumulative distribution function (CDF) of RFID physical transit time. The Y axis shows the percentage of receptacles with a transit time ≤ X hours. Read: 'X% of receptacles have a transit time ≤ Y hours'."
                     >
                       <ResponsiveContainer width="100%" height={260}>
-                        <AreaChart data={epcis.stats.transitCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
+                        <AreaChart data={stats.rfidPureCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
                           <defs>
                             <linearGradient id="cdfRfidTransitGrad2" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="5%" stopColor={C.indigo} stopOpacity={0.18} />
@@ -1052,20 +1052,20 @@ export default function Home() {
                   </div>
                   <div className="space-y-2 text-sm text-indigo-800 leading-relaxed">
                     <p>
-                      The RFID system (datos EPCIS) captured <strong>{epcis.stats.uniqueReceptacles.toLocaleString()} unique receptacles</strong> across <strong>{epcis.stats.totalReadings.toLocaleString()} individual readings</strong>.
-                      Origin readings span <strong>{epcis.stats.uniqueOrigins} countries</strong> and <strong>{epcis.stats.byOriginCentre.length} postal centres</strong>.
+                      The RFID system captured <strong>{stats.rfidDepartureTotal.toLocaleString()} unique receptacles</strong> with at least one RFID reading in <strong>tracking_events</strong>.
+                      Origin readings span <strong>{stats.rfidDepartureByOriginCountry.length} countries</strong> and <strong>{stats.rfidDepartureByOriginCentre.length} postal centres</strong>.
                     </p>
                     <p>
-                      End-to-end traceability — receptacles with RFID readings at two different centres — stands at <strong>{epcis.stats.endToEndPairs.toLocaleString()} receptacles ({epcis.stats.endToEndPct}%)</strong>.
-                      {epcis.stats.medianTransitHours !== null && (
-                        <> These pairs yield a median physical transit time of <strong>{epcis.stats.medianTransitHours}h ({(epcis.stats.medianTransitHours / 24).toFixed(1)} days)</strong>, measured from the last origin scan to the first destination scan.</>
+                      End-to-end traceability — receptacles with RFID readings at both origin and destination — stands at <strong>{stats.rfidPureWithDest.toLocaleString()} receptacles ({stats.rfidDepartureTotal > 0 ? Math.round((stats.rfidPureWithDest / stats.rfidDepartureTotal) * 100) : 0}%)</strong>.
+                      {stats.rfidPureMedianHours > 0 && (
+                        <> These pairs yield a median physical transit time of <strong>{stats.rfidPureMedianHours}h ({(stats.rfidPureMedianHours / 24).toFixed(1)} days)</strong>, measured from the RFID origin time to the RFID destination time.</>
                       )}
                     </p>
-                    {epcis.stats.byOriginCountry.length > 0 && (
+                    {stats.rfidDepartureByOriginCountry.length > 0 && (
                       <p>
-                        The leading origin country by RFID volume is <strong>{epcis.stats.byOriginCountry[0].country}</strong> ({epcis.stats.byOriginCountry[0].count} receptacles, {epcis.stats.byOriginCountry[0].pct}% with end-to-end coverage)
-                        {epcis.stats.byOriginCountry.length > 1 ? `, followed by ${epcis.stats.byOriginCountry[1].country} (${epcis.stats.byOriginCountry[1].count})` : ''}.
-                        The primary destination is <strong>{epcis.stats.byDestCountry[0]?.country || '—'}</strong> with {epcis.stats.byDestCountry[0]?.count || 0} arrivals.
+                        The leading origin country by RFID volume is <strong>{stats.rfidDepartureByOriginCountry[0].country}</strong> ({stats.rfidDepartureByOriginCountry[0].n} receptacles)
+                        {stats.rfidDepartureByOriginCountry.length > 1 ? `, followed by ${stats.rfidDepartureByOriginCountry[1].country} (${stats.rfidDepartureByOriginCountry[1].n})` : ''}.
+                        The primary destination is <strong>{stats.rfidArrivalByDestCountry[0]?.country || '—'}</strong> with {stats.rfidArrivalByDestCountry[0]?.n || 0} arrivals.
                       </p>
                     )}
                   </div>
@@ -1077,7 +1077,7 @@ export default function Home() {
                     <div>
                       <h3 className="text-sm font-semibold text-slate-800">RFID Journey Data</h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {epcis.journeys.length.toLocaleString()} receptacles from datos EPCIS — one row per unique s9id
+                        {stats.rfidDepartureTotal.toLocaleString()} receptacles from tracking_events — one row per unique s9id
                       </p>
                     </div>
                   </div>
