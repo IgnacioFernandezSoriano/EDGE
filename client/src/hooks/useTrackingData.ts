@@ -64,6 +64,16 @@ export interface DashboardStats {
   rfidPureByOriginCentre: { centre: string; country: string; n: number; medianH: number }[];
   rfidPureByDestCentre: { centre: string; country: string; n: number; medianH: number }[];
   rfidPureCdf: { x: number; pct: number }[];
+  // RFID-only departures (by origin centre, no EDI needed)
+  rfidDepartureTotal: number;
+  rfidDepartureByOriginCentre: { centre: string; country: string; n: number }[];
+  rfidDepartureByOriginCountry: { country: string; n: number }[];
+  rfidDepartureCdf: { x: number; pct: number }[];
+  // RFID-only arrivals (by dest centre, no EDI needed)
+  rfidArrivalTotal: number;
+  rfidArrivalByDestCentre: { centre: string; country: string; n: number }[];
+  rfidArrivalByDestCountry: { country: string; n: number }[];
+  rfidArrivalCdf: { x: number; pct: number }[];
 }
 
 function median(arr: number[]): number {
@@ -308,6 +318,57 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
 
   const rfidPureCdf = buildCDF(rfidPureHours);
 
+  // ── RFID DEPARTURES (all RFID events with origin reading, no EDI needed) ──
+  const rfidDepartureData = events.filter(e => e.has_rfid && e.rfid_origin_time && e.rfid_origin_centre);
+  const rfidDepartureByOriginCentreGroups = groupBy(rfidDepartureData, e => e.rfid_origin_centre!);
+  const rfidDepartureByOriginCentre = Object.entries(rfidDepartureByOriginCentreGroups)
+    .map(([centre, items]) => ({
+      centre,
+      country: normalizeCountry(items[0].rfid_origin_country) || '',
+      n: items.length,
+    }))
+    .sort((a, b) => b.n - a.n);
+  const rfidDepartureByOriginCountryGroups = groupBy(
+    rfidDepartureData.filter(e => e.rfid_origin_country),
+    e => normalizeCountry(e.rfid_origin_country) || e.rfid_origin_country!
+  );
+  const rfidDepartureByOriginCountry = Object.entries(rfidDepartureByOriginCountryGroups)
+    .map(([country, items]) => ({ country, n: items.length }))
+    .sort((a, b) => b.n - a.n);
+  // CDF of readings per day (use rfid_origin_time bucketed by day)
+  const rfidDepartureDailyBuckets: Record<string, number> = {};
+  rfidDepartureData.forEach(e => {
+    const day = e.rfid_origin_time!.slice(0, 10);
+    rfidDepartureDailyBuckets[day] = (rfidDepartureDailyBuckets[day] || 0) + 1;
+  });
+  const rfidDepartureDailyCounts = Object.values(rfidDepartureDailyBuckets);
+  const rfidDepartureCdf = buildCDF(rfidDepartureDailyCounts);
+
+  // ── RFID ARRIVALS (all RFID events with dest reading, no EDI needed) ──
+  const rfidArrivalData = events.filter(e => e.has_rfid && e.rfid_dest_time && e.rfid_dest_centre);
+  const rfidArrivalByDestCentreGroups = groupBy(rfidArrivalData, e => e.rfid_dest_centre!);
+  const rfidArrivalByDestCentre = Object.entries(rfidArrivalByDestCentreGroups)
+    .map(([centre, items]) => ({
+      centre,
+      country: normalizeCountry(items[0].rfid_dest_country) || '',
+      n: items.length,
+    }))
+    .sort((a, b) => b.n - a.n);
+  const rfidArrivalByDestCountryGroups = groupBy(
+    rfidArrivalData.filter(e => e.rfid_dest_country),
+    e => normalizeCountry(e.rfid_dest_country) || e.rfid_dest_country!
+  );
+  const rfidArrivalByDestCountry = Object.entries(rfidArrivalByDestCountryGroups)
+    .map(([country, items]) => ({ country, n: items.length }))
+    .sort((a, b) => b.n - a.n);
+  const rfidArrivalDailyBuckets: Record<string, number> = {};
+  rfidArrivalData.forEach(e => {
+    const day = e.rfid_dest_time!.slice(0, 10);
+    rfidArrivalDailyBuckets[day] = (rfidArrivalDailyBuckets[day] || 0) + 1;
+  });
+  const rfidArrivalDailyCounts = Object.values(rfidArrivalDailyBuckets);
+  const rfidArrivalCdf = buildCDF(rfidArrivalDailyCounts);
+
   return {
     totalReceptacles: total,
     fullCoverage: full,
@@ -354,6 +415,14 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     rfidPureByOriginCentre,
     rfidPureByDestCentre,
     rfidPureCdf,
+    rfidDepartureTotal: rfidDepartureData.length,
+    rfidDepartureByOriginCentre,
+    rfidDepartureByOriginCountry,
+    rfidDepartureCdf,
+    rfidArrivalTotal: rfidArrivalData.length,
+    rfidArrivalByDestCentre,
+    rfidArrivalByDestCountry,
+    rfidArrivalCdf,
   };
 }
 
