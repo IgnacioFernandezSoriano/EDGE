@@ -18,6 +18,7 @@ import { KpiCard } from '@/components/KpiCard';
 import { DataTable } from '@/components/DataTable';
 import { GlobalFilters } from '@/components/GlobalFilters';
 import { InfoTooltip } from '@/components/InfoTooltip';
+import { OverviewAnalysis, DepartureAnalysis, ArrivalAnalysis, TransitAnalysis } from '@/components/AnalysisPanel';
 
 const EDGE_LOGO = 'https://d2xsxph8kpxj0f.cloudfront.net/108732851/5NdCdX6TpQ4zqErLoimWrK/edge-logo_ae84570f.png';
 
@@ -201,13 +202,13 @@ export default function Home() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="container">
           {/* Top row: logo + tabs */}
-          <div className="flex items-center justify-between h-14 gap-4">
+          <div className="flex items-center justify-between h-20 gap-4">
             {/* EDGE logo */}
             <div className="flex items-center gap-3 flex-shrink-0">
               <img
                 src={EDGE_LOGO}
                 alt="EDGE by GMS"
-                className="h-8 w-auto object-contain"
+                className="h-16 w-auto object-contain"
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
               <div className="hidden lg:block border-l border-slate-200 pl-3">
@@ -304,17 +305,17 @@ export default function Home() {
               />
               <KpiCard
                 title="Departure Median Lag"
-                value={`+${stats.departureMedianHours}h`}
-                subtitle={`RFID detected ${(stats.departureMedianHours / 24).toFixed(1)}d after PREDES`}
+                value={`+${stats.departureMedianHours}h / ${(stats.departureMedianHours / 24).toFixed(1)}d`}
+                subtitle={`RFID detected after PREDES`}
                 badge={{ label: `${stats.departurePairs} pairs`, color: 'blue' }}
                 tooltip="Median time difference between the PREDES message (administrative dispatch) and the first RFID reading at the origin centre. Positive = RFID detected after PREDES. Typically 2–3 days because PREDES is issued when the dispatch is prepared, before physical departure."
               />
               <KpiCard
                 title="Arrival Median Lead"
-                value={`${stats.arrivalMedianHours < 0 ? '' : '+'}${stats.arrivalMedianHours}h`}
+                value={`${stats.arrivalMedianHours < 0 ? '' : '+'}${stats.arrivalMedianHours}h / ${(Math.abs(stats.arrivalMedianHours) / 24).toFixed(1)}d`}
                 subtitle={stats.arrivalMedianHours < 0
-                  ? `RFID ${Math.abs(stats.arrivalMedianHours)}h before RESDES`
-                  : `RFID ${stats.arrivalMedianHours}h after RESDES`}
+                  ? `RFID before RESDES`
+                  : `RFID after RESDES`}
                 badge={{ label: `${stats.arrivalPairs} pairs`, color: stats.arrivalMedianHours < 0 ? 'green' : 'amber' }}
                 tooltip="Median time difference between the last RFID reading at the destination centre and the RESDES message. Negative = RFID detected BEFORE RESDES — this is the real-time visibility advantage of RFID over EDI at arrival."
               />
@@ -344,7 +345,7 @@ export default function Home() {
               />
               <KpiCard
                 title="Transit Difference"
-                value={`${stats.transitDiffMedian > 0 ? '+' : ''}${stats.transitDiffMedian}h`}
+                value={`${stats.transitDiffMedian > 0 ? '+' : ''}${stats.transitDiffMedian}h / ${(Math.abs(stats.transitDiffMedian) / 24).toFixed(1)}d`}
                 subtitle="EDI vs RFID median transit"
                 badge={{ label: stats.transitDiffMedian > 0 ? 'EDI longer' : 'RFID longer', color: stats.transitDiffMedian > 0 ? 'amber' : 'green' }}
                 tooltip="Median difference between EDI-declared transit (RESDES minus PREDES) and RFID-measured physical transit. Positive = EDI overestimates transit time. Negative = EDI underestimates. Helps identify systematic biases in administrative declarations."
@@ -372,13 +373,14 @@ export default function Home() {
                     <YAxis type="category" dataKey="country" tick={{ fontSize: 11 }} width={85} />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="medianDepartureLag" name="Median lag (hours)" fill={C.indigo} radius={[0, 3, 3, 0]}>
-                      <LabelList dataKey="medianDepartureLag" position="right" formatter={(v: number) => `${v.toFixed(0)}h`} style={{ fontSize: 10, fill: '#64748b' }} />
+                      <LabelList dataKey="medianDepartureLag" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
             </div>
 
+            <OverviewAnalysis s={stats} />
 
           </Section>
         )}
@@ -393,10 +395,10 @@ export default function Home() {
               <KpiCard title="Analysed Pairs" value={stats.departurePairs.toLocaleString()} subtitle="RFID + PREDES matches" badge={{ label: 'departure', color: 'blue' }}
                 tooltip="Number of receptacles that have both an RFID reading at the origin centre AND a PREDES message. Only these pairs can be used to calculate the departure lag (time difference between administrative dispatch and physical detection)."
               />
-              <KpiCard title="Median Lag" value={`+${stats.departureMedianHours}h`} subtitle={`${(stats.departureMedianHours / 24).toFixed(1)} days`} badge={{ label: 'RFID after PREDES', color: 'amber' }}
+              <KpiCard title="Median Lag" value={`+${stats.departureMedianHours}h / ${(stats.departureMedianHours / 24).toFixed(1)}d`} subtitle="RFID after PREDES" badge={{ label: 'RFID after PREDES', color: 'amber' }}
                 tooltip="The median (50th percentile) time between the PREDES message and the first RFID reading at the origin centre. The median is used instead of the mean to reduce the influence of extreme outliers. A positive value is expected and operationally normal."
               />
-              <KpiCard title="IQR Range" value={`${stats.departureP25}h – ${stats.departureP75}h`} subtitle="Percentile 25 – 75" badge={{ label: 'IQR', color: 'slate' }}
+              <KpiCard title="IQR Range" value={`${stats.departureP25}h – ${stats.departureP75}h`} subtitle={`${(stats.departureP25/24).toFixed(1)}d – ${(stats.departureP75/24).toFixed(1)}d`} badge={{ label: 'IQR', color: 'slate' }}
                 tooltip="Interquartile Range: the range between the 25th and 75th percentile of departure lags. This shows the spread of the middle 50% of the data. A narrow IQR indicates consistent timing; a wide IQR suggests high variability across different flows."
               />
               <KpiCard title="RFID Before PREDES" value={`${stats.departureRfidBeforePct}%`} subtitle={`${stats.departureRfidBefore} anomalous cases`}
@@ -414,7 +416,7 @@ export default function Home() {
                     <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="median" name="Median lag (hours)" fill={C.indigo} radius={[0, 3, 3, 0]}>
-                      <LabelList dataKey="median" position="right" formatter={(v: number) => `${v.toFixed(0)}h`} style={{ fontSize: 10, fill: '#64748b' }} />
+                      <LabelList dataKey="median" position="right" formatter={(v: number) => `${v.toFixed(0)}h / ${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -464,8 +466,11 @@ export default function Home() {
             )}
 
             <InfoBox color="indigo">
-              <span className="font-semibold">Interpretation:</span> The PREDES message is issued by the origin postal operator when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs. The median lag of <strong>+{stats.departureMedianHours}h</strong> is operationally consistent with this workflow. Cases where RFID precedes PREDES ({stats.departureRfidBeforePct}%) may indicate EDI transmission delays or timestamp inconsistencies.
+              <span className="font-semibold">Interpretation:</span> The PREDES message is issued by the origin postal operator when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs. The median lag of <strong>+{stats.departureMedianHours}h ({(stats.departureMedianHours/24).toFixed(1)}d)</strong> is operationally consistent with this workflow. Cases where RFID precedes PREDES ({stats.departureRfidBeforePct}%) may indicate EDI transmission delays or timestamp inconsistencies.
             </InfoBox>
+
+            <DepartureAnalysis s={stats} />
+
           </Section>
         )}
 
@@ -480,8 +485,8 @@ export default function Home() {
                 tooltip="Number of receptacles with both an RFID reading at the destination centre AND a RESDES message. Only these pairs enable the arrival lead/lag calculation."
               />
               <KpiCard title="Median Lead/Lag"
-                value={`${stats.arrivalMedianHours < 0 ? '' : '+'}${stats.arrivalMedianHours.toFixed(1)}h`}
-                subtitle={stats.arrivalMedianHours < 0 ? `RFID ${Math.abs(stats.arrivalMedianHours).toFixed(1)}h before RESDES` : `RFID ${stats.arrivalMedianHours.toFixed(1)}h after RESDES`}
+                value={`${stats.arrivalMedianHours < 0 ? '' : '+'}${stats.arrivalMedianHours.toFixed(1)}h / ${(Math.abs(stats.arrivalMedianHours)/24).toFixed(1)}d`}
+                subtitle={stats.arrivalMedianHours < 0 ? `RFID before RESDES` : `RFID after RESDES`}
                 badge={{ label: stats.arrivalMedianHours < 0 ? 'RFID advantage' : 'EDI faster', color: stats.arrivalMedianHours < 0 ? 'green' : 'amber' }}
                 tooltip="Median time between the last RFID reading at the destination and the RESDES message. Negative = RFID detected BEFORE RESDES (RFID provides earlier visibility). Positive = RESDES issued before RFID detection (EDI is faster at this destination)."
               />
@@ -504,7 +509,7 @@ export default function Home() {
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="median" name="Median lead/lag (hours)" radius={[0, 3, 3, 0]}>
                       {stats.arrivalByCentre.map((entry, i) => <Cell key={i} fill={entry.median < 0 ? C.emerald : C.amber} />)}
-                      <LabelList dataKey="median" position="right" formatter={(v: number) => `${v.toFixed(0)}h`} style={{ fontSize: 10, fill: '#64748b' }} />
+                      <LabelList dataKey="median" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -554,8 +559,11 @@ export default function Home() {
             )}
 
             <InfoBox color="emerald">
-              <span className="font-semibold">Key Finding:</span> In <strong>{stats.arrivalRfidBeforePct}%</strong> of arrival events, the RFID system detects the receptacle <em>before</em> the RESDES message is generated. This represents the measurable real-time visibility advantage of RFID over EDI at the destination centre — the median lead time is <strong>{Math.abs(stats.arrivalMedianHours).toFixed(1)} hours</strong>.
+              <span className="font-semibold">Key Finding:</span> In <strong>{stats.arrivalRfidBeforePct}%</strong> of arrival events, the RFID system detects the receptacle <em>before</em> the RESDES message is generated. This represents the measurable real-time visibility advantage of RFID over EDI at the destination centre — the median lead time is <strong>{Math.abs(stats.arrivalMedianHours).toFixed(1)}h ({(Math.abs(stats.arrivalMedianHours)/24).toFixed(1)}d)</strong>.
             </InfoBox>
+
+            <ArrivalAnalysis s={stats} />
+
           </Section>
         )}
 
@@ -569,13 +577,13 @@ export default function Home() {
               <KpiCard title="Validated Routes" value={stats.transitPairs.toLocaleString()} subtitle="Full origin→dest RFID" badge={{ label: 'end-to-end', color: 'blue' }}
                 tooltip="Number of receptacles with RFID readings at both a distinct origin and destination centre (full_route_validated = true). Only these enable a direct comparison between physical transit time (RFID) and declared transit time (EDI)."
               />
-              <KpiCard title="RFID Median Transit" value={`${stats.rfidTransitMedian}h`} subtitle={`${(stats.rfidTransitMedian / 24).toFixed(1)} days physical`} badge={{ label: 'physical', color: 'blue' }}
+              <KpiCard title="RFID Median Transit" value={`${stats.rfidTransitMedian}h / ${(stats.rfidTransitMedian / 24).toFixed(1)}d`} subtitle="Physical transit (RFID)" badge={{ label: 'physical', color: 'blue' }}
                 tooltip="Median physical transit time measured by RFID: the time between the last RFID reading at the origin centre and the first RFID reading at the destination centre. This is the actual time the receptacle spent in transit, as measured by the RFID infrastructure."
               />
-              <KpiCard title="EDI Median Transit" value={`${stats.ediTransitMedian}h`} subtitle={`${(stats.ediTransitMedian / 24).toFixed(1)} days declared`} badge={{ label: 'declared', color: 'slate' }}
+              <KpiCard title="EDI Median Transit" value={`${stats.ediTransitMedian}h / ${(stats.ediTransitMedian / 24).toFixed(1)}d`} subtitle="Declared transit (EDI)" badge={{ label: 'declared', color: 'slate' }}
                 tooltip="Median declared transit time from EDI messages: RESDES timestamp minus PREDES timestamp. This is the administratively declared transit time, which may differ from the physical transit measured by RFID due to processing delays, pre-advice timing, or timestamp inconsistencies."
               />
-              <KpiCard title="EDI Overestimate" value={`${stats.transitDiffMedian > 0 ? '+' : ''}${stats.transitDiffMedian}h`} subtitle="EDI vs RFID transit gap"
+              <KpiCard title="EDI Overestimate" value={`${stats.transitDiffMedian > 0 ? '+' : ''}${stats.transitDiffMedian}h / ${(Math.abs(stats.transitDiffMedian)/24).toFixed(1)}d`} subtitle="EDI vs RFID transit gap"
                 badge={{ label: stats.transitDiffMedian > 0 ? 'EDI longer' : 'RFID longer', color: stats.transitDiffMedian > 0 ? 'amber' : 'green' }}
                 tooltip="Median difference between EDI-declared transit and RFID-measured physical transit (EDI minus RFID). Positive = EDI overestimates transit time (EDI says the journey took longer than RFID measured). Negative = EDI underestimates. This gap reveals systematic biases in administrative declarations."
               />
@@ -591,10 +599,10 @@ export default function Home() {
                     <Tooltip content={<ChartTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} />
                     <Bar dataKey="rfidMedian" name="RFID Physical (h)" fill={C.indigo} radius={[0, 2, 2, 0]} barSize={13}>
-                      <LabelList dataKey="rfidMedian" position="right" formatter={(v: number) => `${v.toFixed(0)}h`} style={{ fontSize: 10, fill: C.indigo }} />
+                      <LabelList dataKey="rfidMedian" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: C.indigo }} />
                     </Bar>
                     <Bar dataKey="ediMedian" name="EDI Declared (h)" fill={C.slate} radius={[0, 2, 2, 0]} barSize={13}>
-                      <LabelList dataKey="ediMedian" position="right" formatter={(v: number) => `${v.toFixed(0)}h`} style={{ fontSize: 10, fill: C.slate }} />
+                      <LabelList dataKey="ediMedian" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: C.slate }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -640,6 +648,9 @@ export default function Home() {
             <InfoBox color="indigo">
               <span className="font-semibold">Methodology:</span> Physical transit time is measured as the difference between the last RFID reading at the origin centre and the first RFID reading at the destination centre (different centres only, intermediate stops excluded). EDI transit is RESDES timestamp minus PREDES timestamp. Only routes with <span className="mono-value bg-white/60 px-1 rounded">full_route_validated = true</span> are included.
             </InfoBox>
+
+            <TransitAnalysis s={stats} />
+
           </Section>
         )}
 

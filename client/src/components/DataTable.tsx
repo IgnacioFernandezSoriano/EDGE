@@ -1,13 +1,24 @@
+/**
+ * DataTable — grouped column layout for RFID-EDI comparison
+ * Column groups:
+ *   1. Identity: Coverage | Receptacle (s9id) | Tag ID
+ *   2. Departure pair: RFID Departure (time+centre+country) | PREDES (time+centre+country) | Dep. Lag
+ *   3. Arrival pair:   RFID Arrival (time+centre+country)  | RESDES (time+centre+country) | Arr. Lead
+ *   4. Transit:        RFID Transit | EDI Transit
+ * For RFID Only: RFID columns show data, EDI columns show —
+ * For EDI Only:  EDI columns show data (predes_origin_* / redes_dest_*), RFID columns show —
+ */
+
 import { useState, useMemo } from 'react';
 import { TrackingEvent } from '@/lib/supabase';
 import { exportToCsv } from '@/lib/exportCsv';
 
 const COVERAGE_COLORS: Record<string, string> = {
-  FULL: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  RFID_PREDES: 'bg-blue-50 text-blue-700 border-blue-200',
-  RFID_RESDES: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  RFID_ONLY: 'bg-amber-50 text-amber-700 border-amber-200',
-  EDI_ONLY: 'bg-slate-100 text-slate-600 border-slate-200',
+  FULL:       'bg-emerald-50 text-emerald-700 border-emerald-200',
+  RFID_PREDES:'bg-blue-50 text-blue-700 border-blue-200',
+  RFID_RESDES:'bg-indigo-50 text-indigo-700 border-indigo-200',
+  RFID_ONLY:  'bg-amber-50 text-amber-700 border-amber-200',
+  EDI_ONLY:   'bg-slate-100 text-slate-600 border-slate-200',
 };
 
 function formatHours(h: number | null): string {
@@ -20,7 +31,17 @@ function formatHours(h: number | null): string {
 
 function formatTime(t: string | null): string {
   if (!t) return '—';
-  return new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+  const d = new Date(t);
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'UTC' });
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${date} ${hh}:${mm}`;
+}
+
+function truncTag(tag: string | null): string {
+  if (!tag) return '—';
+  // Show last 16 chars of URN tag IDs for readability
+  return tag.length > 20 ? '…' + tag.slice(-16) : tag;
 }
 
 interface DataTableProps {
@@ -45,10 +66,13 @@ export function DataTable({ events, filterCoverage, dateLabel }: DataTableProps)
       const q = search.trim().toLowerCase();
       data = data.filter(e =>
         (e.s9id || '').toLowerCase().includes(q) ||
+        (e.tag_id || '').toLowerCase().includes(q) ||
         (e.rfid_origin_country || '').toLowerCase().includes(q) ||
         (e.redes_dest_country || '').toLowerCase().includes(q) ||
+        (e.predes_origin_country || '').toLowerCase().includes(q) ||
         (e.rfid_origin_centre || '').toLowerCase().includes(q) ||
-        (e.redes_dest_centre || '').toLowerCase().includes(q)
+        (e.redes_dest_centre || '').toLowerCase().includes(q) ||
+        (e.predes_origin_centre || '').toLowerCase().includes(q)
       );
     }
     data = [...data].sort((a, b) => {
@@ -83,13 +107,22 @@ export function DataTable({ events, filterCoverage, dateLabel }: DataTableProps)
     </span>
   );
 
+  const Th = ({ col, label, className = '' }: { col: string; label: string; className?: string }) => (
+    <th
+      onClick={() => handleSort(col)}
+      className={`px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:text-slate-900 select-none ${className}`}
+    >
+      {label}<SortIcon col={col} />
+    </th>
+  );
+
   return (
     <div className="space-y-3">
       {/* Search + export bar */}
       <div className="flex items-center gap-3">
         <input
           type="text"
-          placeholder="Search by s9id, country, or centre…"
+          placeholder="Search by s9id, tag, country, or centre…"
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(0); }}
           className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
@@ -109,66 +142,113 @@ export function DataTable({ events, filterCoverage, dateLabel }: DataTableProps)
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full text-xs">
+        <table className="w-full text-xs border-collapse">
           <thead>
+            {/* Group header row */}
+            <tr className="bg-slate-100 border-b border-slate-300">
+              <th colSpan={3} className="px-3 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider border-r border-slate-300">
+                Identity
+              </th>
+              <th colSpan={5} className="px-3 py-1.5 text-left text-[10px] font-semibold text-indigo-600 uppercase tracking-wider border-r border-indigo-200 bg-indigo-50/60">
+                ← Departure pair (RFID vs PREDES)
+              </th>
+              <th colSpan={5} className="px-3 py-1.5 text-left text-[10px] font-semibold text-emerald-600 uppercase tracking-wider border-r border-emerald-200 bg-emerald-50/60">
+                ← Arrival pair (RFID vs RESDES)
+              </th>
+              <th colSpan={2} className="px-3 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                Transit
+              </th>
+            </tr>
+            {/* Column header row */}
             <tr className="bg-slate-50 border-b border-slate-200">
-              {[
-                { key: 'coverage_type', label: 'Coverage' },
-                { key: 's9id', label: 'Receptacle (s9id)' },
-                { key: 'rfid_origin_country', label: 'RFID Origin' },
-                { key: 'rfid_origin_centre', label: 'Origin Centre' },
-                { key: 'rfid_origin_time', label: 'RFID Departure' },
-                { key: 'predes_time', label: 'PREDES' },
-                { key: 'departure_lag_hours', label: 'Dep. Lag' },
-                { key: 'redes_dest_country', label: 'EDI Destination' },
-                { key: 'redes_dest_centre', label: 'Dest. Centre' },
-                { key: 'redes_time', label: 'RESDES' },
-                { key: 'arrival_lead_hours', label: 'Arr. Lead' },
-                { key: 'rfid_transit_hours', label: 'RFID Transit' },
-                { key: 'edi_transit_hours', label: 'EDI Transit' },
-              ].map(col => (
-                <th
-                  key={col.key}
-                  onClick={() => handleSort(col.key)}
-                  className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:text-slate-900 select-none"
-                >
-                  {col.label}<SortIcon col={col.key} />
-                </th>
-              ))}
+              {/* Identity */}
+              <Th col="coverage_type" label="Coverage" />
+              <Th col="s9id" label="Receptacle (s9id)" />
+              <th
+                onClick={() => handleSort('tag_id')}
+                className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:text-slate-900 select-none border-r border-slate-200"
+              >
+                Tag ID<SortIcon col="tag_id" />
+              </th>
+              {/* Departure pair */}
+              <Th col="rfid_origin_country" label="RFID Origin" className="bg-indigo-50/40" />
+              <Th col="rfid_origin_centre" label="RFID Origin Centre" className="bg-indigo-50/40" />
+              <Th col="rfid_origin_time" label="RFID Departure" className="bg-indigo-50/40" />
+              <Th col="predes_time" label="PREDES" className="bg-indigo-50/40" />
+              <th
+                onClick={() => handleSort('departure_lag_hours')}
+                className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:text-slate-900 select-none border-r border-indigo-200 bg-indigo-50/40"
+              >
+                Dep. Lag<SortIcon col="departure_lag_hours" />
+              </th>
+              {/* Arrival pair */}
+              <Th col="redes_dest_country" label="RFID Dest." className="bg-emerald-50/40" />
+              <Th col="redes_dest_centre" label="RFID Dest. Centre" className="bg-emerald-50/40" />
+              <Th col="rfid_dest_time" label="RFID Arrival" className="bg-emerald-50/40" />
+              <Th col="redes_time" label="RESDES" className="bg-emerald-50/40" />
+              <th
+                onClick={() => handleSort('arrival_lead_hours')}
+                className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:text-slate-900 select-none border-r border-emerald-200 bg-emerald-50/40"
+              >
+                Arr. Lead<SortIcon col="arrival_lead_hours" />
+              </th>
+              {/* Transit */}
+              <Th col="rfid_transit_hours" label="RFID Transit" />
+              <Th col="edi_transit_hours" label="EDI Transit" />
             </tr>
           </thead>
           <tbody>
             {pageData.length === 0 ? (
               <tr>
-                <td colSpan={13} className="px-4 py-10 text-center text-sm text-slate-400">
+                <td colSpan={15} className="px-4 py-10 text-center text-sm text-slate-400">
                   No records match the current filters.
                 </td>
               </tr>
-            ) : pageData.map((e, i) => (
-              <tr key={e.id} className={`border-b border-slate-100 hover:bg-slate-50/60 transition-colors ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
-                <td className="px-3 py-2">
-                  <span className={`status-pill border text-[10px] ${COVERAGE_COLORS[e.coverage_type] || 'bg-slate-100 text-slate-600'}`}>
-                    {e.coverage_type?.replace(/_/g, ' ')}
-                  </span>
-                </td>
-                <td className="px-3 py-2 mono-value text-slate-700 max-w-[180px] truncate" title={e.s9id}>{e.s9id}</td>
-                <td className="px-3 py-2 text-slate-600">{e.rfid_origin_country || '—'}</td>
-                <td className="px-3 py-2 text-slate-600 max-w-[140px] truncate" title={e.rfid_origin_centre || ''}>{e.rfid_origin_centre || '—'}</td>
-                <td className="px-3 py-2 mono-value text-slate-500">{formatTime(e.rfid_origin_time)}</td>
-                <td className="px-3 py-2 mono-value text-slate-500">{formatTime(e.predes_time)}</td>
-                <td className={`px-3 py-2 mono-value font-medium ${e.departure_lag_hours !== null ? (e.departure_lag_hours < 0 ? 'text-rose-600' : 'text-slate-700') : 'text-slate-400'}`}>
-                  {formatHours(e.departure_lag_hours)}
-                </td>
-                <td className="px-3 py-2 text-slate-600">{e.redes_dest_country || '—'}</td>
-                <td className="px-3 py-2 text-slate-600 max-w-[140px] truncate" title={e.redes_dest_centre || ''}>{e.redes_dest_centre || '—'}</td>
-                <td className="px-3 py-2 mono-value text-slate-500">{formatTime(e.redes_time)}</td>
-                <td className={`px-3 py-2 mono-value font-medium ${e.arrival_lead_hours !== null ? (e.arrival_lead_hours < 0 ? 'text-emerald-600' : 'text-amber-600') : 'text-slate-400'}`}>
-                  {formatHours(e.arrival_lead_hours)}
-                </td>
-                <td className="px-3 py-2 mono-value text-slate-600">{formatHours(e.rfid_transit_hours)}</td>
-                <td className="px-3 py-2 mono-value text-slate-600">{formatHours(e.edi_transit_hours)}</td>
-              </tr>
-            ))}
+            ) : pageData.map((e, i) => {
+              // Resolve origin: RFID origin if available, else PREDES origin (EDI Only)
+              const originCountry = e.rfid_origin_country || e.predes_origin_country;
+              const originCentre = e.rfid_origin_centre || e.predes_origin_centre;
+              // Resolve destination: RFID dest if available, else REDES dest (EDI Only)
+              const destCountry = e.rfid_dest_country || e.redes_dest_country;
+              const destCentre = e.rfid_dest_centre || e.redes_dest_centre;
+
+              return (
+                <tr key={e.id} className={`border-b border-slate-100 hover:bg-slate-50/60 transition-colors ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}>
+                  {/* Identity */}
+                  <td className="px-3 py-2">
+                    <span className={`status-pill border text-[10px] ${COVERAGE_COLORS[e.coverage_type] || 'bg-slate-100 text-slate-600'}`}>
+                      {e.coverage_type?.replace(/_/g, ' ')}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 mono-value text-slate-700 max-w-[180px] truncate" title={e.s9id}>{e.s9id}</td>
+                  <td className="px-3 py-2 mono-value text-slate-500 max-w-[160px] truncate border-r border-slate-200" title={e.tag_id || ''}>{truncTag(e.tag_id)}</td>
+
+                  {/* Departure pair — RFID side */}
+                  <td className="px-3 py-2 text-slate-600 bg-indigo-50/20">{originCountry || '—'}</td>
+                  <td className="px-3 py-2 text-slate-600 max-w-[140px] truncate bg-indigo-50/20" title={originCentre || ''}>{originCentre || '—'}</td>
+                  <td className="px-3 py-2 mono-value text-slate-500 bg-indigo-50/20">{formatTime(e.rfid_origin_time)}</td>
+                  {/* Departure pair — PREDES side */}
+                  <td className="px-3 py-2 mono-value text-indigo-600 bg-indigo-50/20">{formatTime(e.predes_time)}</td>
+                  <td className={`px-3 py-2 mono-value font-medium border-r border-indigo-200 bg-indigo-50/20 ${e.departure_lag_hours !== null ? (e.departure_lag_hours < 0 ? 'text-rose-600' : 'text-slate-700') : 'text-slate-400'}`}>
+                    {formatHours(e.departure_lag_hours)}
+                  </td>
+
+                  {/* Arrival pair — RFID side */}
+                  <td className="px-3 py-2 text-slate-600 bg-emerald-50/20">{destCountry || '—'}</td>
+                  <td className="px-3 py-2 text-slate-600 max-w-[140px] truncate bg-emerald-50/20" title={destCentre || ''}>{destCentre || '—'}</td>
+                  <td className="px-3 py-2 mono-value text-slate-500 bg-emerald-50/20">{formatTime(e.rfid_dest_time)}</td>
+                  {/* Arrival pair — RESDES side */}
+                  <td className="px-3 py-2 mono-value text-emerald-600 bg-emerald-50/20">{formatTime(e.redes_time)}</td>
+                  <td className={`px-3 py-2 mono-value font-medium border-r border-emerald-200 bg-emerald-50/20 ${e.arrival_lead_hours !== null ? (e.arrival_lead_hours < 0 ? 'text-emerald-600' : 'text-amber-600') : 'text-slate-400'}`}>
+                    {formatHours(e.arrival_lead_hours)}
+                  </td>
+
+                  {/* Transit */}
+                  <td className="px-3 py-2 mono-value text-slate-600">{formatHours(e.rfid_transit_hours)}</td>
+                  <td className="px-3 py-2 mono-value text-slate-600">{formatHours(e.edi_transit_hours)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
