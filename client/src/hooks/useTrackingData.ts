@@ -37,6 +37,10 @@ export interface DashboardStats {
   byOriginCountry: { country: string; count: number; medianDepartureLag: number }[];
   // By destination country
   byDestCountry: { country: string; count: number; medianArrivalLead: number }[];
+  // Coverage by destination country (stacked bar)
+  coverageByDestCountry: { country: string; FULL: number; EDI_FULL: number; RFID_ONLY: number; EDI_ONLY: number; RFID_PREDES: number; total: number }[];
+  // Coverage by origin country (stacked bar)
+  coverageByOriginCountry: { country: string; FULL: number; EDI_FULL: number; RFID_ONLY: number; EDI_ONLY: number; RFID_PREDES: number; total: number }[];
   // Coverage breakdown
   coverageBreakdown: { type: string; count: number; pct: number }[];
   // Transit routes
@@ -183,6 +187,48 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
+
+  // Coverage by destination country (stacked)
+  const destCountryAll = events.filter(e => {
+    const c = normalizeCountry(e.redes_dest_country) || normalizeCountry(e.rfid_dest_country);
+    return !!c;
+  });
+  const destCovGroups = groupBy(destCountryAll, e => {
+    return normalizeCountry(e.redes_dest_country) || normalizeCountry(e.rfid_dest_country) || 'Unknown';
+  });
+  const coverageByDestCountry = Object.entries(destCovGroups)
+    .map(([country, items]) => ({
+      country,
+      FULL:        items.filter(e => e.coverage_type === 'FULL').length,
+      EDI_FULL:    items.filter(e => e.coverage_type === 'EDI_FULL').length,
+      RFID_ONLY:   items.filter(e => e.coverage_type === 'RFID_ONLY').length,
+      EDI_ONLY:    items.filter(e => e.coverage_type === 'EDI_ONLY').length,
+      RFID_PREDES: items.filter(e => e.coverage_type === 'RFID_PREDES').length,
+      total: items.length,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 15);
+
+  // Coverage by origin country (stacked)
+  const origCountryAll = events.filter(e => {
+    const c = normalizeCountry(e.predes_origin_country) || normalizeCountry(e.rfid_origin_country);
+    return !!c;
+  });
+  const origCovGroups = groupBy(origCountryAll, e => {
+    return normalizeCountry(e.predes_origin_country) || normalizeCountry(e.rfid_origin_country) || 'Unknown';
+  });
+  const coverageByOriginCountry = Object.entries(origCovGroups)
+    .map(([country, items]) => ({
+      country,
+      FULL:        items.filter(e => e.coverage_type === 'FULL').length,
+      EDI_FULL:    items.filter(e => e.coverage_type === 'EDI_FULL').length,
+      RFID_ONLY:   items.filter(e => e.coverage_type === 'RFID_ONLY').length,
+      EDI_ONLY:    items.filter(e => e.coverage_type === 'EDI_ONLY').length,
+      RFID_PREDES: items.filter(e => e.coverage_type === 'RFID_PREDES').length,
+      total: items.length,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 15);
 
   // Coverage breakdown
   const coverageBreakdown = [
@@ -395,6 +441,8 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     transitDiffMedian: Math.round(median(transitDiffs) * 10) / 10,
     byOriginCountry,
     byDestCountry,
+    coverageByDestCountry,
+    coverageByOriginCountry,
     coverageBreakdown,
     transitRoutes,
     departureByCentre,

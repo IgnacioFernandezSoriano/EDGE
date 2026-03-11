@@ -36,14 +36,16 @@ const C = {
 
 const COVERAGE_FILL: Record<string, string> = {
   FULL:        C.emerald,
+  EDI_FULL:    C.slate,
   RFID_PREDES: C.sky,
   RFID_RESDES: C.indigo,
   RFID_ONLY:   C.amber,
-  EDI_ONLY:    C.slate,
+  EDI_ONLY:    '#cbd5e1',
 };
 
 const COVERAGE_LABEL: Record<string, string> = {
   FULL:        'RFID + PREDES + RESDES',
+  EDI_FULL:    'PREDES + RESDES (no RFID)',
   RFID_PREDES: 'RFID + PREDES only',
   RFID_RESDES: 'RFID + RESDES only',
   RFID_ONLY:   'RFID only (no EDI)',
@@ -388,6 +390,61 @@ export default function Home() {
                     <Bar dataKey="medianDepartureLag" name="Median lag (hours)" fill={C.indigo} radius={[0, 3, 3, 0]}>
                       <LabelList dataKey="medianDepartureLag" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            </div>
+
+            {/* ── Coverage by Destination Country ── */}
+            <div className="grid md:grid-cols-2 gap-6">
+              <ChartCard
+                title="Coverage by Destination Country"
+                subtitle="Top 15 destinations — receptacle count by coverage type"
+                tooltip="Stacked bar chart showing the top 15 destination countries by total receptacle volume. Each bar is split by coverage type: FULL (green, all three sources), EDI_FULL (slate, both EDI messages but no RFID at destination), RFID_ONLY (amber, physical RFID but no EDI), EDI_ONLY (light grey, only EDI). Countries with a higher proportion of FULL coverage have better end-to-end traceability."
+              >
+                <ResponsiveContainer width="100%" height={Math.max(260, stats.coverageByDestCountry.length * 26)}>
+                  <BarChart data={stats.coverageByDestCountry} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                    <YAxis type="category" dataKey="country" tick={{ fontSize: 10 }} width={120} />
+                    <Tooltip
+                      formatter={(v: any, name: string) => [v.toLocaleString(), COVERAGE_LABEL[name] || name]}
+                      labelFormatter={(l: string) => `Destination: ${l}`}
+                    />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 10 }}
+                      formatter={v => <span className="text-xs text-slate-600">{COVERAGE_LABEL[v] || v}</span>}
+                    />
+                    <Bar dataKey="FULL" name="FULL" stackId="a" fill={C.emerald} />
+                    <Bar dataKey="EDI_FULL" name="EDI_FULL" stackId="a" fill={C.slate} />
+                    <Bar dataKey="RFID_ONLY" name="RFID_ONLY" stackId="a" fill={C.amber} />
+                    <Bar dataKey="EDI_ONLY" name="EDI_ONLY" stackId="a" fill="#cbd5e1" />
+                    <Bar dataKey="RFID_PREDES" name="RFID_PREDES" stackId="a" fill={C.sky} radius={[0, 3, 3, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard
+                title="Coverage by Origin Country"
+                subtitle="Top 15 origins — receptacle count by coverage type"
+                tooltip="Stacked bar chart showing the top 15 origin countries by total receptacle volume, split by coverage type. This view reveals which sending countries have the best RFID+EDI integration (FULL coverage) versus those where only EDI or only RFID data is available."
+              >
+                <ResponsiveContainer width="100%" height={Math.max(260, stats.coverageByOriginCountry.length * 26)}>
+                  <BarChart data={stats.coverageByOriginCountry} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                    <YAxis type="category" dataKey="country" tick={{ fontSize: 10 }} width={120} />
+                    <Tooltip
+                      formatter={(v: any, name: string) => [v.toLocaleString(), COVERAGE_LABEL[name] || name]}
+                      labelFormatter={(l: string) => `Origin: ${l}`}
+                    />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 10 }}
+                      formatter={v => <span className="text-xs text-slate-600">{COVERAGE_LABEL[v] || v}</span>}
+                    />
+                    <Bar dataKey="FULL" name="FULL" stackId="a" fill={C.emerald} />
+                    <Bar dataKey="EDI_FULL" name="EDI_FULL" stackId="a" fill={C.slate} />
+                    <Bar dataKey="RFID_ONLY" name="RFID_ONLY" stackId="a" fill={C.amber} />
+                    <Bar dataKey="EDI_ONLY" name="EDI_ONLY" stackId="a" fill="#cbd5e1" />
+                    <Bar dataKey="RFID_PREDES" name="RFID_PREDES" stackId="a" fill={C.sky} radius={[0, 3, 3, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
