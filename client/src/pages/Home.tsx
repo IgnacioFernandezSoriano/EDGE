@@ -11,6 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, ReferenceLine, LabelList,
   ScatterChart, Scatter, ZAxis,
+  LineChart, Line, Area, AreaChart,
 } from 'recharts';
 import { useTrackingData } from '@/hooks/useTrackingData';
 import { KpiCard } from '@/components/KpiCard';
@@ -378,41 +379,7 @@ export default function Home() {
               </ChartCard>
             </div>
 
-            {scatterData.length > 0 && (
-              <ChartCard
-                title="Correlation: Departure Lag vs Arrival Lead"
-                subtitle={`${scatterData.length} receptacles with FULL coverage — each dot is one receptacle`}
-                tooltip="Scatter plot showing the relationship between departure lag (X axis) and arrival lead (Y axis) for each FULL-coverage receptacle. Top-right quadrant: RFID late at both ends. Bottom-left: RFID early at both ends. A positive correlation suggests systematic delays affect the entire journey. Outliers may indicate data quality issues."
-              >
-                <ResponsiveContainer width="100%" height={280}>
-                  <ScatterChart margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis type="number" dataKey="x" name="Departure lag" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                      label={{ value: 'Departure lag (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
-                    <YAxis type="number" dataKey="y" name="Arrival lead" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                      label={{ value: 'Arrival lead (h)', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
-                    <ZAxis range={[20, 20]} />
-                    <ReferenceLine x={0} stroke="#94a3b8" strokeDasharray="4 2" />
-                    <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 2" />
-                    <Tooltip cursor={{ strokeDasharray: '3 3' }} content={({ active, payload }) => {
-                      if (!active || !payload?.length) return null;
-                      const d = payload[0].payload;
-                      return (
-                        <div className="bg-white border border-slate-200 rounded-lg shadow p-2.5 text-xs">
-                          <p className="mono-value text-slate-600 truncate max-w-[180px]">{d.s9id}</p>
-                          <p className="text-slate-700 mt-1">Departure lag: <strong>{d.x.toFixed(1)}h</strong></p>
-                          <p className="text-slate-700">Arrival lead: <strong>{d.y.toFixed(1)}h</strong></p>
-                        </div>
-                      );
-                    }} />
-                    <Scatter data={scatterData} fill={C.indigo} fillOpacity={0.35} />
-                  </ScatterChart>
-                </ResponsiveContainer>
-                <p className="text-[10px] text-slate-400 mt-1 text-center">
-                  Top-right: RFID late at both origin and destination · Bottom-left: RFID early at both
-                </p>
-              </ChartCard>
-            )}
+
           </Section>
         )}
 
@@ -467,6 +434,34 @@ export default function Home() {
                 </ResponsiveContainer>
               </ChartCard>
             </div>
+
+            {stats.departureCdf.length > 0 && (
+              <ChartCard
+                title="Cumulative Frequency: Departure Lag"
+                subtitle={`Distribution of ${stats.departurePairs.toLocaleString()} departure lag values (hours)`}
+                tooltip="Cumulative distribution function (CDF) of departure lag. The Y axis shows the percentage of receptacles with a lag ≤ X hours. The steeper the curve, the more concentrated the distribution. The vertical reference line marks 0h (RFID = PREDES). Read: 'X% of receptacles have a departure lag ≤ Y hours'."
+              >
+                <ResponsiveContainer width="100%" height={260}>
+                  <AreaChart data={stats.departureCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
+                    <defs>
+                      <linearGradient id="cdfDepGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={C.indigo} stopOpacity={0.18} />
+                        <stop offset="95%" stopColor={C.indigo} stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="x" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
+                      label={{ value: 'Departure lag (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]}
+                      label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
+                    <ReferenceLine x={0} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: '0h', position: 'top', style: { fontSize: 9, fill: '#94a3b8' } }} />
+                    <ReferenceLine y={50} stroke={C.indigo} strokeDasharray="4 2" strokeOpacity={0.4} label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: C.indigo } }} />
+                    <Tooltip formatter={(v: any) => [`${v}%`, 'Cumulative']} labelFormatter={l => `Lag ≤ ${l}h`} />
+                    <Area type="monotone" dataKey="pct" stroke={C.indigo} strokeWidth={2} fill="url(#cdfDepGrad)" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            )}
 
             <InfoBox color="indigo">
               <span className="font-semibold">Interpretation:</span> The PREDES message is issued by the origin postal operator when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs. The median lag of <strong>+{stats.departureMedianHours}h</strong> is operationally consistent with this workflow. Cases where RFID precedes PREDES ({stats.departureRfidBeforePct}%) may indicate EDI transmission delays or timestamp inconsistencies.
@@ -530,6 +525,34 @@ export default function Home() {
               </ChartCard>
             </div>
 
+            {stats.arrivalCdf.length > 0 && (
+              <ChartCard
+                title="Cumulative Frequency: Arrival Lead/Lag"
+                subtitle={`Distribution of ${stats.arrivalPairs.toLocaleString()} arrival lead/lag values (hours)`}
+                tooltip="Cumulative distribution function (CDF) of arrival lead/lag. Negative values = RFID detected before RESDES (RFID advantage). The Y axis shows the percentage of receptacles with a lead/lag ≤ X hours. The vertical reference line at 0h separates RFID-before (left) from RFID-after (right) cases."
+              >
+                <ResponsiveContainer width="100%" height={260}>
+                  <AreaChart data={stats.arrivalCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
+                    <defs>
+                      <linearGradient id="cdfArrGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={C.emerald} stopOpacity={0.18} />
+                        <stop offset="95%" stopColor={C.emerald} stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="x" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
+                      label={{ value: 'Arrival lead/lag (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]}
+                      label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
+                    <ReferenceLine x={0} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: '0h', position: 'top', style: { fontSize: 9, fill: '#94a3b8' } }} />
+                    <ReferenceLine y={50} stroke={C.emerald} strokeDasharray="4 2" strokeOpacity={0.4} label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: C.emerald } }} />
+                    <Tooltip formatter={(v: any) => [`${v}%`, 'Cumulative']} labelFormatter={l => `Lead/lag ≤ ${l}h`} />
+                    <Area type="monotone" dataKey="pct" stroke={C.emerald} strokeWidth={2} fill="url(#cdfArrGrad)" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            )}
+
             <InfoBox color="emerald">
               <span className="font-semibold">Key Finding:</span> In <strong>{stats.arrivalRfidBeforePct}%</strong> of arrival events, the RFID system detects the receptacle <em>before</em> the RESDES message is generated. This represents the measurable real-time visibility advantage of RFID over EDI at the destination centre — the median lead time is <strong>{Math.abs(stats.arrivalMedianHours).toFixed(1)} hours</strong>.
             </InfoBox>
@@ -583,6 +606,35 @@ export default function Home() {
                   End-to-end transit measurement requires RFID coverage at both origin and destination. Only {stats.transitPairs} fully validated routes were found in the selected date range.
                 </p>
               </div>
+            )}
+
+            {(stats.rfidTransitCdf.length > 0 || stats.ediTransitCdf.length > 0) && (
+              <ChartCard
+                title="Cumulative Frequency: Transit Times"
+                subtitle={`Distribution of ${stats.transitPairs.toLocaleString()} transit time values — RFID physical vs EDI declared`}
+                tooltip="Cumulative distribution function (CDF) comparing RFID-measured physical transit (indigo) vs EDI-declared transit (grey). A curve shifted to the left means shorter transit times. Where the indigo curve is to the left of the grey curve, RFID measures shorter transit than EDI declares. The gap between curves at any percentile quantifies the systematic over/underestimation of EDI."
+              >
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
+                    <defs>
+                      <linearGradient id="cdfRfidGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={C.indigo} stopOpacity={0.12} />
+                        <stop offset="95%" stopColor={C.indigo} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="x" type="number" allowDuplicatedCategory={false} tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
+                      label={{ value: 'Transit time (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]}
+                      label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
+                    <ReferenceLine y={50} strokeDasharray="4 2" strokeOpacity={0.35} stroke="#94a3b8" label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: '#94a3b8' } }} />
+                    <Tooltip formatter={(v: any, name: string) => [`${v}%`, name]} labelFormatter={l => `Transit ≤ ${l}h`} />
+                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                    <Line data={stats.rfidTransitCdf} type="monotone" dataKey="pct" name="RFID Physical" stroke={C.indigo} strokeWidth={2} dot={false} />
+                    <Line data={stats.ediTransitCdf} type="monotone" dataKey="pct" name="EDI Declared" stroke={C.slate} strokeWidth={2} dot={false} strokeDasharray="5 3" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
             )}
 
             <InfoBox color="indigo">

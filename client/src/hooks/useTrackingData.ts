@@ -48,6 +48,11 @@ export interface DashboardStats {
   // Date range of the filtered data
   minDate: string | null;
   maxDate: string | null;
+  // Cumulative frequency distributions
+  departureCdf: { x: number; pct: number }[];
+  arrivalCdf: { x: number; pct: number }[];
+  rfidTransitCdf: { x: number; pct: number }[];
+  ediTransitCdf: { x: number; pct: number }[];
 }
 
 function median(arr: number[]): number {
@@ -69,6 +74,23 @@ function percentile(arr: number[], p: number): number {
   const lower = Math.floor(idx);
   const upper = Math.ceil(idx);
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (idx - lower);
+}
+
+/** Build a cumulative frequency distribution with ~60 evenly-spaced steps */
+function buildCDF(values: number[], steps = 60): { x: number; pct: number }[] {
+  if (values.length === 0) return [];
+  const sorted = [...values].sort((a, b) => a - b);
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  if (min === max) return [{ x: min, pct: 100 }];
+  const stepSize = (max - min) / steps;
+  const result: { x: number; pct: number }[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const x = Math.round((min + i * stepSize) * 10) / 10;
+    const count = sorted.filter(v => v <= x).length;
+    result.push({ x, pct: Math.round((count / sorted.length) * 1000) / 10 });
+  }
+  return result;
 }
 
 function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
@@ -206,6 +228,12 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     ? allDates.reduce((a, b) => (a > b ? a : b)).toISOString().slice(0, 10)
     : null;
 
+  // CDF data
+  const departureCdf = buildCDF(departureLags);
+  const arrivalCdf = buildCDF(arrivalLeads);
+  const rfidTransitCdf = buildCDF(rfidTransits);
+  const ediTransitCdf = buildCDF(ediTransits);
+
   return {
     totalReceptacles: total,
     fullCoverage: full,
@@ -238,6 +266,10 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     arrivalByCentre,
     minDate,
     maxDate,
+    departureCdf,
+    arrivalCdf,
+    rfidTransitCdf,
+    ediTransitCdf,
   };
 }
 
