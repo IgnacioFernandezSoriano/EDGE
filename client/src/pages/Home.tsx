@@ -46,7 +46,7 @@ const COVERAGE_LABEL: Record<string, string> = {
   EDI_ONLY:    'EDI only (no RFID)',
 };
 
-const TABS = ['Overview', 'Coverage', 'Departure', 'Arrival', 'Transit', 'Data'];
+const TABS = ['Overview', 'Departure', 'Arrival', 'Transit', 'Data'];
 
 /* ─── Tooltip ─── */
 function ChartTooltip({ active, payload, label }: any) {
@@ -413,53 +413,6 @@ export default function Home() {
                 </p>
               </ChartCard>
             )}
-          </Section>
-        )}
-
-        {/* ════════════════════ COVERAGE ════════════════════ */}
-        {activeTab === 'Coverage' && (
-          <Section
-            title="Coverage Analysis"
-            subtitle={`Classification of ${events.length.toLocaleString()} receptacles by RFID and EDI data availability`}
-          >
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-              {stats.coverageBreakdown.map(c => (
-                <div key={c.type} className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm text-center">
-                  <div className="kpi-number text-2xl mb-1" style={{ color: COVERAGE_FILL[c.type] }}>{c.count.toLocaleString()}</div>
-                  <div className="text-sm font-bold text-slate-700 mb-1">{c.pct}%</div>
-                  <div className="text-[10px] text-slate-400 leading-tight">{COVERAGE_LABEL[c.type]}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              <ChartCard title="Coverage Breakdown" subtitle="Proportion of each coverage type" tooltip="Detailed donut chart with percentage labels showing the exact proportion of each coverage type. Hover over each segment to see the exact count. The goal is to maximise the FULL (green) segment, which enables the most complete RFID vs EDI comparison.">
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie data={stats.coverageBreakdown} dataKey="count" nameKey="type" cx="50%" cy="50%"
-                      outerRadius={100} innerRadius={55} paddingAngle={2}
-                      label={({ type, pct }) => `${pct}%`} labelLine={{ stroke: '#cbd5e1', strokeWidth: 1 }}>
-                      {stats.coverageBreakdown.map(e => <Cell key={e.type} fill={COVERAGE_FILL[e.type]} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: any, n: any) => [v.toLocaleString(), COVERAGE_LABEL[n] || n]} />
-                    <Legend iconType="circle" iconSize={8} formatter={v => <span className="text-xs text-slate-600">{COVERAGE_LABEL[v] || v}</span>} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              <ChartCard title="Methodology Note" subtitle="How RFID-EDI matching is established" tooltip="Explains the data pipeline: how RFID readings from EPCIS are linked to EDI messages via the ID Relation table, and how the first/last centre rule is applied to define origin and destination for transit analysis.">
-                <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
-                  <p>Each receptacle (<span className="mono-value bg-slate-100 px-1 rounded">s9id</span>) is classified into one of five categories based on the availability of RFID readings in <span className="font-semibold">datos EPCIS</span> and EDI messages in <span className="font-semibold">datos EDI</span>.</p>
-                  <p>The link between systems is established via the <span className="font-semibold">ID Relation</span> table: <span className="mono-value bg-slate-100 px-1 rounded">tag_id</span> in EPCIS maps to <span className="mono-value bg-slate-100 px-1 rounded">tagid</span> in ID Relation (with prefix normalisation), and <span className="mono-value bg-slate-100 px-1 rounded">s9id</span> in ID Relation maps to <span className="mono-value bg-slate-100 px-1 rounded">ean</span> in datos EDI.</p>
-                  <p><span className="font-semibold text-emerald-700">FULL coverage</span> ({stats.fullCoverage.toLocaleString()} receptacles, {Math.round((stats.fullCoverage / stats.totalReceptacles) * 100)}%) enables the complete temporal comparison between physical RFID detection and administrative EDI declarations.</p>
-                  <p><span className="font-semibold text-slate-600">EDI Only</span> ({stats.ediOnly.toLocaleString()} receptacles) represents flows where the postal operator transmits EDI messages but the receptacle did not pass through any RFID-equipped centre in this dataset.</p>
-                  <div className="bg-slate-50 rounded-md p-3 mt-2">
-                    <p className="font-semibold text-slate-700 mb-1">First/last centre rule:</p>
-                    <p>For journey reconstruction, the first RFID centre is used as origin and the last as destination. Intermediate centres are excluded from transit analysis.</p>
-                  </div>
-                </div>
-              </ChartCard>
-            </div>
           </Section>
         )}
 
