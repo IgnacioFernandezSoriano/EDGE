@@ -661,12 +661,13 @@ export default function Home() {
         {activeTab === 'RFID' && (
           <Section
             title="RFID Analysis"
-            subtitle="Complete analysis of RFID data: departures, arrivals and transit — no EDI required."
+            subtitle="Complete analysis based exclusively on RFID data — no EDI required."
           >
-            {/* ── RFID OVERVIEW ── */}
+
+            {/* ── OVERVIEW ── */}
             <div className="mb-2">
               <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                 <KpiCard
                   title="Total RFID Receptacles"
                   value={stats.rfidPureTotal.toLocaleString()}
@@ -679,78 +680,35 @@ export default function Home() {
                   value={stats.rfidDepartureTotal.toLocaleString()}
                   subtitle="with origin centre reading"
                   badge={{ label: 'origin', color: 'blue' }}
-                  tooltip="Receptacles with a valid RFID reading at an identified origin centre. These are the departure events captured by RFID."
+                  tooltip="Receptacles with a valid RFID reading at an identified origin centre."
                 />
                 <KpiCard
                   title="RFID Arrivals"
                   value={stats.rfidArrivalTotal.toLocaleString()}
                   subtitle="with destination centre reading"
                   badge={{ label: 'dest', color: 'green' }}
-                  tooltip="Receptacles with a valid RFID reading at an identified destination centre (different from origin). These are the arrival events captured by RFID."
+                  tooltip="Receptacles with a valid RFID reading at an identified destination centre (different from origin)."
                 />
                 <KpiCard
                   title="End-to-End Pairs"
                   value={stats.rfidPureWithDest.toLocaleString()}
                   subtitle={`${stats.rfidPureTotal > 0 ? Math.round((stats.rfidPureWithDest / stats.rfidPureTotal) * 100) : 0}% of RFID receptacles`}
                   badge={{ label: 'transit pair', color: 'amber' }}
-                  tooltip="Receptacles with RFID readings at two different centres (origin ≠ destination), enabling a direct measurement of physical transit time without any EDI data."
+                  tooltip="Receptacles with RFID readings at two different centres (origin ≠ destination), enabling direct physical transit time measurement."
                 />
               </div>
-            </div>
 
-            {/* RFID by origin country + dest country */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <ChartCard
-                title="Departures by Origin Country"
-                subtitle="Receptacles with RFID origin reading"
-                tooltip="Number of receptacles with an RFID departure reading, grouped by origin country. Reflects RFID sensor coverage at origin postal centres."
-              >
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={stats.rfidDepartureByOriginCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                    <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="n" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
-                      <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              <ChartCard
-                title="Arrivals by Destination Country"
-                subtitle="Receptacles with RFID destination reading"
-                tooltip="Number of receptacles with an RFID arrival reading, grouped by destination country. Reflects RFID sensor coverage at destination postal centres."
-              >
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={stats.rfidArrivalByDestCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                    <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="n" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
-                      <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartCard>
-            </div>
-
-            {/* ── RFID DEPARTURES ── */}
-            <div className="mt-4">
-              <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Departures</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <ChartCard
-                  title="Departures by Origin Centre"
-                  subtitle="RFID last scan at origin centre"
-                  tooltip="Number of receptacles with a valid RFID departure reading at each origin postal centre. The last RFID scan at the origin centre is used as the departure timestamp."
+                  title="Departures by Origin Country"
+                  subtitle="Receptacles with RFID origin reading"
+                  tooltip="Number of receptacles with an RFID departure reading, grouped by origin country."
                 >
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={stats.rfidDepartureByOriginCentre.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={stats.rfidDepartureByOriginCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                      <YAxis type="category" dataKey="centre" tick={{ fontSize: 10, fill: '#64748b' }} width={100} />
+                      <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
                       <Tooltip content={<ChartTooltip />} />
                       <Bar dataKey="n" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
                         <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
@@ -760,15 +718,15 @@ export default function Home() {
                 </ChartCard>
 
                 <ChartCard
-                  title="Arrivals by Destination Centre"
-                  subtitle="RFID first scan at destination centre"
-                  tooltip="Number of receptacles with a valid RFID arrival reading at each destination postal centre. The first RFID scan at the destination centre is used as the arrival timestamp."
+                  title="Arrivals by Destination Country"
+                  subtitle="Receptacles with RFID destination reading"
+                  tooltip="Number of receptacles with an RFID arrival reading, grouped by destination country."
                 >
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={stats.rfidArrivalByDestCentre.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={stats.rfidArrivalByDestCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                      <YAxis type="category" dataKey="centre" tick={{ fontSize: 10, fill: '#64748b' }} width={100} />
+                      <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
                       <Tooltip content={<ChartTooltip />} />
                       <Bar dataKey="n" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
                         <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
@@ -779,8 +737,140 @@ export default function Home() {
               </div>
             </div>
 
-            {/* ── RFID TRANSIT ── */}
-            <div className="mt-4">
+            {/* ── DEPARTURES ── */}
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Departures</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
+                <KpiCard
+                  title="Total RFID Departures"
+                  value={stats.rfidDepartureTotal.toLocaleString()}
+                  subtitle="receptacles with origin reading"
+                  badge={{ label: 'departures', color: 'blue' }}
+                  tooltip="Total receptacles with at least one RFID scan at an identified origin postal centre."
+                />
+                <KpiCard
+                  title="Origin Countries"
+                  value={stats.rfidDepartureByOriginCountry.length.toLocaleString()}
+                  subtitle="distinct origin countries"
+                  badge={{ label: 'countries', color: 'blue' }}
+                  tooltip="Number of distinct origin countries from which RFID departure readings were recorded."
+                />
+                <KpiCard
+                  title="Origin Centres"
+                  value={stats.rfidDepartureByOriginCentre.length.toLocaleString()}
+                  subtitle="distinct origin postal centres"
+                  badge={{ label: 'centres', color: 'blue' }}
+                  tooltip="Number of distinct origin postal centres (IMPC codes) with at least one RFID departure reading."
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <ChartCard
+                  title="Departures by Origin Centre"
+                  subtitle="RFID last scan at origin centre"
+                  tooltip="Number of receptacles with a valid RFID departure reading at each origin postal centre. The last RFID scan at the origin centre is used as the departure timestamp."
+                >
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={stats.rfidDepartureByOriginCentre.slice(0, 12)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                      <YAxis type="category" dataKey="centre" tick={{ fontSize: 10, fill: '#64748b' }} width={110} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="n" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
+                        <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+
+                <ChartCard
+                  title="Departures by Origin Country"
+                  subtitle="Volume of RFID departure readings per country"
+                  tooltip="Breakdown of RFID departure events by origin country. Reflects RFID sensor coverage at origin postal centres."
+                >
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={stats.rfidDepartureByOriginCountry.slice(0, 12)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                      <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="n" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
+                        <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              </div>
+            </div>
+
+            {/* ── ARRIVALS ── */}
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Arrivals</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
+                <KpiCard
+                  title="Total RFID Arrivals"
+                  value={stats.rfidArrivalTotal.toLocaleString()}
+                  subtitle="receptacles with destination reading"
+                  badge={{ label: 'arrivals', color: 'green' }}
+                  tooltip="Total receptacles with at least one RFID scan at an identified destination postal centre."
+                />
+                <KpiCard
+                  title="Destination Countries"
+                  value={stats.rfidArrivalByDestCountry.length.toLocaleString()}
+                  subtitle="distinct destination countries"
+                  badge={{ label: 'countries', color: 'green' }}
+                  tooltip="Number of distinct destination countries where RFID arrival readings were recorded."
+                />
+                <KpiCard
+                  title="Destination Centres"
+                  value={stats.rfidArrivalByDestCentre.length.toLocaleString()}
+                  subtitle="distinct destination postal centres"
+                  badge={{ label: 'centres', color: 'green' }}
+                  tooltip="Number of distinct destination postal centres (IMPC codes) with at least one RFID arrival reading."
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <ChartCard
+                  title="Arrivals by Destination Centre"
+                  subtitle="RFID first scan at destination centre"
+                  tooltip="Number of receptacles with a valid RFID arrival reading at each destination postal centre. The first RFID scan at the destination centre is used as the arrival timestamp."
+                >
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={stats.rfidArrivalByDestCentre.slice(0, 12)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                      <YAxis type="category" dataKey="centre" tick={{ fontSize: 10, fill: '#64748b' }} width={110} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="n" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
+                        <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+
+                <ChartCard
+                  title="Arrivals by Destination Country"
+                  subtitle="Volume of RFID arrival readings per country"
+                  tooltip="Breakdown of RFID arrival events by destination country. Reflects RFID sensor coverage at destination postal centres."
+                >
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={stats.rfidArrivalByDestCountry.slice(0, 12)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                      <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="n" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
+                        <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              </div>
+            </div>
+
+            {/* ── TRANSIT ── */}
+            <div className="mt-6">
               <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Transit</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                 <KpiCard
@@ -795,103 +885,108 @@ export default function Home() {
                   value={`${stats.rfidPureMeanHours}h / ${(stats.rfidPureMeanHours / 24).toFixed(1)}d`}
                   subtitle="average transit time"
                   badge={{ label: 'mean', color: 'blue' }}
-                  tooltip="Average RFID transit time across all end-to-end pairs. The mean is more sensitive to outliers than the median."
+                  tooltip="Average RFID transit time across all end-to-end pairs. More sensitive to outliers than the median."
                 />
                 <KpiCard
                   title="P25"
                   value={`${stats.rfidPureP25}h / ${(stats.rfidPureP25 / 24).toFixed(1)}d`}
                   subtitle="25% of receptacles faster"
                   badge={{ label: 'p25', color: 'green' }}
-                  tooltip="25th percentile: 25% of receptacles with end-to-end RFID readings had a transit time at or below this value."
+                  tooltip="25th percentile: 25% of receptacles had a transit time at or below this value."
                 />
                 <KpiCard
                   title="P75"
                   value={`${stats.rfidPureP75}h / ${(stats.rfidPureP75 / 24).toFixed(1)}d`}
                   subtitle="75% of receptacles faster"
                   badge={{ label: 'p75', color: 'amber' }}
-                  tooltip="75th percentile: 75% of receptacles with end-to-end RFID readings had a transit time at or below this value. The range P25–P75 is the interquartile range (IQR)."
+                  tooltip="75th percentile: 75% of receptacles had a transit time at or below this value. The P25–P75 range is the interquartile range (IQR)."
                 />
               </div>
 
-              {/* Routes table */}
               <ChartCard
                 title="RFID Transit by Route"
                 subtitle={`${stats.rfidPureRoutes.length} routes · sorted by volume`}
                 tooltip="Each row is a unique origin IMPC → destination IMPC pair observed via RFID. Median, min and max are calculated from RFID timestamps only. Logic: last scan at origin → first scan at destination."
               >
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="text-left py-2 pr-4 text-slate-500 font-medium">Route (RFID)</th>
-                      <th className="text-left py-2 pr-4 text-slate-500 font-medium">Origin</th>
-                      <th className="text-left py-2 pr-4 text-slate-500 font-medium">Destination</th>
-                      <th className="text-right py-2 pr-4 text-slate-500 font-medium">n</th>
-                      <th className="text-right py-2 pr-4 text-slate-500 font-medium">Median</th>
-                      <th className="text-right py-2 pr-4 text-slate-500 font-medium">Min</th>
-                      <th className="text-right py-2 text-slate-500 font-medium">Max</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.rfidPureRoutes.map((r, i) => (
-                      <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                        <td className="py-2 pr-4 font-mono text-[10px] text-slate-600">{r.route}</td>
-                        <td className="py-2 pr-4">
-                          <div className="font-medium text-slate-800">{r.origName}</div>
-                          <div className="text-slate-400">{r.origCountry}</div>
-                        </td>
-                        <td className="py-2 pr-4">
-                          <div className="font-medium text-slate-800">{r.destName}</div>
-                          <div className="text-slate-400">{r.destCountry}</div>
-                        </td>
-                        <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.n}</td>
-                        <td className="py-2 pr-4 text-right">
-                          <span className="font-semibold text-indigo-600">{r.medianH}h</span>
-                          <span className="text-slate-400 ml-1">/ {(r.medianH / 24).toFixed(1)}d</span>
-                        </td>
-                        <td className="py-2 pr-4 text-right text-emerald-600">{r.minH}h</td>
-                        <td className="py-2 text-right text-rose-500">{r.maxH}h</td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        <th className="text-left py-2 pr-4 text-slate-500 font-medium">Route (RFID)</th>
+                        <th className="text-left py-2 pr-4 text-slate-500 font-medium">Origin</th>
+                        <th className="text-left py-2 pr-4 text-slate-500 font-medium">Destination</th>
+                        <th className="text-right py-2 pr-4 text-slate-500 font-medium">n</th>
+                        <th className="text-right py-2 pr-4 text-slate-500 font-medium">Median</th>
+                        <th className="text-right py-2 pr-4 text-slate-500 font-medium">Min</th>
+                        <th className="text-right py-2 text-slate-500 font-medium">Max</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {stats.rfidPureRoutes.map((r, i) => (
+                        <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                          <td className="py-2 pr-4 font-mono text-[10px] text-slate-600">{r.route}</td>
+                          <td className="py-2 pr-4">
+                            <div className="font-medium text-slate-800">{r.origName}</div>
+                            <div className="text-slate-400">{r.origCountry}</div>
+                          </td>
+                          <td className="py-2 pr-4">
+                            <div className="font-medium text-slate-800">{r.destName}</div>
+                            <div className="text-slate-400">{r.destCountry}</div>
+                          </td>
+                          <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.n}</td>
+                          <td className="py-2 pr-4 text-right">
+                            <span className="font-semibold text-indigo-600">{r.medianH}h</span>
+                            <span className="text-slate-400 ml-1">/ {(r.medianH / 24).toFixed(1)}d</span>
+                          </td>
+                          <td className="py-2 pr-4 text-right text-emerald-600">{r.minH}h</td>
+                          <td className="py-2 text-right text-rose-500">{r.maxH}h</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </ChartCard>
 
-              {/* CDF */}
-              {stats.rfidPureCdf.length > 0 && (
-                <ChartCard
-                  title="Cumulative Frequency — RFID Transit"
-                  subtitle={`Distribution of RFID transit times across ${stats.rfidPureWithDest} end-to-end pairs`}
-                  tooltip="Each point shows the percentage of receptacles whose RFID transit time is at or below the X-axis value. Logic: last scan at origin → first scan at destination."
-                >
-                  <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={stats.rfidPureCdf} margin={{ left: 0, right: 20, top: 8, bottom: 4 }}>
-                      <defs>
-                        <linearGradient id="rfidPureGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={C.indigo} stopOpacity={0.25} />
-                          <stop offset="95%" stopColor={C.indigo} stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="x" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={v => `${v}h`} label={{ value: 'RFID transit time (h)', position: 'insideBottom', offset: -2, style: { fontSize: 10, fill: '#94a3b8' } }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
-                      <ReferenceLine y={50} strokeDasharray="4 2" strokeOpacity={0.4} stroke="#94a3b8" label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: '#94a3b8' } }} />
-                      <ReferenceLine y={90} strokeDasharray="4 2" strokeOpacity={0.3} stroke="#f59e0b" label={{ value: 'P90', position: 'right', style: { fontSize: 9, fill: '#f59e0b' } }} />
-                      <Tooltip formatter={(v: any) => [`${v}%`, 'Cumulative %']} labelFormatter={l => `Transit ≤ ${l}h (${(Number(l) / 24).toFixed(1)}d)`} />
-                      <Area type="monotone" dataKey="pct" name="Cumulative %" stroke={C.indigo} strokeWidth={2} fill="url(#rfidPureGrad)" dot={false} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-              )}
-
               <InfoBox color="indigo">
-                <span className="font-semibold">Methodology:</span> RFID transit = <span className="mono-value bg-white/60 px-1 rounded">last scan at origin centre → first scan at destination centre</span>. Only receptacles with readings at two <em>different</em> IMPC centres are included. No EDI data required — valid for RFID_ONLY receptacles. Global date and country filters apply.
+                <span className="font-semibold">Methodology:</span> RFID transit = <span className="font-mono bg-white/60 px-1 rounded">last scan at origin centre → first scan at destination centre</span>. Only receptacles with readings at two <em>different</em> IMPC centres are included. No EDI data required — valid for RFID_ONLY receptacles. Global date and country filters apply.
               </InfoBox>
+            </div>
+
+            {/* ── ANALYSIS ── */}
+            <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50/60 p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1 h-5 rounded-full bg-indigo-500" />
+                <h4 className="text-sm font-semibold text-indigo-900">RFID Analysis Summary</h4>
+              </div>
+              <div className="space-y-2 text-sm text-indigo-800 leading-relaxed">
+                <p>
+                  The RFID system captured <strong>{stats.rfidPureTotal.toLocaleString()} receptacles</strong> with at least one reading.
+                  Of these, <strong>{stats.rfidDepartureTotal.toLocaleString()} ({stats.rfidPureTotal > 0 ? Math.round((stats.rfidDepartureTotal / stats.rfidPureTotal) * 100) : 0}%)</strong> have an identified origin centre reading (departure),
+                  and <strong>{stats.rfidArrivalTotal.toLocaleString()} ({stats.rfidPureTotal > 0 ? Math.round((stats.rfidArrivalTotal / stats.rfidPureTotal) * 100) : 0}%)</strong> have an identified destination centre reading (arrival).
+                </p>
+                <p>
+                  End-to-end traceability — receptacles with both origin and destination RFID readings at <em>different</em> centres — stands at <strong>{stats.rfidPureWithDest.toLocaleString()} receptacles ({stats.rfidPureTotal > 0 ? Math.round((stats.rfidPureWithDest / stats.rfidPureTotal) * 100) : 0}%)</strong>.
+                  These pairs yield a median physical transit time of <strong>{stats.rfidPureMedianHours}h ({(stats.rfidPureMedianHours / 24).toFixed(1)} days)</strong>, measured from the last origin scan to the first destination scan.
+                </p>
+                <p>
+                  The interquartile range (P25–P75) spans <strong>{stats.rfidPureP25}h – {stats.rfidPureP75}h</strong>, indicating
+                  {stats.rfidPureP75 - stats.rfidPureP25 < 48
+                    ? ' a relatively concentrated distribution with limited variability across routes.'
+                    : ' significant variability in transit times across routes, suggesting route-specific factors (distance, airline frequency, customs) have a strong influence.'}
+                </p>
+                {stats.rfidDepartureByOriginCountry.length > 0 && (
+                  <p>
+                    The leading origin country by RFID departure volume is <strong>{stats.rfidDepartureByOriginCountry[0].country}</strong> with {stats.rfidDepartureByOriginCountry[0].n} receptacles
+                    {stats.rfidDepartureByOriginCountry.length > 1 ? `, followed by ${stats.rfidDepartureByOriginCountry[1].country} (${stats.rfidDepartureByOriginCountry[1].n})` : ''}.
+                    On the arrival side, the primary destination is <strong>{stats.rfidArrivalByDestCountry[0]?.country || '—'}</strong> with {stats.rfidArrivalByDestCountry[0]?.n || 0} receptacles.
+                  </p>
+                )}
+              </div>
             </div>
 
           </Section>
         )}
+
 
 
         {/* ════════════════════ DATA TABLE ════════════════════ */}
