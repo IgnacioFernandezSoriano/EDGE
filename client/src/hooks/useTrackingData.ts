@@ -53,6 +53,17 @@ export interface DashboardStats {
   arrivalCdf: { x: number; pct: number }[];
   rfidTransitCdf: { x: number; pct: number }[];
   ediTransitCdf: { x: number; pct: number }[];
+  // Pure RFID transit (no EDI dependency)
+  rfidPureTotal: number;
+  rfidPureWithDest: number;
+  rfidPureMedianHours: number;
+  rfidPureMeanHours: number;
+  rfidPureP25: number;
+  rfidPureP75: number;
+  rfidPureRoutes: { route: string; origName: string; destName: string; origCountry: string; destCountry: string; n: number; medianH: number; minH: number; maxH: number }[];
+  rfidPureByOriginCentre: { centre: string; country: string; n: number; medianH: number }[];
+  rfidPureByDestCentre: { centre: string; country: string; n: number; medianH: number }[];
+  rfidPureCdf: { x: number; pct: number }[];
 }
 
 function median(arr: number[]): number {
@@ -234,6 +245,69 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
   const rfidTransitCdf = buildCDF(rfidTransits);
   const ediTransitCdf = buildCDF(ediTransits);
 
+  // ── PURE RFID TRANSIT (origin → dest, no EDI dependency) ──────────────────
+  // Uses rfid_origin_time, rfid_dest_time, rfid_origin_impc, rfid_dest_impc directly from tracking_events
+  const rfidPureData = events.filter(
+    e => e.has_rfid && e.rfid_origin_time && e.rfid_dest_time &&
+         e.rfid_origin_impc && e.rfid_dest_impc &&
+         e.rfid_origin_impc !== e.rfid_dest_impc &&
+         e.rfid_transit_hours !== null && e.rfid_transit_hours > 0
+  );
+  const rfidPureHours = rfidPureData.map(e => e.rfid_transit_hours!);
+
+  // Routes
+  const rfidPureRouteGroups = groupBy(
+    rfidPureData,
+    e => `${e.rfid_origin_impc}→${e.rfid_dest_impc}`
+  );
+  const rfidPureRoutes = Object.entries(rfidPureRouteGroups)
+    .map(([, items]) => {
+      const hours = items.map(e => e.rfid_transit_hours!);
+      const sorted = [...hours].sort((a, b) => a - b);
+      return {
+        route: `${items[0].rfid_origin_impc} → ${items[0].rfid_dest_impc}`,
+        origName: items[0].rfid_origin_centre || items[0].rfid_origin_impc || '',
+        destName: items[0].rfid_dest_centre || items[0].rfid_dest_impc || '',
+        origCountry: normalizeCountry(items[0].rfid_origin_country) || '',
+        destCountry: normalizeCountry(items[0].rfid_dest_country) || '',
+        n: items.length,
+        medianH: Math.round(median(hours) * 10) / 10,
+        minH: Math.round(sorted[0] * 10) / 10,
+        maxH: Math.round(sorted[sorted.length - 1] * 10) / 10,
+      };
+    })
+    .sort((a, b) => b.n - a.n);
+
+  // By origin centre
+  const rfidPureOrigGroups = groupBy(
+    rfidPureData.filter(e => e.rfid_origin_centre),
+    e => e.rfid_origin_centre!
+  );
+  const rfidPureByOriginCentre = Object.entries(rfidPureOrigGroups)
+    .map(([centre, items]) => ({
+      centre,
+      country: normalizeCountry(items[0].rfid_origin_country) || '',
+      n: items.length,
+      medianH: Math.round(median(items.map(e => e.rfid_transit_hours!)) * 10) / 10,
+    }))
+    .sort((a, b) => b.n - a.n);
+
+  // By dest centre
+  const rfidPureDestGroups = groupBy(
+    rfidPureData.filter(e => e.rfid_dest_centre),
+    e => e.rfid_dest_centre!
+  );
+  const rfidPureByDestCentre = Object.entries(rfidPureDestGroups)
+    .map(([centre, items]) => ({
+      centre,
+      country: normalizeCountry(items[0].rfid_dest_country) || '',
+      n: items.length,
+      medianH: Math.round(median(items.map(e => e.rfid_transit_hours!)) * 10) / 10,
+    }))
+    .sort((a, b) => b.n - a.n);
+
+  const rfidPureCdf = buildCDF(rfidPureHours);
+
   return {
     totalReceptacles: total,
     fullCoverage: full,
@@ -270,6 +344,16 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     arrivalCdf,
     rfidTransitCdf,
     ediTransitCdf,
+    rfidPureTotal: events.filter(e => e.has_rfid).length,
+    rfidPureWithDest: rfidPureData.length,
+    rfidPureMedianHours: Math.round(median(rfidPureHours) * 10) / 10,
+    rfidPureMeanHours: Math.round(mean(rfidPureHours) * 10) / 10,
+    rfidPureP25: Math.round(percentile(rfidPureHours, 25) * 10) / 10,
+    rfidPureP75: Math.round(percentile(rfidPureHours, 75) * 10) / 10,
+    rfidPureRoutes,
+    rfidPureByOriginCentre,
+    rfidPureByDestCentre,
+    rfidPureCdf,
   };
 }
 
