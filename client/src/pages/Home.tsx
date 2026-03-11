@@ -17,6 +17,7 @@ import { useTrackingData } from '@/hooks/useTrackingData';
 import { useEpcisData } from '@/hooks/useEpcisData';
 import { KpiCard } from '@/components/KpiCard';
 import { DataTable } from '@/components/DataTable';
+import { EpcisDataTable } from '@/components/EpcisDataTable';
 import { GlobalFilters } from '@/components/GlobalFilters';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { OverviewAnalysis, DepartureAnalysis, ArrivalAnalysis, TransitAnalysis } from '@/components/AnalysisPanel';
@@ -984,12 +985,22 @@ export default function Home() {
                     )}
                   </div>
                 </div>
-              </>
-            )}
-
+                 {/* ════════════════════ RFID DATA TABLE ════════════════════ */}
+                <div className="mt-8">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-1 h-6 rounded-full bg-indigo-500" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-800">RFID Journey Data</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {epcis.journeys.length.toLocaleString()} receptacles from datos EPCIS — one row per unique s9id
+                      </p>
+                    </div>
+                  </div>
+                  <EpcisDataTable journeys={epcis.journeys} dateLabel={dateLabel} />
+                </div>
+              </>)}
           </Section>
         )}
-
         {/* ════════════════════ DATA TABLE ════════════════════ */}
         {activeTab === 'Data' && (
           <Section
@@ -1000,7 +1011,6 @@ export default function Home() {
               {[
                 { key: 'ALL', label: 'All' },
                 { key: 'FULL', label: 'FULL' },
-                { key: 'RFID_ONLY', label: 'RFID Only' },
                 { key: 'EDI_ONLY', label: 'EDI Only' },
                 { key: 'RFID_PREDES', label: 'RFID + PREDES' },
                 { key: 'RFID_RESDES', label: 'RFID + RESDES' },
