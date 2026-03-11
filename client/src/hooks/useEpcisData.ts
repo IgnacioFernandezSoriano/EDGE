@@ -1,28 +1,20 @@
 /**
- * useEpcisData — fetches datos EPCIS + postal_readers from Supabase and computes
- * pure RFID metrics (no EDI dependency whatsoever).
+ * useEpcisData — builds RFID journey data from tracking_events.
  *
- * Logic (per user requirement):
- *   - Join each EPCIS reading to postal_readers via read_point_id
- *     → resolves the physical center_name (groups multiple IMPC readers at same centre)
- *   - Group readings by s9id → identify distinct physical centres visited in time order
- *   - rfid_origin_time  = LAST  reading at the FIRST  physical centre  (departure moment)
- *   - rfid_dest_time    = FIRST reading at the SECOND physical centre  (arrival moment)
- *   - rfid_transit_hours = dest_time − origin_time
+ * Source: tracking_events (has_rfid = true)
+ * Fields used:
+ *   rfid_origin_impc, rfid_origin_country, rfid_origin_centre, rfid_origin_time, rfid_origin_readings
+ *   rfid_dest_impc,   rfid_dest_country,   rfid_dest_centre,   rfid_dest_time,   rfid_dest_readings
+ *   rfid_transit_hours, rfid_total_readings, rfid_intermediate_centres
+ *   s9id, tag_id, coverage_type
  *
- * Filters applied: date range, origin country, destination country
+ * Replaces the previous implementation that queried "datos EPCIS" + postal_readers.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
+import type { TrackingEvent } from '@/lib/supabase';
 
-const SUPABASE_URL = 'https://ewyhmmixqcubqokphebh.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWhtbWl4cWN1YnFva3BoZWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5OTc3MjMsImV4cCI6MjA4ODU3MzcyM30.xMtcrn12c9r0Q_Q0e46Ptsci7Y31YnB5V9MSBHgj20k';
-const EPCIS_HEADERS = {
-  'apikey': SUPABASE_ANON_KEY,
-  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-};
-
-/* ─── Types ─── */
+// Keep these exported so EpcisDataTable and other consumers don't break
 export interface EpcisReading {
   id: string;
   s9id: string;
@@ -90,27 +82,6 @@ export interface EpcisStats {
   dateRange: { min: string; max: string } | null;
 }
 
-/* ─── Country normalization ─── */
-const COUNTRY_NORM: Record<string, string> = {
-  'Hong-Kong': 'Hong Kong',
-  'Turqu\u00eda': 'Turkey',
-  'Brasil': 'Brazil',
-  'Catar': 'Qatar',
-  'Corea del Sur': 'South Korea',
-  'Jap\u00f3n': 'Japan',
-  'Ruman\u00eda': 'Romania',
-  'Singapur': 'Singapore',
-  'Suiza': 'Switzerland',
-  'Tailandia': 'Thailand',
-  'Bosnia y Herzegovina': 'Bosnia and Herzegovina',
-  'Alemania': 'Germany',
-  'Rusia': 'Russia',
-  'But\u00e1n': 'Bhutan',
-};
-function normalizeCountry(c: string): string {
-  return COUNTRY_NORM[c] ?? c;
-}
-
 /* ─── Math helpers ─── */
 function median(arr: number[]): number | null {
   if (!arr.length) return null;
@@ -142,157 +113,62 @@ function buildCDF(values: number[], steps = 60): { x: number; pct: number }[] {
   return result;
 }
 
-/* ─── Fetch helpers ─── */
-async function fetchAllEpcis(): Promise<EpcisReading[]> {
-  const PAGE = 1000;
-  let all: EpcisReading[] = [];
-  let from = 0;
-  while (true) {
-    const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('datos EPCIS')}`);
-    url.searchParams.set('select', 'id,s9id,tag_id,record_time,location,read_point_id,impc_code');
-    url.searchParams.set('order', 'record_time.asc');
-    url.searchParams.set('limit', String(PAGE));
-    url.searchParams.set('offset', String(from));
-    const res = await fetch(url.toString(), { headers: EPCIS_HEADERS });
-    if (!res.ok) throw new Error(`EPCIS fetch error: ${res.status}`);
-    const data: EpcisReading[] = await res.json();
-    if (!data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  return all;
-}
+/* ─── Convert tracking_events rows → RfidJourney ─── */
+function eventsToJourneys(events: TrackingEvent[]): RfidJourney[] {
+  return events
+    .filter(e => e.has_rfid && e.rfid_origin_time && e.rfid_origin_impc)
+    .map(e => {
+      const hasDest = !!(
+        e.rfid_dest_impc &&
+        e.rfid_dest_time &&
+        e.rfid_dest_impc !== e.rfid_origin_impc
+      );
 
-async function fetchPostalReaders(): Promise<PostalReader[]> {
-  const url = `${SUPABASE_URL}/rest/v1/postal_readers?select=read_point_id,impc_code,country,city,center_name,gate&limit=500`;
-  const res = await fetch(url, { headers: EPCIS_HEADERS });
-  if (!res.ok) throw new Error(`postal_readers fetch error: ${res.status}`);
-  return res.json();
-}
+      const centresVisited: string[] = [];
+      if (e.rfid_origin_centre) centresVisited.push(e.rfid_origin_centre);
+      if (e.rfid_intermediate_centres) {
+        const intermediates = Array.isArray(e.rfid_intermediate_centres)
+          ? e.rfid_intermediate_centres
+          : (e.rfid_intermediate_centres as string).split(',').map((s: string) => s.trim());
+        centresVisited.push(...intermediates.filter(Boolean));
+      }
+      if (hasDest && e.rfid_dest_centre && e.rfid_dest_centre !== e.rfid_origin_centre) {
+        centresVisited.push(e.rfid_dest_centre);
+      }
 
-/* ─── Build reader lookup map ─── */
-function buildReaderMap(readers: PostalReader[]): Map<string, ReaderInfo> {
-  const map = new Map<string, ReaderInfo>();
-  for (const r of readers) {
-    map.set(r.read_point_id, {
-      center_name: r.center_name,
-      country: normalizeCountry(r.country),
-      impc_code: r.impc_code,
-    });
-  }
-  return map;
-}
-
-/* ─── Build journeys from raw readings + reader map ─── */
-function buildJourneys(
-  readings: EpcisReading[],
-  readerMap: Map<string, ReaderInfo>,
-): RfidJourney[] {
-  const byS9: Map<string, EpcisReading[]> = new Map();
-  for (const r of readings) {
-    if (!r.s9id) continue;
-    if (!byS9.has(r.s9id)) byS9.set(r.s9id, []);
-    byS9.get(r.s9id)!.push(r);
-  }
-
-  const journeys: RfidJourney[] = [];
-
-  for (const [s9id, recs] of Array.from(byS9.entries())) {
-    recs.sort((a, b) => a.record_time.localeCompare(b.record_time));
-
-    // Resolve each reading to physical centre via postal_readers
-    const resolved = recs.map(r => {
-      const info = readerMap.get(r.read_point_id);
-      if (info) return { r, center_name: info.center_name, country: info.country, impc_code: info.impc_code };
-      // Fallback: parse location field
-      const parts = r.location.split('|').map((s: string) => s.trim());
       return {
-        r,
-        center_name: parts[2] || r.impc_code || 'Unknown',
-        country: normalizeCountry(parts[0] || ''),
-        impc_code: r.impc_code || '',
+        s9id: e.s9id,
+        tag_id: e.tag_id || '',
+        origin_country: e.rfid_origin_country || '',
+        origin_centre: e.rfid_origin_centre || e.rfid_origin_impc || '',
+        origin_impc: e.rfid_origin_impc || '',
+        origin_time: e.rfid_origin_time!,
+        origin_readings: e.rfid_origin_readings ?? 1,
+        dest_country: hasDest ? (e.rfid_dest_country || null) : null,
+        dest_centre: hasDest ? (e.rfid_dest_centre || e.rfid_dest_impc || null) : null,
+        dest_impc: hasDest ? (e.rfid_dest_impc || null) : null,
+        dest_time: hasDest ? e.rfid_dest_time! : null,
+        dest_readings: hasDest ? (e.rfid_dest_readings ?? 1) : 0,
+        transit_hours: hasDest && e.rfid_transit_hours != null && e.rfid_transit_hours > 0
+          ? e.rfid_transit_hours
+          : null,
+        has_destination: hasDest,
+        centres_visited: centresVisited,
       };
     });
-
-    // Identify sequence of distinct physical centres (by center_name)
-    const centresSeq: { center_name: string; country: string; impc_code: string }[] = [];
-    for (const item of resolved) {
-      if (!centresSeq.length || centresSeq[centresSeq.length - 1].center_name !== item.center_name) {
-        centresSeq.push({ center_name: item.center_name, country: item.country, impc_code: item.impc_code });
-      }
-    }
-
-    const originCentre = centresSeq[0]?.center_name || '';
-    const originCountry = centresSeq[0]?.country || '';
-    const originImpc = centresSeq[0]?.impc_code || '';
-
-    // Destination = second distinct physical centre
-    const destCentre = centresSeq.length > 1 ? centresSeq[1].center_name : null;
-    const destCountry = centresSeq.length > 1 ? centresSeq[1].country : null;
-    const destImpc = centresSeq.length > 1 ? centresSeq[1].impc_code : null;
-
-    // Origin readings = all at origin centre; LAST = departure moment
-    const originRecs = resolved.filter(item => item.center_name === originCentre);
-    const originTime = originRecs.reduce(
-      (max, item) => item.r.record_time > max ? item.r.record_time : max,
-      originRecs[0].r.record_time
-    );
-
-    // Destination readings; FIRST = arrival moment
-    let destTime: string | null = null;
-    let destReadings = 0;
-    if (destCentre && destCentre !== originCentre) {
-      const destRecs = resolved.filter(item => item.center_name === destCentre);
-      destReadings = destRecs.length;
-      if (destRecs.length > 0) {
-        destTime = destRecs.reduce(
-          (min, item) => item.r.record_time < min ? item.r.record_time : min,
-          destRecs[0].r.record_time
-        );
-      }
-    }
-
-    let transitHours: number | null = null;
-    if (originTime && destTime) {
-      const diff = (new Date(destTime).getTime() - new Date(originTime).getTime()) / 3600000;
-      if (diff >= 0) transitHours = Math.round(diff * 10) / 10;
-    }
-
-    journeys.push({
-      s9id,
-      tag_id: recs[0].tag_id,
-      origin_country: originCountry,
-      origin_centre: originCentre,
-      origin_impc: originImpc,
-      origin_time: originTime,
-      origin_readings: originRecs.length,
-      dest_country: destCountry,
-      dest_centre: destCentre,
-      dest_impc: destImpc,
-      dest_time: destTime,
-      dest_readings: destReadings,
-      transit_hours: transitHours,
-      has_destination: destCentre !== null && destCentre !== originCentre && destTime !== null,
-      centres_visited: centresSeq.map(c => c.center_name),
-    });
-  }
-
-  return journeys;
 }
 
-/* ─── Compute stats ─── */
-function computeEpcisStats(
-  journeys: RfidJourney[],
-  allReadings: EpcisReading[],
-): EpcisStats {
+/* ─── Compute stats from journeys ─── */
+function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const endToEnd = journeys.filter(j => j.has_destination);
   const transitValues = endToEnd
     .map(j => j.transit_hours!)
     .filter(h => h !== null && h > 0) as number[];
 
-  const times = allReadings.map(r => r.record_time).filter(Boolean).sort();
-  const dateRange = times.length > 0 ? { min: times[0], max: times[times.length - 1] } : null;
+  const times = journeys.map(j => j.origin_time).filter(Boolean).sort();
+  const destTimes = endToEnd.map(j => j.dest_time!).filter(Boolean).sort();
+  const allTimes = [...times, ...destTimes].sort();
+  const dateRange = allTimes.length > 0 ? { min: allTimes[0], max: allTimes[allTimes.length - 1] } : null;
 
   // By origin country
   const originCountryMap = new Map<string, { count: number; endToEnd: number }>();
@@ -341,7 +217,7 @@ function computeEpcisStats(
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count }))
     .sort((a, b) => b.count - a.count);
 
-  // Departure by origin centre (only e2e pairs with valid transit)
+  // Departure by origin centre (e2e pairs with valid transit)
   const depCentreMap = new Map<string, { country: string; hours: number[] }>();
   for (const j of endToEnd) {
     if (j.transit_hours === null || j.transit_hours < 0) continue;
@@ -396,8 +272,10 @@ function computeEpcisStats(
 
   const transitCdf = buildCDF(transitValues);
 
+  const totalReadings = journeys.reduce((sum, j) => sum + j.origin_readings + j.dest_readings, 0);
+
   return {
-    totalReadings: allReadings.length,
+    totalReadings,
     uniqueReceptacles: journeys.length,
     uniqueOrigins: originCountryMap.size,
     uniqueDestinations: destCountryMap.size,
@@ -427,40 +305,36 @@ export interface EpcisFilters {
   dateTo?: string;
   originCountry?: string;
   destCountry?: string;
+  /** Pass allEvents from useTrackingData to avoid double-fetching */
+  allEvents?: TrackingEvent[];
+  loading?: boolean;
+  error?: string | null;
 }
 
 /* ─── Main hook ─── */
 export function useEpcisData(filters: EpcisFilters = {}) {
-  const [allReadings, setAllReadings] = useState<EpcisReading[]>([]);
-  const [readerMap, setReaderMap] = useState<Map<string, ReaderInfo>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Use events passed in from parent (useTrackingData) to avoid double-fetching
+  const allEvents = filters.allEvents ?? [];
+  const loading = filters.loading ?? false;
+  const error = filters.error ?? null;
 
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([fetchAllEpcis(), fetchPostalReaders()])
-      .then(([readings, readers]) => {
-        setAllReadings(readings);
-        setReaderMap(buildReaderMap(readers));
-        setLoading(false);
-      })
-      .catch(e => { setError(e.message); setLoading(false); });
-  }, []);
-
-  // Apply date filter to readings first, then rebuild journeys
-  const dateFilteredReadings = useMemo(() => {
-    let r = allReadings;
-    if (filters.dateFrom) r = r.filter(x => x.record_time >= filters.dateFrom!);
+  // Filter events by date
+  const dateFilteredEvents = useMemo(() => {
+    let evts = allEvents.filter(e => e.has_rfid && e.rfid_origin_time && e.rfid_origin_impc);
+    if (filters.dateFrom) {
+      evts = evts.filter(e => e.rfid_origin_time! >= filters.dateFrom!);
+    }
     if (filters.dateTo) {
       const to = filters.dateTo + 'T23:59:59Z';
-      r = r.filter(x => x.record_time <= to);
+      evts = evts.filter(e => e.rfid_origin_time! <= to);
     }
-    return r;
-  }, [allReadings, filters.dateFrom, filters.dateTo]);
+    return evts;
+  }, [allEvents, filters.dateFrom, filters.dateTo]);
 
+  // Build journeys from date-filtered events
   const dateFilteredJourneys = useMemo(
-    () => buildJourneys(dateFilteredReadings, readerMap),
-    [dateFilteredReadings, readerMap]
+    () => eventsToJourneys(dateFilteredEvents),
+    [dateFilteredEvents]
   );
 
   // Available countries (from date-filtered journeys)
@@ -473,7 +347,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     [dateFilteredJourneys]
   );
 
-  // Apply country filters to journeys
+  // Apply country filters
   const filteredJourneys = useMemo(() => {
     let j = dateFilteredJourneys;
     if (filters.originCountry && filters.originCountry !== 'ALL') {
@@ -485,15 +359,9 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     return j;
   }, [dateFilteredJourneys, filters.originCountry, filters.destCountry]);
 
-  // Filtered readings (for total count display)
-  const filteredReadings = useMemo(() => {
-    const s9ids = new Set(filteredJourneys.map(j => j.s9id));
-    return dateFilteredReadings.filter(r => (s9ids as Set<string>).has(r.s9id));
-  }, [dateFilteredReadings, filteredJourneys]);
-
   const stats = useMemo(
-    () => computeEpcisStats(filteredJourneys, filteredReadings),
-    [filteredJourneys, filteredReadings]
+    () => computeEpcisStats(filteredJourneys),
+    [filteredJourneys]
   );
 
   return {
