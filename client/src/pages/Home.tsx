@@ -141,6 +141,7 @@ export default function Home() {
   const {
     events, allEvents, stats, loading, error,
     dateRange, setDateRange, allDataBounds,
+    effectiveDateRange,
     originCountry, setOriginCountry,
     destCountry, setDestCountry,
     allOriginCountries, allDestCountries,
@@ -214,7 +215,9 @@ export default function Home() {
               <div className="hidden lg:block border-l border-slate-200 pl-3">
                 <p className="text-xs font-semibold text-slate-700 leading-tight">RFID-EDI Analysis</p>
                 <p className="text-[10px] text-slate-400 leading-tight">
-                  Dec 2025 – Mar 2026 · <span className="mono-value">{events.length.toLocaleString()}</span>
+                  {effectiveDateRange.from && effectiveDateRange.to
+                    ? `${effectiveDateRange.from} – ${effectiveDateRange.to}`
+                    : 'Jan 2026 – Mar 2026'} · <span className="mono-value">{events.length.toLocaleString()}</span>
                   {events.length !== allEvents.length && (
                     <span className="text-indigo-500"> / {allEvents.length.toLocaleString()}</span>
                   )} receptacles
@@ -286,7 +289,7 @@ export default function Home() {
         {activeTab === 'Overview' && (
           <Section
             title="Dashboard Overview"
-            subtitle={`RFID vs EDI tracking performance summary for ${events.length.toLocaleString()} receptacles${dateRange.from || dateRange.to ? ' (filtered)' : ' · Dec 2025 – Mar 2026'}`}
+            subtitle={`RFID vs EDI tracking performance summary for ${events.length.toLocaleString()} receptacles${dateRange.from || dateRange.to ? ' (filtered)' : effectiveDateRange.from && effectiveDateRange.to ? ` · ${effectiveDateRange.from} – ${effectiveDateRange.to}` : ' · Jan 2026 – Mar 2026'}`}
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <KpiCard
@@ -699,7 +702,7 @@ export default function Home() {
         <div className="container py-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
           <div className="flex items-center gap-2">
             <img src={EDGE_LOGO} alt="EDGE by GMS" className="h-5 w-auto object-contain opacity-60" />
-            <span>RFID-EDI Analysis Dashboard · Dec 2025 – Mar 2026</span>
+            <span>RFID-EDI Analysis Dashboard · {effectiveDateRange.from && effectiveDateRange.to ? `${effectiveDateRange.from} – ${effectiveDateRange.to}` : 'Jan 2026 – Mar 2026'}</span>
           </div>
           <span className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />

@@ -413,9 +413,44 @@ export function useTrackingData() {
     };
   }, [allEvents]);
 
+  /**
+   * Effective date range = most restrictive intersection between:
+   *   RFID (EPCIS): rfid_origin_time / rfid_dest_time
+   *   EDI  (EAN):   predes_time / redes_time
+   * Start = max(rfid_start, edi_start)  — latest start
+   * End   = min(rfid_end,   edi_end)    — earliest end
+   */
+  const effectiveDateRange = useMemo(() => {
+    if (allEvents.length === 0) return { from: null, to: null, rfidFrom: null, rfidTo: null, ediFrom: null, ediTo: null };
+
+    const rfidDates = allEvents
+      .flatMap(e => [e.rfid_origin_time, e.rfid_dest_time])
+      .filter(Boolean)
+      .map(t => t!.slice(0, 10));
+    const ediDates = allEvents
+      .flatMap(e => [e.predes_time, e.redes_time])
+      .filter(Boolean)
+      .map(t => t!.slice(0, 10));
+
+    if (rfidDates.length === 0 || ediDates.length === 0)
+      return { from: null, to: null, rfidFrom: null, rfidTo: null, ediFrom: null, ediTo: null };
+
+    const rfidFrom = rfidDates.reduce((a, b) => (a < b ? a : b));
+    const rfidTo   = rfidDates.reduce((a, b) => (a > b ? a : b));
+    const ediFrom  = ediDates.reduce((a, b) => (a < b ? a : b));
+    const ediTo    = ediDates.reduce((a, b) => (a > b ? a : b));
+
+    // Intersection: latest start, earliest end
+    const from = rfidFrom > ediFrom ? rfidFrom : ediFrom;
+    const to   = rfidTo   < ediTo   ? rfidTo   : ediTo;
+
+    return { from, to, rfidFrom, rfidTo, ediFrom, ediTo };
+  }, [allEvents]);
+
   return {
     events,
     allEvents,
+    effectiveDateRange,
     stats,
     loading,
     error,
