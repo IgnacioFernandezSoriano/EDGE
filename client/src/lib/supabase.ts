@@ -1,16 +1,32 @@
 // Supabase client for EDGE RFID-EDI Dashboard
 // Connects to tracking_events table and supporting tables
 
-const SUPABASE_URL = 'https://ewyhmmixqcubqokphebh.supabase.co';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL      = 'https://ewyhmmixqcubqokphebh.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWhtbWl4cWN1YnFva3BoZWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5OTc3MjMsImV4cCI6MjA4ODU3MzcyM30.xMtcrn12c9r0Q_Q0e46Ptsci7Y31YnB5V9MSBHgj20k';
 
-const headers = {
-  'apikey': SUPABASE_ANON_KEY,
-  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-  'Content-Type': 'application/json',
-};
+// Cliente SDK de Supabase — gestiona sesión, tokens y RLS automáticamente
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+});
+
+// Helper: obtener las cabeceras con el token del usuario autenticado
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token ?? SUPABASE_ANON_KEY;
+  return {
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+}
 
 async function fetchAll(table: string, params: Record<string, string> = {}): Promise<any[]> {
+  const headers = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}`);
   url.searchParams.set('select', params.select || '*');
   if (params.order) url.searchParams.set('order', params.order);
@@ -90,14 +106,10 @@ function applyIdRelationFilters(
 ) {
   if (dateFrom) url.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
   if (dateTo)   url.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
-  // Filter by origin IMPC: s9id starts with one of the origin codes (positions 0-6)
   if (originImpcCodes && originImpcCodes.length > 0) {
-    // Use 'or' filter: s9id.like.INBOMA*,s9id.like.INBOMB*
     const orFilter = originImpcCodes.map(c => `s9id.like.${c}*`).join(',');
     url.searchParams.set('or', `(${orFilter})`);
   }
-  // Filter by dest IMPC: s9id has dest code at positions 6-12
-  // We can't do substring filter directly, so we filter client-side below for dest
 }
 
 export async function fetchMatchedTagsCount(
@@ -106,14 +118,12 @@ export async function fetchMatchedTagsCount(
   originImpcCodes?: string[],
   destImpcCodes?: string[]
 ): Promise<{ count: number; minDate: string | null; maxDate: string | null }> {
+  const headers = await getAuthHeaders();
   const baseUrl = `${SUPABASE_URL}/rest/v1/${encodeURIComponent('ID Relation')}`;
   const hasDestFilter = destImpcCodes && destImpcCodes.length > 0;
   const hasOriginFilter = originImpcCodes && originImpcCodes.length > 0;
 
-  // If we have a dest filter (or both), we need to fetch all matching s9ids and filter client-side
-  // because PostgREST doesn't support substring match at offset 6
   if (hasDestFilter) {
-    // Fetch all s9ids with date + optional origin filter, then filter dest client-side
     const fetchUrl = new URL(baseUrl);
     fetchUrl.searchParams.set('select', 's9id,timestamp');
     if (dateFrom) fetchUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
@@ -122,12 +132,10 @@ export async function fetchMatchedTagsCount(
       const orFilter = originImpcCodes!.map(c => `s9id.like.${c}*`).join(',');
       fetchUrl.searchParams.set('or', `(${orFilter})`);
     }
-    // Fetch up to 10000 records (ID Relation has 6323 total)
     fetchUrl.searchParams.set('limit', '10000');
     const res = await fetch(fetchUrl.toString(), { headers });
     if (!res.ok) return { count: 0, minDate: null, maxDate: null };
     const rows: { s9id: string; timestamp: string }[] = await res.json();
-    // Filter by dest IMPC at positions 6-12 of s9id
     const filtered = rows.filter(r => destImpcCodes!.some(c => r.s9id.slice(6, 12).toUpperCase() === c.toUpperCase()));
     const count = filtered.length;
     if (count === 0) return { count: 0, minDate: null, maxDate: null };
@@ -135,7 +143,6 @@ export async function fetchMatchedTagsCount(
     return { count, minDate: timestamps[0].slice(0, 10), maxDate: timestamps[timestamps.length - 1].slice(0, 10) };
   }
 
-  // No dest filter — use server-side count
   const countUrl = new URL(baseUrl);
   countUrl.searchParams.set('select', 'id');
   if (dateFrom) countUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
@@ -151,7 +158,7 @@ export async function fetchMatchedTagsCount(
   const rangeHeader = countRes.headers.get('content-range') || '';
   const countMatch = rangeHeader.match(/\/(\d+)$/);
   const count = countMatch ? parseInt(countMatch[1], 10) : 0;
-  // Min date
+
   const minUrl = new URL(baseUrl);
   minUrl.searchParams.set('select', 'timestamp');
   minUrl.searchParams.set('order', 'timestamp.asc');
@@ -165,7 +172,7 @@ export async function fetchMatchedTagsCount(
   const minRes = await fetch(minUrl.toString(), { headers });
   const minData = minRes.ok ? await minRes.json() : [];
   const minDate = minData[0]?.timestamp ? minData[0].timestamp.slice(0, 10) : null;
-  // Max date
+
   const maxUrl = new URL(baseUrl);
   maxUrl.searchParams.set('select', 'timestamp');
   maxUrl.searchParams.set('order', 'timestamp.desc');
@@ -179,6 +186,7 @@ export async function fetchMatchedTagsCount(
   const maxRes = await fetch(maxUrl.toString(), { headers });
   const maxData = maxRes.ok ? await maxRes.json() : [];
   const maxDate = maxData[0]?.timestamp ? maxData[0].timestamp.slice(0, 10) : null;
+
   return { count, minDate, maxDate };
 }
 
