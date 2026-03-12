@@ -192,9 +192,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const allTimes = [...times, ...destTimes].sort();
   const dateRange = allTimes.length > 0 ? { min: allTimes[0], max: allTimes[allTimes.length - 1] } : null;
 
-  // By origin country
+  // By origin country — only journeys with actual RFID reading at origin (origin_readings > 0)
+  const journeysWithOrigin = journeys.filter(j => j.origin_readings > 0 && j.origin_impc);
   const originCountryMap = new Map<string, { count: number; endToEnd: number }>();
-  for (const j of journeys) {
+  for (const j of journeysWithOrigin) {
     const c = j.origin_country || 'Unknown';
     if (!originCountryMap.has(c)) originCountryMap.set(c, { count: 0, endToEnd: 0 });
     const v = originCountryMap.get(c)!;
@@ -215,9 +216,9 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .map(([country, count]) => ({ country, count }))
     .sort((a, b) => b.count - a.count);
 
-  // By origin centre
+  // By origin centre — only journeys with actual RFID reading at origin
   const originCentreMap = new Map<string, { country: string; count: number; endToEnd: number }>();
-  for (const j of journeys) {
+  for (const j of journeysWithOrigin) {
     const key = j.origin_centre || 'Unknown';
     if (!originCentreMap.has(key)) originCentreMap.set(key, { country: j.origin_country, count: 0, endToEnd: 0 });
     const v = originCentreMap.get(key)!;
