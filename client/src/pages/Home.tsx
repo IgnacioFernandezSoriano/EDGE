@@ -156,11 +156,31 @@ export default function Home() {
 
   /* Matched Tags count from ID Relation table */
   const [matchedTagsData, setMatchedTagsData] = useState<{ count: number; minDate: string | null; maxDate: string | null } | null>(null);
+  // Build country→IMPC map from allEvents
+  const countryToImpc = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    for (const e of allEvents) {
+      if (e.predes_origin_country && e.predes_origin_impc) {
+        if (!map[e.predes_origin_country]) map[e.predes_origin_country] = new Set();
+        map[e.predes_origin_country].add(e.predes_origin_impc);
+      }
+      if (e.redes_dest_country && e.redes_dest_impc) {
+        if (!map[e.redes_dest_country]) map[e.redes_dest_country] = new Set();
+        map[e.redes_dest_country].add(e.redes_dest_impc);
+      }
+    }
+    return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, Array.from(v)]));
+  }, [allEvents]);
   useEffect(() => {
-    fetchMatchedTagsCount(dateRange.from || undefined, dateRange.to || undefined)
+    // Use tracking_events date bounds when no date filter is active
+    const dateFrom = dateRange.from || allDataBounds.min || undefined;
+    const dateTo = dateRange.to || allDataBounds.max || undefined;
+    const originImpcCodes = originCountry ? (countryToImpc[originCountry] || []) : undefined;
+    const destImpcCodes = destCountry ? (countryToImpc[destCountry] || []) : undefined;
+    fetchMatchedTagsCount(dateFrom, dateTo, originImpcCodes, destImpcCodes)
       .then(setMatchedTagsData)
       .catch(() => setMatchedTagsData(null));
-  }, [dateRange.from, dateRange.to]);
+  }, [dateRange.from, dateRange.to, originCountry, destCountry, countryToImpc, allDataBounds.min, allDataBounds.max]);
 
   /* RFID tab data — derived from tracking_events (no separate fetch) */
   const epcis = useEpcisData({

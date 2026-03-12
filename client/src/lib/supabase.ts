@@ -81,16 +81,69 @@ export interface TrackingEvent {
 }
 
 /** Fetch count of ID Relation records within a date range */
+function applyIdRelationFilters(
+  url: URL,
+  dateFrom?: string,
+  dateTo?: string,
+  originImpcCodes?: string[],
+  destImpcCodes?: string[]
+) {
+  if (dateFrom) url.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   url.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
+  // Filter by origin IMPC: s9id starts with one of the origin codes (positions 0-6)
+  if (originImpcCodes && originImpcCodes.length > 0) {
+    // Use 'or' filter: s9id.like.INBOMA*,s9id.like.INBOMB*
+    const orFilter = originImpcCodes.map(c => `s9id.like.${c}*`).join(',');
+    url.searchParams.set('or', `(${orFilter})`);
+  }
+  // Filter by dest IMPC: s9id has dest code at positions 6-12
+  // We can't do substring filter directly, so we filter client-side below for dest
+}
+
 export async function fetchMatchedTagsCount(
   dateFrom?: string,
-  dateTo?: string
+  dateTo?: string,
+  originImpcCodes?: string[],
+  destImpcCodes?: string[]
 ): Promise<{ count: number; minDate: string | null; maxDate: string | null }> {
   const baseUrl = `${SUPABASE_URL}/rest/v1/${encodeURIComponent('ID Relation')}`;
-  // Count query
+  const hasDestFilter = destImpcCodes && destImpcCodes.length > 0;
+  const hasOriginFilter = originImpcCodes && originImpcCodes.length > 0;
+
+  // If we have a dest filter (or both), we need to fetch all matching s9ids and filter client-side
+  // because PostgREST doesn't support substring match at offset 6
+  if (hasDestFilter) {
+    // Fetch all s9ids with date + optional origin filter, then filter dest client-side
+    const fetchUrl = new URL(baseUrl);
+    fetchUrl.searchParams.set('select', 's9id,timestamp');
+    if (dateFrom) fetchUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
+    if (dateTo)   fetchUrl.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
+    if (hasOriginFilter) {
+      const orFilter = originImpcCodes!.map(c => `s9id.like.${c}*`).join(',');
+      fetchUrl.searchParams.set('or', `(${orFilter})`);
+    }
+    // Fetch up to 10000 records (ID Relation has 6323 total)
+    fetchUrl.searchParams.set('limit', '10000');
+    const res = await fetch(fetchUrl.toString(), { headers });
+    if (!res.ok) return { count: 0, minDate: null, maxDate: null };
+    const rows: { s9id: string; timestamp: string }[] = await res.json();
+    // Filter by dest IMPC at positions 6-12 of s9id
+    const filtered = rows.filter(r => destImpcCodes!.some(c => r.s9id.slice(6, 12).toUpperCase() === c.toUpperCase()));
+    const count = filtered.length;
+    if (count === 0) return { count: 0, minDate: null, maxDate: null };
+    const timestamps = filtered.map(r => r.timestamp).sort();
+    return { count, minDate: timestamps[0].slice(0, 10), maxDate: timestamps[timestamps.length - 1].slice(0, 10) };
+  }
+
+  // No dest filter — use server-side count
   const countUrl = new URL(baseUrl);
   countUrl.searchParams.set('select', 'id');
   if (dateFrom) countUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
   if (dateTo)   countUrl.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
+  if (hasOriginFilter) {
+    const orFilter = originImpcCodes!.map(c => `s9id.like.${c}*`).join(',');
+    countUrl.searchParams.set('or', `(${orFilter})`);
+  }
   const countRes = await fetch(countUrl.toString(), {
     headers: { ...headers, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' },
   });
@@ -98,23 +151,31 @@ export async function fetchMatchedTagsCount(
   const rangeHeader = countRes.headers.get('content-range') || '';
   const countMatch = rangeHeader.match(/\/(\d+)$/);
   const count = countMatch ? parseInt(countMatch[1], 10) : 0;
-  // Min date query
+  // Min date
   const minUrl = new URL(baseUrl);
   minUrl.searchParams.set('select', 'timestamp');
   minUrl.searchParams.set('order', 'timestamp.asc');
   minUrl.searchParams.set('limit', '1');
   if (dateFrom) minUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
   if (dateTo)   minUrl.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
+  if (hasOriginFilter) {
+    const orFilter = originImpcCodes!.map(c => `s9id.like.${c}*`).join(',');
+    minUrl.searchParams.set('or', `(${orFilter})`);
+  }
   const minRes = await fetch(minUrl.toString(), { headers });
   const minData = minRes.ok ? await minRes.json() : [];
   const minDate = minData[0]?.timestamp ? minData[0].timestamp.slice(0, 10) : null;
-  // Max date query
+  // Max date
   const maxUrl = new URL(baseUrl);
   maxUrl.searchParams.set('select', 'timestamp');
   maxUrl.searchParams.set('order', 'timestamp.desc');
   maxUrl.searchParams.set('limit', '1');
   if (dateFrom) maxUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
   if (dateTo)   maxUrl.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
+  if (hasOriginFilter) {
+    const orFilter = originImpcCodes!.map(c => `s9id.like.${c}*`).join(',');
+    maxUrl.searchParams.set('or', `(${orFilter})`);
+  }
   const maxRes = await fetch(maxUrl.toString(), { headers });
   const maxData = maxRes.ok ? await maxRes.json() : [];
   const maxDate = maxData[0]?.timestamp ? maxData[0].timestamp.slice(0, 10) : null;
