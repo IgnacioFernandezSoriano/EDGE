@@ -270,20 +270,42 @@ export default function Home() {
             </div>
 
             {/* Nav tabs — desktop */}
-            <nav className="hidden md:flex items-center gap-0.5">
-              {TABS.map(tab => (
+            <nav className="hidden md:flex items-end gap-3">
+              {/* RFID standalone tab */}
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[9px] font-semibold uppercase tracking-widest text-indigo-400 px-1">RFID</span>
                 <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => setActiveTab('RFID')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150 ${
-                    activeTab === tab
+                    activeTab === 'RFID'
                       ? 'bg-indigo-600 text-white shadow-sm'
                       : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  {tab}
+                  RFID
                 </button>
-              ))}
+              </div>
+              {/* Divider */}
+              <div className="w-px h-7 bg-slate-200 self-center" />
+              {/* EDI / RFID Benchmark group */}
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[9px] font-semibold uppercase tracking-widest text-amber-500 px-1">EDI / RFID Benchmark</span>
+                <div className="flex items-center gap-0.5">
+                  {['Departure', 'Arrival', 'Transit', 'Data'].map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150 ${
+                        activeTab === tab
+                          ? 'bg-amber-500 text-white shadow-sm'
+                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </nav>
 
             {/* Mobile tab select */}
