@@ -84,8 +84,9 @@ export interface TrackingEvent {
 export async function fetchMatchedTagsCount(dateFrom?: string, dateTo?: string): Promise<number> {
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('ID Relation')}`);
   url.searchParams.set('select', 'id');
-  if (dateFrom) url.searchParams.set('timestamp', `gte.${dateFrom}T00:00:00`);
-  if (dateTo)   url.searchParams.set('timestamp', `lte.${dateTo}T23:59:59`);
+  // Use append to allow multiple filters on the same column
+  if (dateFrom) url.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   url.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
   const res = await fetch(url.toString(), {
     headers: { ...headers, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' },
   });
