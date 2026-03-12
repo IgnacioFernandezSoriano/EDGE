@@ -255,13 +255,56 @@ export function DataTable({ events, filterCoverage, dateLabel }: DataTableProps)
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-slate-500">
-          <span>Page {page + 1} of {totalPages} · {filtered.length.toLocaleString()} records</span>
-          <div className="flex gap-1">
-            <button onClick={() => setPage(0)} disabled={page === 0} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">«</button>
-            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">‹</button>
-            <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">›</button>
-            <button onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">»</button>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-slate-600">
+            Página <span className="font-bold text-slate-800">{page + 1}</span> de <span className="font-bold text-slate-800">{totalPages}</span>
+            <span className="ml-2 text-slate-400">·</span>
+            <span className="ml-2 text-slate-500">{filtered.length.toLocaleString()} registros</span>
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage(0)}
+              disabled={page === 0}
+              title="Primera página"
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 text-base font-semibold shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 active:scale-95"
+            >«</button>
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              title="Página anterior"
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 text-base font-semibold shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 active:scale-95"
+            >‹</button>
+            {/* Page number pills */}
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let p: number;
+              if (totalPages <= 5) p = i;
+              else if (page < 3) p = i;
+              else if (page > totalPages - 4) p = totalPages - 5 + i;
+              else p = page - 2 + i;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`h-9 min-w-[2.25rem] px-2 flex items-center justify-center rounded-lg border text-sm font-semibold shadow-sm transition-all active:scale-95 ${
+                    p === page
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-200'
+                      : 'bg-white border-slate-300 text-slate-700 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700'
+                  }`}
+                >{p + 1}</button>
+              );
+            })}
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              title="Página siguiente"
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 text-base font-semibold shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 active:scale-95"
+            >›</button>
+            <button
+              onClick={() => setPage(totalPages - 1)}
+              disabled={page >= totalPages - 1}
+              title="Última página"
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 text-base font-semibold shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 active:scale-95"
+            >»</button>
           </div>
         </div>
       )}
