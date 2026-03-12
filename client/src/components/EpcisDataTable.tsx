@@ -193,7 +193,7 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
 
       {/* ── Table ── */}
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full text-xs border-collapse">
+        <table className="min-w-full text-xs border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               {/* Group headers */}
@@ -260,8 +260,8 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
                 className={`border-b border-slate-100 hover:bg-slate-50/60 transition-colors ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}
               >
                 {/* Identity */}
-                <td className="px-3 py-2 font-mono text-slate-700 max-w-[200px] truncate" title={j.s9id}>{j.s9id}</td>
-                <td className="px-3 py-2 font-mono text-slate-400 max-w-[140px] truncate border-r border-slate-200" title={j.tag_id || ''}>{truncTag(j.tag_id)}</td>
+                <td className="px-3 py-2 font-mono text-slate-700 whitespace-nowrap" title={j.s9id}>{j.s9id}</td>
+                <td className="px-3 py-2 font-mono text-slate-400 whitespace-nowrap border-r border-slate-200" title={j.tag_id || ''}>{j.tag_id || '—'}</td>
                 {/* Origin */}
                 <td className="px-3 py-2 text-slate-700 bg-indigo-50/20">{j.origin_country || '—'}</td>
                 <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate bg-indigo-50/20" title={j.origin_centre}>{j.origin_centre || '—'}</td>
