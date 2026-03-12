@@ -55,6 +55,7 @@ export interface RfidJourney {
   dest_readings: number;
   transit_hours: number | null;
   has_destination: boolean;
+  is_both_rfid: boolean;  // true only when rfid_case = BOTH (origin + dest RFID readings)
   centres_visited: string[];
 }
 
@@ -175,6 +176,7 @@ function eventsToJourneys(events: TrackingEvent[]): RfidJourney[] {
           ? e.rfid_transit_hours
           : null,
         has_destination: hasDest,
+        is_both_rfid: rfidCase === 'BOTH',
         centres_visited: centresVisited,
       };
     });
@@ -183,6 +185,7 @@ function eventsToJourneys(events: TrackingEvent[]): RfidJourney[] {
 /* ─── Compute stats from journeys ─── */
 function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const endToEnd = journeys.filter(j => j.has_destination);
+  const bothRfid  = journeys.filter(j => j.is_both_rfid);
   const transitValues = endToEnd
     .map(j => j.transit_hours!)
     .filter(h => h !== null && h > 0) as number[];
@@ -306,8 +309,8 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     withDestReading,
     uniqueOrigins: originCountryMap.size,
     uniqueDestinations: destCountryMap.size,
-    endToEndPairs: endToEnd.length,
-    endToEndPct: journeys.length > 0 ? Math.round(endToEnd.length / journeys.length * 100) : 0,
+    endToEndPairs: bothRfid.length,
+    endToEndPct: journeys.length > 0 ? Math.round(bothRfid.length / journeys.length * 100) : 0,
     medianTransitHours: transitValues.length > 0 ? Math.round((median(transitValues) ?? 0) * 10) / 10 : null,
     meanTransitHours: transitValues.length > 0 ? Math.round(transitValues.reduce((a, b) => a + b, 0) / transitValues.length * 10) / 10 : null,
     p25TransitHours: transitValues.length > 0 ? Math.round((percentile(transitValues, 25) ?? 0) * 10) / 10 : null,

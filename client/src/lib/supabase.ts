@@ -80,6 +80,21 @@ export interface TrackingEvent {
   full_route_validated: boolean | null;
 }
 
+/** Fetch count of ID Relation records within a date range */
+export async function fetchMatchedTagsCount(dateFrom?: string, dateTo?: string): Promise<number> {
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('ID Relation')}`);
+  url.searchParams.set('select', 'id');
+  if (dateFrom) url.searchParams.set('timestamp', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   url.searchParams.set('timestamp', `lte.${dateTo}T23:59:59`);
+  const res = await fetch(url.toString(), {
+    headers: { ...headers, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' },
+  });
+  if (!res.ok) return 0;
+  const range = res.headers.get('content-range') || '';
+  const match = range.match(/\/(\d+)$/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
 export async function fetchTrackingEvents(): Promise<TrackingEvent[]> {
   return fetchAll('tracking_events', {
     select: '*',

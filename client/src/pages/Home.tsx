@@ -6,7 +6,7 @@
  * Features: global date filter, CSV export, EDGE by GMS logo
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, ReferenceLine, LabelList,
@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { useTrackingData } from '@/hooks/useTrackingData';
 import { useEpcisData } from '@/hooks/useEpcisData';
+import { fetchMatchedTagsCount } from '@/lib/supabase';
 import { KpiCard } from '@/components/KpiCard';
 import { DataTable } from '@/components/DataTable';
 import { EpcisDataTable } from '@/components/EpcisDataTable';
@@ -152,6 +153,14 @@ export default function Home() {
   } = useTrackingData();
   const [activeTab, setActiveTab] = useState('RFID');
   const [tableFilter, setTableFilter] = useState('ALL');
+
+  /* Matched Tags count from ID Relation table */
+  const [matchedTagsCount, setMatchedTagsCount] = useState<number | null>(null);
+  useEffect(() => {
+    fetchMatchedTagsCount(dateRange.from || undefined, dateRange.to || undefined)
+      .then(setMatchedTagsCount)
+      .catch(() => setMatchedTagsCount(null));
+  }, [dateRange.from, dateRange.to]);
 
   /* RFID tab data — derived from tracking_events (no separate fetch) */
   const epcis = useEpcisData({
@@ -654,7 +663,14 @@ export default function Home() {
                 {/* ── OVERVIEW ── */}
                 <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-5">
+                    <KpiCard
+                      title="Matched Tags"
+                      value={matchedTagsCount != null ? matchedTagsCount.toLocaleString() : '—'}
+                      subtitle="tag ID ↔ s9id pairs in ID Relation"
+                      badge={{ label: 'id-match', color: 'blue' }}
+                      tooltip="Number of records in the ID Relation table for the selected date period. Each record links a physical RFID tag ID to a receptacle s9id barcode."
+                    />
                     <KpiCard
                       title="Total RFID Receptacles"
                       value={epcis.stats.uniqueReceptacles.toLocaleString()}
@@ -677,11 +693,11 @@ export default function Home() {
                       tooltip="Receptacles with rfid_dest_impc set in tracking_events (BOTH + DEST_ONLY cases)."
                     />
                     <KpiCard
-                      title="End-to-End Coverage"
-                      value={`${epcis.stats.endToEndPct}%`}
-                      subtitle={`${epcis.stats.endToEndPairs.toLocaleString()} of ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles`}
+                      title="End-to-End Pairs"
+                      value={epcis.stats.endToEndPairs.toLocaleString()}
+                      subtitle="RFID reading at both origin & destination"
                       badge={{ label: 'e2e', color: 'amber' }}
-                      tooltip="Receptacles with RFID readings at both origin and destination (BOTH case only)."
+                      tooltip="Receptacles with RFID readings at both origin and destination centres (rfid_case = BOTH)."
                     />
                   </div>
 
