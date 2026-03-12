@@ -61,6 +61,8 @@ export interface RfidJourney {
 export interface EpcisStats {
   totalReadings: number;
   uniqueReceptacles: number;
+  withOriginReading: number;  // has rfid_origin_impc (BOTH + ORIGIN_ONLY)
+  withDestReading: number;    // has rfid_dest_impc (BOTH + DEST_ONLY)
   uniqueOrigins: number;
   uniqueDestinations: number;
   endToEndPairs: number;
@@ -114,41 +116,61 @@ function buildCDF(values: number[], steps = 60): { x: number; pct: number }[] {
 }
 
 /* ─── Convert tracking_events rows → RfidJourney ─── */
+// Handles all rfid_case types:
+//   BOTH:             rfid_origin_impc + rfid_dest_impc both set
+//   DEST_ONLY:        only rfid_dest_impc set (no origin reader)
+//   ORIGIN_ONLY:      only rfid_origin_impc set (no dest reader)
+//   INTERMEDIATE_ONLY/NO_EDI: has_rfid=true but no impc fields (derive from s9id)
 function eventsToJourneys(events: TrackingEvent[]): RfidJourney[] {
   return events
-    .filter(e => e.has_rfid && e.rfid_origin_time && e.rfid_origin_impc)
+    .filter(e => e.has_rfid)
     .map(e => {
-      const hasDest = !!(
-        e.rfid_dest_impc &&
-        e.rfid_dest_time &&
-        e.rfid_dest_impc !== e.rfid_origin_impc
-      );
+      const rfidCase = (e as any).rfid_case as string | null;
+
+      // Derive origin/dest from s9id when RFID fields are missing
+      const s9idOriginImpc = e.s9id && e.s9id.length >= 12 ? e.s9id.slice(0, 6) : null;
+      const s9idDestImpc   = e.s9id && e.s9id.length >= 12 ? e.s9id.slice(6, 12) : null;
+
+      // Determine effective origin
+      const originImpc    = e.rfid_origin_impc || (rfidCase === 'DEST_ONLY' ? s9idOriginImpc : null) || '';
+      const originCountry = e.rfid_origin_country || e.predes_origin_country || '';
+      const originCentre  = e.rfid_origin_centre  || e.predes_origin_centre  || originImpc;
+      const originTime    = e.rfid_origin_time    || e.rfid_dest_time        || '';
+      const originReadings = e.rfid_origin_readings ?? 0;
+
+      // Determine effective destination
+      const hasDest = !!(e.rfid_dest_impc && e.rfid_dest_time);
+      const destImpc    = e.rfid_dest_impc    || null;
+      const destCountry = e.rfid_dest_country || e.redes_dest_country || null;
+      const destCentre  = e.rfid_dest_centre  || e.redes_dest_centre  || destImpc;
+      const destTime    = e.rfid_dest_time    || null;
+      const destReadings = hasDest ? (e.rfid_dest_readings ?? 1) : 0;
 
       const centresVisited: string[] = [];
-      if (e.rfid_origin_centre) centresVisited.push(e.rfid_origin_centre);
+      if (originCentre) centresVisited.push(originCentre);
       if (e.rfid_intermediate_centres) {
         const intermediates = Array.isArray(e.rfid_intermediate_centres)
           ? e.rfid_intermediate_centres
           : (e.rfid_intermediate_centres as string).split(',').map((s: string) => s.trim());
         centresVisited.push(...intermediates.filter(Boolean));
       }
-      if (hasDest && e.rfid_dest_centre && e.rfid_dest_centre !== e.rfid_origin_centre) {
-        centresVisited.push(e.rfid_dest_centre);
+      if (hasDest && destCentre && destCentre !== originCentre) {
+        centresVisited.push(destCentre as string);
       }
 
       return {
         s9id: e.s9id,
         tag_id: e.tag_id || '',
-        origin_country: e.rfid_origin_country || '',
-        origin_centre: e.rfid_origin_centre || e.rfid_origin_impc || '',
-        origin_impc: e.rfid_origin_impc || '',
-        origin_time: e.rfid_origin_time!,
-        origin_readings: e.rfid_origin_readings ?? 1,
-        dest_country: hasDest ? (e.rfid_dest_country || null) : null,
-        dest_centre: hasDest ? (e.rfid_dest_centre || e.rfid_dest_impc || null) : null,
-        dest_impc: hasDest ? (e.rfid_dest_impc || null) : null,
-        dest_time: hasDest ? e.rfid_dest_time! : null,
-        dest_readings: hasDest ? (e.rfid_dest_readings ?? 1) : 0,
+        origin_country: originCountry,
+        origin_centre: originCentre,
+        origin_impc: originImpc,
+        origin_time: originTime,
+        origin_readings: originReadings,
+        dest_country: hasDest ? destCountry : null,
+        dest_centre: hasDest ? destCentre : null,
+        dest_impc: hasDest ? destImpc : null,
+        dest_time: hasDest ? destTime : null,
+        dest_readings: destReadings,
         transit_hours: hasDest && e.rfid_transit_hours != null && e.rfid_transit_hours > 0
           ? e.rfid_transit_hours
           : null,
@@ -273,10 +295,14 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const transitCdf = buildCDF(transitValues);
 
   const totalReadings = journeys.reduce((sum, j) => sum + j.origin_readings + j.dest_readings, 0);
+  const withOriginReading = journeys.filter(j => j.origin_impc && j.origin_readings > 0).length;
+  const withDestReading = journeys.filter(j => j.has_destination).length;
 
   return {
     totalReadings,
     uniqueReceptacles: journeys.length,
+    withOriginReading,
+    withDestReading,
     uniqueOrigins: originCountryMap.size,
     uniqueDestinations: destCountryMap.size,
     endToEndPairs: endToEnd.length,
@@ -320,7 +346,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
 
   // Filter events by date
   const dateFilteredEvents = useMemo(() => {
-    let evts = allEvents.filter(e => e.has_rfid && e.rfid_origin_time && e.rfid_origin_impc);
+    let evts = allEvents.filter(e => e.has_rfid);
     if (filters.dateFrom) {
       evts = evts.filter(e => e.rfid_origin_time! >= filters.dateFrom!);
     }

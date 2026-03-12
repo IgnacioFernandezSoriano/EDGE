@@ -664,24 +664,24 @@ export default function Home() {
                     />
                     <KpiCard
                       title="RFID Departures"
-                      value={epcis.stats.uniqueReceptacles.toLocaleString()}
-                      subtitle="with identified origin centre"
+                      value={epcis.stats.withOriginReading.toLocaleString()}
+                      subtitle="with RFID reading at origin centre"
                       badge={{ label: 'origin', color: 'blue' }}
-                      tooltip="Receptacles with rfid_origin_impc set in tracking_events."
+                      tooltip="Receptacles with rfid_origin_impc set in tracking_events (BOTH + ORIGIN_ONLY cases)."
                     />
                     <KpiCard
                       title="RFID Arrivals"
-                      value={epcis.stats.endToEndPairs.toLocaleString()}
-                      subtitle="with destination centre reading"
+                      value={epcis.stats.withDestReading.toLocaleString()}
+                      subtitle="with RFID reading at destination centre"
                       badge={{ label: 'dest', color: 'green' }}
-                      tooltip="Receptacles with rfid_dest_impc ≠ rfid_origin_impc in tracking_events."
+                      tooltip="Receptacles with rfid_dest_impc set in tracking_events (BOTH + DEST_ONLY cases)."
                     />
                     <KpiCard
                       title="End-to-End Coverage"
                       value={`${epcis.stats.endToEndPct}%`}
                       subtitle={`${epcis.stats.endToEndPairs.toLocaleString()} of ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles`}
                       badge={{ label: 'e2e', color: 'amber' }}
-                      tooltip="Percentage of RFID receptacles with rfid_dest_impc ≠ rfid_origin_impc in tracking_events."
+                      tooltip="Receptacles with RFID readings at both origin and destination (BOTH case only)."
                     />
                   </div>
 
@@ -730,10 +730,10 @@ export default function Home() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                     <KpiCard
                       title="Total RFID Departures"
-                      value={epcis.stats.uniqueReceptacles.toLocaleString()}
-                      subtitle="receptacles with rfid_origin in tracking_events"
+                      value={epcis.stats.withOriginReading.toLocaleString()}
+                      subtitle="receptacles with RFID reading at origin centre"
                       badge={{ label: 'departures', color: 'blue' }}
-                      tooltip="Total receptacles with rfid_origin_impc set in tracking_events."
+                      tooltip="Receptacles with rfid_origin_impc set in tracking_events (BOTH + ORIGIN_ONLY cases)."
                     />
                     <KpiCard
                       title="Origin Countries"
@@ -834,10 +834,10 @@ export default function Home() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                     <KpiCard
                       title="Total RFID Arrivals"
-                      value={epcis.stats.endToEndPairs.toLocaleString()}
-                      subtitle="receptacles with rfid_dest in tracking_events"
+                      value={epcis.stats.withDestReading.toLocaleString()}
+                      subtitle="receptacles with RFID reading at destination centre"
                       badge={{ label: 'arrivals', color: 'green' }}
-                      tooltip="Receptacles with rfid_dest_impc ≠ rfid_origin_impc in tracking_events."
+                      tooltip="Receptacles with rfid_dest_impc set in tracking_events (BOTH + DEST_ONLY cases)."
                     />
                     <KpiCard
                       title="Destination Countries"
