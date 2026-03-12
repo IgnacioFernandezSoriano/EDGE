@@ -155,11 +155,11 @@ export default function Home() {
   const [tableFilter, setTableFilter] = useState('ALL');
 
   /* Matched Tags count from ID Relation table */
-  const [matchedTagsCount, setMatchedTagsCount] = useState<number | null>(null);
+  const [matchedTagsData, setMatchedTagsData] = useState<{ count: number; minDate: string | null; maxDate: string | null } | null>(null);
   useEffect(() => {
     fetchMatchedTagsCount(dateRange.from || undefined, dateRange.to || undefined)
-      .then(setMatchedTagsCount)
-      .catch(() => setMatchedTagsCount(null));
+      .then(setMatchedTagsData)
+      .catch(() => setMatchedTagsData(null));
   }, [dateRange.from, dateRange.to]);
 
   /* RFID tab data — derived from tracking_events (no separate fetch) */
@@ -237,7 +237,7 @@ export default function Home() {
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
               <div className="hidden lg:block border-l border-slate-200 pl-3">
-                <p className="text-xs font-semibold text-slate-700 leading-tight">RFID-EDI Analysis</p>
+                <p className="text-base font-bold text-slate-900 leading-tight tracking-tight">LEG2 Analysis Tool</p>
                 <p className="text-[10px] text-slate-400 leading-tight">
                   {effectiveDateRange.from && effectiveDateRange.to
                     ? `${effectiveDateRange.from} – ${effectiveDateRange.to}`
@@ -666,10 +666,12 @@ export default function Home() {
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-5">
                     <KpiCard
                       title="Matched Tags"
-                      value={matchedTagsCount != null ? matchedTagsCount.toLocaleString() : '—'}
-                      subtitle="tag ID ↔ s9id pairs in ID Relation"
+                      value={matchedTagsData != null ? matchedTagsData.count.toLocaleString() : '—'}
+                      subtitle={matchedTagsData?.minDate && matchedTagsData?.maxDate
+                        ? `${matchedTagsData.minDate} → ${matchedTagsData.maxDate}`
+                        : 'tag ID ↔ s9id pairs in ID Relation'}
                       badge={{ label: 'id-match', color: 'blue' }}
-                      tooltip="Number of records in the ID Relation table for the selected date period. Each record links a physical RFID tag ID to a receptacle s9id barcode."
+                      tooltip="Number of tag ID ↔ s9id records in the ID Relation table for the selected date period. Dates shown are the first and last matching record."
                     />
                     <KpiCard
                       title="Total RFID Receptacles"

@@ -81,19 +81,44 @@ export interface TrackingEvent {
 }
 
 /** Fetch count of ID Relation records within a date range */
-export async function fetchMatchedTagsCount(dateFrom?: string, dateTo?: string): Promise<number> {
-  const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('ID Relation')}`);
-  url.searchParams.set('select', 'id');
-  // Use append to allow multiple filters on the same column
-  if (dateFrom) url.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
-  if (dateTo)   url.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
-  const res = await fetch(url.toString(), {
+export async function fetchMatchedTagsCount(
+  dateFrom?: string,
+  dateTo?: string
+): Promise<{ count: number; minDate: string | null; maxDate: string | null }> {
+  const baseUrl = `${SUPABASE_URL}/rest/v1/${encodeURIComponent('ID Relation')}`;
+  // Count query
+  const countUrl = new URL(baseUrl);
+  countUrl.searchParams.set('select', 'id');
+  if (dateFrom) countUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   countUrl.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
+  const countRes = await fetch(countUrl.toString(), {
     headers: { ...headers, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' },
   });
-  if (!res.ok) return 0;
-  const range = res.headers.get('content-range') || '';
-  const match = range.match(/\/(\d+)$/);
-  return match ? parseInt(match[1], 10) : 0;
+  if (!countRes.ok) return { count: 0, minDate: null, maxDate: null };
+  const rangeHeader = countRes.headers.get('content-range') || '';
+  const countMatch = rangeHeader.match(/\/(\d+)$/);
+  const count = countMatch ? parseInt(countMatch[1], 10) : 0;
+  // Min date query
+  const minUrl = new URL(baseUrl);
+  minUrl.searchParams.set('select', 'timestamp');
+  minUrl.searchParams.set('order', 'timestamp.asc');
+  minUrl.searchParams.set('limit', '1');
+  if (dateFrom) minUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   minUrl.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
+  const minRes = await fetch(minUrl.toString(), { headers });
+  const minData = minRes.ok ? await minRes.json() : [];
+  const minDate = minData[0]?.timestamp ? minData[0].timestamp.slice(0, 10) : null;
+  // Max date query
+  const maxUrl = new URL(baseUrl);
+  maxUrl.searchParams.set('select', 'timestamp');
+  maxUrl.searchParams.set('order', 'timestamp.desc');
+  maxUrl.searchParams.set('limit', '1');
+  if (dateFrom) maxUrl.searchParams.append('timestamp', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   maxUrl.searchParams.append('timestamp', `lte.${dateTo}T23:59:59`);
+  const maxRes = await fetch(maxUrl.toString(), { headers });
+  const maxData = maxRes.ok ? await maxRes.json() : [];
+  const maxDate = maxData[0]?.timestamp ? maxData[0].timestamp.slice(0, 10) : null;
+  return { count, minDate, maxDate };
 }
 
 export async function fetchTrackingEvents(): Promise<TrackingEvent[]> {
