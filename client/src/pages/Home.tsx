@@ -691,11 +691,11 @@ export default function Home() {
                       subtitle="All RFID receptacles by origin country"
                       tooltip="Number of receptacles with an RFID origin reading, grouped by origin country. Derived from datos EPCIS location field."
                     >
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={epcis.stats.byOriginCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byOriginCountry.length * 34)}>
+                        <BarChart data={epcis.stats.byOriginCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                          <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
+                          <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
                           <Bar dataKey="count" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
                             <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
@@ -709,11 +709,11 @@ export default function Home() {
                       subtitle="End-to-end RFID pairs by destination country"
                       tooltip="Number of receptacles with RFID readings at both origin and destination, grouped by destination country."
                     >
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={epcis.stats.byDestCountry.slice(0, 10)} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byDestCountry.length * 34)}>
+                        <BarChart data={epcis.stats.byDestCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                          <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={90} />
+                          <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
                           <Bar dataKey="count" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
                             <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
@@ -768,7 +768,7 @@ export default function Home() {
                         <BarChart data={epcis.stats.byOriginCentre.map(x => ({ centre: x.centre, n: x.count }))} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
-                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} />
+                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
                           <Bar dataKey="n" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
                             <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
@@ -786,7 +786,7 @@ export default function Home() {
                         <BarChart data={epcis.stats.departureByCentre} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
-                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} />
+                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
                           <Bar dataKey="medianH" name="Median Transit (h)" fill={C.sky} radius={[0, 3, 3, 0]}>
                             <LabelList dataKey="medianH" position="right" formatter={(v: number) => `${v}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
@@ -872,7 +872,7 @@ export default function Home() {
                         <BarChart data={epcis.stats.byDestCentre.map(x => ({ centre: x.centre, n: x.count }))} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
-                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} />
+                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
                           <Bar dataKey="n" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
                             <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
@@ -890,7 +890,7 @@ export default function Home() {
                         <BarChart data={epcis.stats.arrivalByCentre} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
-                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} />
+                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
                           <Bar dataKey="medianH" name="Median Transit (h)" fill={C.emerald} radius={[0, 3, 3, 0]}>
                             <LabelList dataKey="medianH" position="right" formatter={(v: number) => `${v}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
