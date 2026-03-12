@@ -76,21 +76,21 @@ export function OverviewAnalysis({ s }: { s: DashboardStats }) {
   // Departure vs Arrival balance
   findings.push({
     icon: '⏱️', label: 'Timing Summary',
-    text: `The median departure lag is +${s.departureMedianHours}h (${(s.departureMedianHours/24).toFixed(1)}d) — RFID is detected after PREDES, consistent with the standard workflow where administrative dispatch precedes physical departure. At arrival, RFID leads RESDES by a median of ${Math.abs(s.arrivalMedianHours).toFixed(1)}h (${(Math.abs(s.arrivalMedianHours)/24).toFixed(1)}d), demonstrating a clear real-time visibility advantage at the destination end.`,
+    text: `The median departure lag is +${s.departureAvgHours}h (${(s.departureAvgHours/24).toFixed(1)}d) — RFID is detected after PREDES, consistent with the standard workflow where administrative dispatch precedes physical departure. At arrival, RFID leads RESDES by a median of ${Math.abs(s.arrivalAvgHours).toFixed(1)}h (${(Math.abs(s.arrivalAvgHours)/24).toFixed(1)}d), demonstrating a clear real-time visibility advantage at the destination end.`,
     color: 'indigo',
   });
 
   // Transit accuracy
-  if (Math.abs(s.transitDiffMedian) > 24) {
+  if (Math.abs(s.transitDiffAvg) > 24) {
     findings.push({
       icon: '🔍', label: 'Transit Accuracy',
-      text: `The median gap between EDI-declared and RFID-measured transit is ${s.transitDiffMedian > 0 ? '+' : ''}${s.transitDiffMedian}h (${(Math.abs(s.transitDiffMedian)/24).toFixed(1)}d). This ${s.transitDiffMedian > 0 ? 'overestimation' : 'underestimation'} by EDI exceeds one day, suggesting that PREDES/RESDES timestamps do not accurately reflect the physical movement of receptacles on these corridors. RFID provides a more precise measure of actual transit duration.`,
+      text: `The median gap between EDI-declared and RFID-measured transit is ${s.transitDiffAvg > 0 ? '+' : ''}${s.transitDiffAvg}h (${(Math.abs(s.transitDiffAvg)/24).toFixed(1)}d). This ${s.transitDiffAvg > 0 ? 'overestimation' : 'underestimation'} by EDI exceeds one day, suggesting that PREDES/RESDES timestamps do not accurately reflect the physical movement of receptacles on these corridors. RFID provides a more precise measure of actual transit duration.`,
       color: 'amber',
     });
   } else {
     findings.push({
       icon: '🎯', label: 'Transit Accuracy',
-      text: `EDI-declared transit deviates from RFID-measured physical transit by a median of ${s.transitDiffMedian > 0 ? '+' : ''}${s.transitDiffMedian}h — within one day. This indicates reasonable alignment between administrative declarations and physical movement on the validated routes, though route-level variation may still be significant.`,
+      text: `EDI-declared transit deviates from RFID-measured physical transit by a median of ${s.transitDiffAvg > 0 ? '+' : ''}${s.transitDiffAvg}h — within one day. This indicates reasonable alignment between administrative declarations and physical movement on the validated routes, though route-level variation may still be significant.`,
       color: 'emerald',
     });
   }
@@ -102,10 +102,10 @@ export function OverviewAnalysis({ s }: { s: DashboardStats }) {
 export function DepartureAnalysis({ s }: { s: DashboardStats }) {
   const iqrHours = s.departureP75 - s.departureP25;
   const worstCentre = s.departureByCentre.length > 0
-    ? s.departureByCentre.reduce((a, b) => Math.abs(b.median) > Math.abs(a.median) ? b : a)
+    ? s.departureByCentre.reduce((a, b) => Math.abs(b.avg) > Math.abs(a.avg) ? b : a)
     : null;
   const bestCentre = s.departureByCentre.length > 0
-    ? s.departureByCentre.reduce((a, b) => Math.abs(b.median) < Math.abs(a.median) ? b : a)
+    ? s.departureByCentre.reduce((a, b) => Math.abs(b.avg) < Math.abs(a.avg) ? b : a)
     : null;
 
   const findings: Finding[] = [];
@@ -113,7 +113,7 @@ export function DepartureAnalysis({ s }: { s: DashboardStats }) {
   // Median interpretation
   findings.push({
     icon: '📦', label: 'Departure Lag Pattern',
-    text: `The median departure lag of +${s.departureMedianHours}h (${(s.departureMedianHours/24).toFixed(1)} days) reflects the standard operational workflow: PREDES is issued when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs and is detected by RFID. A positive lag is expected and operationally normal in this context.`,
+    text: `The median departure lag of +${s.departureAvgHours}h (${(s.departureAvgHours/24).toFixed(1)} days) reflects the standard operational workflow: PREDES is issued when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs and is detected by RFID. A positive lag is expected and operationally normal in this context.`,
     color: 'indigo',
   });
 
@@ -151,7 +151,7 @@ export function DepartureAnalysis({ s }: { s: DashboardStats }) {
   if (worstCentre && bestCentre && worstCentre.centre !== bestCentre.centre) {
     findings.push({
       icon: '🏭', label: 'Centre-Level Variation',
-      text: `The largest departure lag is at ${worstCentre.centre} (${worstCentre.median.toFixed(0)}h / ${(worstCentre.median/24).toFixed(1)}d, n=${worstCentre.n}), while ${bestCentre.centre} shows the smallest gap (${bestCentre.median.toFixed(0)}h / ${(bestCentre.median/24).toFixed(1)}d, n=${bestCentre.n}). This ${(Math.abs(worstCentre.median - bestCentre.median)/24).toFixed(1)}-day spread between centres suggests that PREDES issuance timing is not uniform across origin postal operators.`,
+      text: `The largest departure lag is at ${worstCentre.centre} (${worstCentre.avg.toFixed(0)}h / ${(worstCentre.avg/24).toFixed(1)}d, n=${worstCentre.n}), while ${bestCentre.centre} shows the smallest gap (${bestCentre.avg.toFixed(0)}h / ${(bestCentre.avg/24).toFixed(1)}d, n=${bestCentre.n}). This ${(Math.abs(worstCentre.avg - bestCentre.avg)/24).toFixed(1)}-day spread between centres suggests that PREDES issuance timing is not uniform across origin postal operators.`,
       color: 'sky',
     });
   }
@@ -163,7 +163,7 @@ export function DepartureAnalysis({ s }: { s: DashboardStats }) {
 export function ArrivalAnalysis({ s }: { s: DashboardStats }) {
   const rfidAfterPct = 100 - s.arrivalRfidBeforePct;
   const bestArrival = s.arrivalByCentre.length > 0
-    ? s.arrivalByCentre.filter(c => c.median < 0).sort((a, b) => a.median - b.median)[0]
+    ? s.arrivalByCentre.filter(c => c.avg < 0).sort((a, b) => a.avg - b.avg)[0]
     : null;
   const worstArrival = s.arrivalByCentre.length > 0
     ? s.arrivalByCentre.sort((a, b) => b.rfidBeforePct - a.rfidBeforePct)[0]
@@ -175,19 +175,19 @@ export function ArrivalAnalysis({ s }: { s: DashboardStats }) {
   if (s.arrivalRfidBeforePct >= 60) {
     findings.push({
       icon: '🚀', label: 'RFID Real-Time Advantage',
-      text: `In ${s.arrivalRfidBeforePct}% of arrival events, RFID detects the receptacle before the RESDES message is generated — with a median lead of ${Math.abs(s.arrivalMedianHours).toFixed(1)}h (${(Math.abs(s.arrivalMedianHours)/24).toFixed(1)}d). This is a strong demonstration of RFID's real-time visibility advantage: the physical arrival is known significantly earlier than the administrative acknowledgement.`,
+      text: `In ${s.arrivalRfidBeforePct}% of arrival events, RFID detects the receptacle before the RESDES message is generated — with a median lead of ${Math.abs(s.arrivalAvgHours).toFixed(1)}h (${(Math.abs(s.arrivalAvgHours)/24).toFixed(1)}d). This is a strong demonstration of RFID's real-time visibility advantage: the physical arrival is known significantly earlier than the administrative acknowledgement.`,
       color: 'emerald',
     });
   } else if (s.arrivalRfidBeforePct >= 40) {
     findings.push({
       icon: '⚖️', label: 'Mixed RFID Performance',
-      text: `RFID detects the receptacle before RESDES in ${s.arrivalRfidBeforePct}% of cases, while EDI is faster in the remaining ${rfidAfterPct}%. The median lead/lag of ${s.arrivalMedianHours.toFixed(1)}h indicates a roughly balanced performance. The value of RFID varies significantly by destination centre and corridor.`,
+      text: `RFID detects the receptacle before RESDES in ${s.arrivalRfidBeforePct}% of cases, while EDI is faster in the remaining ${rfidAfterPct}%. The median lead/lag of ${s.arrivalAvgHours.toFixed(1)}h indicates a roughly balanced performance. The value of RFID varies significantly by destination centre and corridor.`,
       color: 'amber',
     });
   } else {
     findings.push({
       icon: '📋', label: 'EDI Dominates at Arrival',
-      text: `EDI (RESDES) precedes RFID detection in ${rfidAfterPct}% of arrival events. The median lag of +${s.arrivalMedianHours.toFixed(1)}h means RFID typically arrives later than the administrative message. This may indicate slow RFID scanning at destination centres, or very fast EDI processing by destination operators.`,
+      text: `EDI (RESDES) precedes RFID detection in ${rfidAfterPct}% of arrival events. The median lag of +${s.arrivalAvgHours.toFixed(1)}h means RFID typically arrives later than the administrative message. This may indicate slow RFID scanning at destination centres, or very fast EDI processing by destination operators.`,
       color: 'rose',
     });
   }
@@ -196,7 +196,7 @@ export function ArrivalAnalysis({ s }: { s: DashboardStats }) {
   if (bestArrival) {
     findings.push({
       icon: '🏆', label: 'Best-Performing Destination',
-      text: `${bestArrival.centre} shows the strongest RFID advantage at arrival: median lead of ${Math.abs(bestArrival.median).toFixed(0)}h (${(Math.abs(bestArrival.median)/24).toFixed(1)}d) before RESDES, with ${bestArrival.rfidBeforePct}% of receptacles detected before the EDI message. This centre represents the highest operational value of RFID in the dataset.`,
+      text: `${bestArrival.centre} shows the strongest RFID advantage at arrival: median lead of ${Math.abs(bestArrival.avg).toFixed(0)}h (${(Math.abs(bestArrival.avg)/24).toFixed(1)}d) before RESDES, with ${bestArrival.rfidBeforePct}% of receptacles detected before the EDI message. This centre represents the highest operational value of RFID in the dataset.`,
       color: 'emerald',
     });
   }
@@ -213,7 +213,7 @@ export function ArrivalAnalysis({ s }: { s: DashboardStats }) {
   // Operational implication
   findings.push({
     icon: '💡', label: 'Operational Implication',
-    text: `The ${s.arrivalRfidBeforePct}% RFID-before-RESDES rate means that for the majority of arrivals, a tracking system relying solely on EDI would be ${Math.abs(s.arrivalMedianHours).toFixed(0)}h (${(Math.abs(s.arrivalMedianHours)/24).toFixed(1)}d) behind the physical reality. RFID enables proactive operational decisions — such as customs pre-clearance, delivery scheduling, and exception management — that EDI alone cannot support in real time.`,
+    text: `The ${s.arrivalRfidBeforePct}% RFID-before-RESDES rate means that for the majority of arrivals, a tracking system relying solely on EDI would be ${Math.abs(s.arrivalAvgHours).toFixed(0)}h (${(Math.abs(s.arrivalAvgHours)/24).toFixed(1)}d) behind the physical reality. RFID enables proactive operational decisions — such as customs pre-clearance, delivery scheduling, and exception management — that EDI alone cannot support in real time.`,
     color: 'indigo',
   });
 
@@ -222,7 +222,7 @@ export function ArrivalAnalysis({ s }: { s: DashboardStats }) {
 
 /* ─── Transit analysis ─── */
 export function TransitAnalysis({ s }: { s: DashboardStats }) {
-  const overestimate = s.transitDiffMedian > 0;
+  const overestimate = s.transitDiffAvg > 0;
   const bestRoute = s.transitRoutes.length > 0
     ? s.transitRoutes.reduce((a, b) => Math.abs(b.diff) < Math.abs(a.diff) ? b : a)
     : null;
@@ -235,7 +235,7 @@ export function TransitAnalysis({ s }: { s: DashboardStats }) {
   // Overall transit gap
   findings.push({
     icon: overestimate ? '📈' : '📉', label: 'EDI vs RFID Transit Gap',
-    text: `EDI-declared transit ${overestimate ? 'overestimates' : 'underestimates'} physical transit by a median of ${Math.abs(s.transitDiffMedian)}h (${(Math.abs(s.transitDiffMedian)/24).toFixed(1)}d). RFID measures a median physical transit of ${s.rfidTransitMedian}h (${(s.rfidTransitMedian/24).toFixed(1)}d), while EDI declares ${s.ediTransitMedian}h (${(s.ediTransitMedian/24).toFixed(1)}d). ${overestimate ? 'The EDI overestimation likely reflects the gap between administrative dispatch preparation (PREDES) and actual physical departure.' : 'EDI underestimation may indicate that RESDES is issued before the receptacle is fully processed at the destination.'}`,
+    text: `EDI-declared transit ${overestimate ? 'overestimates' : 'underestimates'} physical transit by a median of ${Math.abs(s.transitDiffAvg)}h (${(Math.abs(s.transitDiffAvg)/24).toFixed(1)}d). RFID measures a median physical transit of ${s.rfidTransitAvg}h (${(s.rfidTransitAvg/24).toFixed(1)}d), while EDI declares ${s.ediTransitAvg}h (${(s.ediTransitAvg/24).toFixed(1)}d). ${overestimate ? 'The EDI overestimation likely reflects the gap between administrative dispatch preparation (PREDES) and actual physical departure.' : 'EDI underestimation may indicate that RESDES is issued before the receptacle is fully processed at the destination.'}`,
     color: overestimate ? 'amber' : 'sky',
   });
 
@@ -250,7 +250,7 @@ export function TransitAnalysis({ s }: { s: DashboardStats }) {
   if (bestRoute) {
     findings.push({
       icon: '🎯', label: 'Most Accurate Route',
-      text: `The route with the smallest EDI/RFID gap is ${bestRoute.route}: RFID measures ${bestRoute.rfidMedian.toFixed(0)}h (${(bestRoute.rfidMedian/24).toFixed(1)}d) vs EDI-declared ${bestRoute.ediMedian.toFixed(0)}h (${(bestRoute.ediMedian/24).toFixed(1)}d) — a difference of only ${Math.abs(bestRoute.diff).toFixed(0)}h. This corridor has the most reliable EDI declarations relative to physical movement.`,
+      text: `The route with the smallest EDI/RFID gap is ${bestRoute.route}: RFID measures ${bestRoute.rfidAvg.toFixed(0)}h (${(bestRoute.rfidAvg/24).toFixed(1)}d) vs EDI-declared ${bestRoute.ediAvg.toFixed(0)}h (${(bestRoute.ediAvg/24).toFixed(1)}d) — a difference of only ${Math.abs(bestRoute.diff).toFixed(0)}h. This corridor has the most reliable EDI declarations relative to physical movement.`,
       color: 'emerald',
     });
   }
@@ -259,7 +259,7 @@ export function TransitAnalysis({ s }: { s: DashboardStats }) {
   if (worstRoute && worstRoute !== bestRoute) {
     findings.push({
       icon: '⚠️', label: 'Largest Discrepancy',
-      text: `The route with the largest EDI/RFID gap is ${worstRoute.route}: RFID measures ${worstRoute.rfidMedian.toFixed(0)}h (${(worstRoute.rfidMedian/24).toFixed(1)}d) vs EDI-declared ${worstRoute.ediMedian.toFixed(0)}h (${(worstRoute.ediMedian/24).toFixed(1)}d) — a ${Math.abs(worstRoute.diff).toFixed(0)}h (${(Math.abs(worstRoute.diff)/24).toFixed(1)}d) discrepancy. This suggests that PREDES/RESDES timestamps on this corridor do not accurately reflect the physical movement timeline.`,
+      text: `The route with the largest EDI/RFID gap is ${worstRoute.route}: RFID measures ${worstRoute.rfidAvg.toFixed(0)}h (${(worstRoute.rfidAvg/24).toFixed(1)}d) vs EDI-declared ${worstRoute.ediAvg.toFixed(0)}h (${(worstRoute.ediAvg/24).toFixed(1)}d) — a ${Math.abs(worstRoute.diff).toFixed(0)}h (${(Math.abs(worstRoute.diff)/24).toFixed(1)}d) discrepancy. This suggests that PREDES/RESDES timestamps on this corridor do not accurately reflect the physical movement timeline.`,
       color: 'rose',
     });
   }
@@ -267,7 +267,7 @@ export function TransitAnalysis({ s }: { s: DashboardStats }) {
   // Value of RFID for transit
   findings.push({
     icon: '💡', label: 'Value of RFID Measurement',
-    text: `RFID-measured transit times provide an independent, objective measure of physical movement that is not subject to administrative processing delays or pre-advice timing conventions. The ${Math.abs(s.transitDiffMedian)}h systematic gap between RFID and EDI demonstrates that EDI alone is insufficient for accurate transit time monitoring — RFID is essential for operational performance management on international postal corridors.`,
+    text: `RFID-measured transit times provide an independent, objective measure of physical movement that is not subject to administrative processing delays or pre-advice timing conventions. The ${Math.abs(s.transitDiffAvg)}h systematic gap between RFID and EDI demonstrates that EDI alone is insufficient for accurate transit time monitoring — RFID is essential for operational performance management on international postal corridors.`,
     color: 'indigo',
   });
 

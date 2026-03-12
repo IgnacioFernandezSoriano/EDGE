@@ -68,7 +68,7 @@ export interface EpcisStats {
   uniqueDestinations: number;
   endToEndPairs: number;
   endToEndPct: number;
-  medianTransitHours: number | null;
+  avgTransitHours: number | null;
   meanTransitHours: number | null;
   p25TransitHours: number | null;
   p75TransitHours: number | null;
@@ -78,9 +78,9 @@ export interface EpcisStats {
   byDestCountry:   { country: string; count: number }[];
   byOriginCentre:  { centre: string; country: string; count: number; endToEnd: number }[];
   byDestCentre:    { centre: string; country: string; count: number }[];
-  departureByCentre: { centre: string; country: string; n: number; medianH: number }[];
-  arrivalByCentre:   { centre: string; country: string; n: number; medianH: number }[];
-  byRoute:           { route: string; origin: string; dest: string; count: number; medianH: number | null }[];
+  departureByCentre: { centre: string; country: string; n: number; avgH: number }[];
+  arrivalByCentre:   { centre: string; country: string; n: number; avgH: number }[];
+  byRoute:           { route: string; origin: string; dest: string; count: number; avgH: number | null }[];
   transitCdf:        { x: number; pct: number }[];
   dateRange: { min: string; max: string } | null;
 }
@@ -91,6 +91,10 @@ function median(arr: number[]): number | null {
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+function mean(arr: number[]): number | null {
+  if (!arr.length) return null;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 function percentile(arr: number[], p: number): number | null {
   if (!arr.length) return null;
@@ -256,7 +260,7 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
       centre,
       country: v.country,
       n: v.hours.length,
-      medianH: Math.round((median(v.hours) ?? 0) * 10) / 10,
+      avgH: Math.round((mean(v.hours) ?? 0) * 10) / 10,
     }))
     .sort((a, b) => b.n - a.n);
 
@@ -273,7 +277,7 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
       centre,
       country: v.country,
       n: v.hours.length,
-      medianH: Math.round((median(v.hours) ?? 0) * 10) / 10,
+      avgH: Math.round((mean(v.hours) ?? 0) * 10) / 10,
     }))
     .sort((a, b) => b.n - a.n);
 
@@ -292,7 +296,7 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
       origin: v.origin,
       dest: v.dest,
       count: v.count,
-      medianH: v.hours.length > 0 ? Math.round((median(v.hours) ?? 0) * 10) / 10 : null,
+      avgH: v.hours.length > 0 ? Math.round((mean(v.hours) ?? 0) * 10) / 10 : null,
     }))
     .sort((a, b) => b.count - a.count);
 
@@ -311,8 +315,8 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     uniqueDestinations: destCountryMap.size,
     endToEndPairs: bothRfid.length,
     endToEndPct: journeys.length > 0 ? Math.round(bothRfid.length / journeys.length * 100) : 0,
-    medianTransitHours: transitValues.length > 0 ? Math.round((median(transitValues) ?? 0) * 10) / 10 : null,
-    meanTransitHours: transitValues.length > 0 ? Math.round(transitValues.reduce((a, b) => a + b, 0) / transitValues.length * 10) / 10 : null,
+    avgTransitHours: transitValues.length > 0 ? Math.round((mean(transitValues) ?? 0) * 10) / 10 : null,
+    meanTransitHours: transitValues.length > 0 ? Math.round((mean(transitValues) ?? 0) * 10) / 10 : null,
     p25TransitHours: transitValues.length > 0 ? Math.round((percentile(transitValues, 25) ?? 0) * 10) / 10 : null,
     p75TransitHours: transitValues.length > 0 ? Math.round((percentile(transitValues, 75) ?? 0) * 10) / 10 : null,
     minTransitHours: transitValues.length > 0 ? Math.round(Math.min(...transitValues) * 10) / 10 : null,

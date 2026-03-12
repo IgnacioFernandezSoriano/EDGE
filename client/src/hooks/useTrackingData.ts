@@ -16,7 +16,7 @@ export interface DashboardStats {
   coverageRate: number;
   // Departure stats (RFID vs PREDES)
   departurePairs: number;
-  departureMedianHours: number;
+  departureAvgHours: number;
   departureMeanHours: number;
   departureP25: number;
   departureP75: number;
@@ -24,19 +24,19 @@ export interface DashboardStats {
   departureRfidBeforePct: number;
   // Arrival stats (RFID vs RESDES)
   arrivalPairs: number;
-  arrivalMedianHours: number;
+  arrivalAvgHours: number;
   arrivalMeanHours: number;
   arrivalRfidBefore: number;
   arrivalRfidBeforePct: number;
   // Transit stats
   transitPairs: number;
-  rfidTransitMedian: number;
-  ediTransitMedian: number;
-  transitDiffMedian: number;
+  rfidTransitAvg: number;
+  ediTransitAvg: number;
+  transitDiffAvg: number;
   // By origin country
-  byOriginCountry: { country: string; count: number; medianDepartureLag: number }[];
+  byOriginCountry: { country: string; count: number; avgDepartureLag: number }[];
   // By destination country
-  byDestCountry: { country: string; count: number; medianArrivalLead: number }[];
+  byDestCountry: { country: string; count: number; avgArrivalLead: number }[];
   // Coverage by destination country (stacked bar)
   coverageByDestCountry: { country: string; FULL: number; EDI_FULL: number; RFID_ONLY: number; EDI_ONLY: number; RFID_PREDES: number; total: number }[];
   // Coverage by origin country (stacked bar)
@@ -44,11 +44,11 @@ export interface DashboardStats {
   // Coverage breakdown
   coverageBreakdown: { type: string; count: number; pct: number }[];
   // Transit routes
-  transitRoutes: { route: string; n: number; rfidMedian: number; ediMedian: number; diff: number }[];
+  transitRoutes: { route: string; n: number; rfidAvg: number; ediAvg: number; diff: number }[];
   // Departure by origin centre
-  departureByCentre: { centre: string; country: string; n: number; median: number; rfidBeforePct: number }[];
+  departureByCentre: { centre: string; country: string; n: number; avg: number; rfidBeforePct: number }[];
   // Arrival by dest centre
-  arrivalByCentre: { centre: string; country: string; n: number; median: number; rfidBeforePct: number }[];
+  arrivalByCentre: { centre: string; country: string; n: number; avg: number; rfidBeforePct: number }[];
   // Date range of the filtered data
   minDate: string | null;
   maxDate: string | null;
@@ -60,13 +60,13 @@ export interface DashboardStats {
   // Pure RFID transit (no EDI dependency)
   rfidPureTotal: number;
   rfidPureWithDest: number;
-  rfidPureMedianHours: number;
+  rfidPureAvgHours: number;
   rfidPureMeanHours: number;
   rfidPureP25: number;
   rfidPureP75: number;
-  rfidPureRoutes: { route: string; origName: string; destName: string; origCountry: string; destCountry: string; n: number; medianH: number; minH: number; maxH: number }[];
-  rfidPureByOriginCentre: { centre: string; country: string; n: number; medianH: number }[];
-  rfidPureByDestCentre: { centre: string; country: string; n: number; medianH: number }[];
+  rfidPureRoutes: { route: string; origName: string; destName: string; origCountry: string; destCountry: string; n: number; avgH: number; minH: number; maxH: number }[];
+  rfidPureByOriginCentre: { centre: string; country: string; n: number; avgH: number }[];
+  rfidPureByDestCentre: { centre: string; country: string; n: number; avgH: number }[];
   rfidPureCdf: { x: number; pct: number }[];
   // RFID-only departures (by origin centre, no EDI needed)
   rfidDepartureTotal: number;
@@ -172,7 +172,7 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     .map(([country, items]) => ({
       country,
       count: items.length,
-      medianDepartureLag: median(items.map(e => e.departure_lag_hours!)),
+      avgDepartureLag: mean(items.map(e => e.departure_lag_hours!)),
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
@@ -183,7 +183,7 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     .map(([country, items]) => ({
       country,
       count: items.length,
-      medianArrivalLead: median(items.map(e => e.arrival_lead_hours!)),
+      avgArrivalLead: mean(items.map(e => e.arrival_lead_hours!)),
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
@@ -248,9 +248,9 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     .map(([route, items]) => ({
       route,
       n: items.length,
-      rfidMedian: median(items.map(e => e.rfid_transit_hours!)),
-      ediMedian: median(items.map(e => e.edi_transit_hours!)),
-      diff: median(items.map(e => e.transit_diff_hours!).filter(v => v !== null)),
+      rfidAvg: mean(items.map(e => e.rfid_transit_hours!)),
+      ediAvg: mean(items.map(e => e.edi_transit_hours!)),
+      diff: mean(items.map(e => e.transit_diff_hours!).filter(v => v !== null)),
     }))
     .sort((a, b) => b.n - a.n);
 
@@ -264,7 +264,7 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
       centre,
       country: items[0].rfid_origin_country || '',
       n: items.length,
-      median: median(items.map(e => e.departure_lag_hours!)),
+      avg: mean(items.map(e => e.departure_lag_hours!)),
       rfidBeforePct: Math.round((items.filter(e => e.departure_lag_hours! < 0).length / items.length) * 100),
     }))
     .sort((a, b) => b.n - a.n);
@@ -279,7 +279,7 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
       centre,
       country: items[0].redes_dest_country || '',
       n: items.length,
-      median: median(items.map(e => e.arrival_lead_hours!)),
+      avg: mean(items.map(e => e.arrival_lead_hours!)),
       rfidBeforePct: Math.round((items.filter(e => e.arrival_lead_hours! < 0).length / items.length) * 100),
     }))
     .sort((a, b) => b.n - a.n);
@@ -327,7 +327,7 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
         origCountry: normalizeCountry(items[0].rfid_origin_country) || '',
         destCountry: normalizeCountry(items[0].rfid_dest_country) || '',
         n: items.length,
-        medianH: Math.round(median(hours) * 10) / 10,
+        avgH: Math.round(mean(hours) * 10) / 10,
         minH: Math.round(sorted[0] * 10) / 10,
         maxH: Math.round(sorted[sorted.length - 1] * 10) / 10,
       };
@@ -344,7 +344,7 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
       centre,
       country: normalizeCountry(items[0].rfid_origin_country) || '',
       n: items.length,
-      medianH: Math.round(median(items.map(e => e.rfid_transit_hours!)) * 10) / 10,
+      avgH: Math.round(mean(items.map(e => e.rfid_transit_hours!)) * 10) / 10,
     }))
     .sort((a, b) => b.n - a.n);
 
@@ -358,7 +358,7 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
       centre,
       country: normalizeCountry(items[0].rfid_dest_country) || '',
       n: items.length,
-      medianH: Math.round(median(items.map(e => e.rfid_transit_hours!)) * 10) / 10,
+      avgH: Math.round(mean(items.map(e => e.rfid_transit_hours!)) * 10) / 10,
     }))
     .sort((a, b) => b.n - a.n);
 
@@ -424,21 +424,21 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     rfidResdes,
     coverageRate: total > 0 ? Math.round(((total - ediOnly) / total) * 100) : 0,
     departurePairs: departurePairsData.length,
-    departureMedianHours: Math.round(median(departureLags) * 10) / 10,
+    departureAvgHours: Math.round(mean(departureLags) * 10) / 10,
     departureMeanHours: Math.round(mean(departureLags) * 10) / 10,
     departureP25: Math.round(percentile(departureLags, 25) * 10) / 10,
     departureP75: Math.round(percentile(departureLags, 75) * 10) / 10,
     departureRfidBefore,
     departureRfidBeforePct: departureLags.length > 0 ? Math.round((departureRfidBefore / departureLags.length) * 100) : 0,
     arrivalPairs: arrivalPairsData.length,
-    arrivalMedianHours: Math.round(median(arrivalLeads) * 10) / 10,
+    arrivalAvgHours: Math.round(mean(arrivalLeads) * 10) / 10,
     arrivalMeanHours: Math.round(mean(arrivalLeads) * 10) / 10,
     arrivalRfidBefore,
     arrivalRfidBeforePct: arrivalLeads.length > 0 ? Math.round((arrivalRfidBefore / arrivalLeads.length) * 100) : 0,
     transitPairs: transitData.length,
-    rfidTransitMedian: Math.round(median(rfidTransits) * 10) / 10,
-    ediTransitMedian: Math.round(median(ediTransits) * 10) / 10,
-    transitDiffMedian: Math.round(median(transitDiffs) * 10) / 10,
+    rfidTransitAvg: Math.round(mean(rfidTransits) * 10) / 10,
+    ediTransitAvg: Math.round(mean(ediTransits) * 10) / 10,
+    transitDiffAvg: Math.round(mean(transitDiffs) * 10) / 10,
     byOriginCountry,
     byDestCountry,
     coverageByDestCountry,
@@ -455,7 +455,7 @@ export function computeStats(events: TrackingEvent[]): DashboardStats {
     ediTransitCdf,
     rfidPureTotal: events.filter(e => e.has_rfid).length,
     rfidPureWithDest: rfidPureData.length,
-    rfidPureMedianHours: Math.round(median(rfidPureHours) * 10) / 10,
+    rfidPureAvgHours: Math.round(mean(rfidPureHours) * 10) / 10,
     rfidPureMeanHours: Math.round(mean(rfidPureHours) * 10) / 10,
     rfidPureP25: Math.round(percentile(rfidPureHours, 25) * 10) / 10,
     rfidPureP75: Math.round(percentile(rfidPureHours, 75) * 10) / 10,
