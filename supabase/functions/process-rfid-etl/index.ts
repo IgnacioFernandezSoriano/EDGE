@@ -526,21 +526,22 @@ async function runEtl(
 // ─── Handler HTTP ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  // CORS headers reutilizables
+  const corsHeaders = {
+    "Access-Control-Allow-Origin":  "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, apikey, x-client-info, x-supabase-api-version",
+  };
+
   // CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin":  "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type, apikey",
-      },
-    });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...corsHeaders },
     });
   }
 
@@ -557,7 +558,7 @@ Deno.serve(async (req: Request) => {
       if (!file) {
         return new Response(JSON.stringify({ error: "No se recibió ningún archivo CSV" }), {
           status: 400,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...corsHeaders },
         });
       }
       const text = await file.text();
@@ -574,10 +575,7 @@ Deno.serve(async (req: Request) => {
 
     return new Response(JSON.stringify({ success: true, ...result }), {
       status: 200,
-      headers: {
-        "Content-Type":                "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
+      headers: { "Content-Type": "application/json", ...corsHeaders },
     });
   } catch (err: any) {
     console.error("ERROR en process-rfid-etl:", err);
@@ -585,10 +583,7 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({ success: false, error: err.message ?? String(err) }),
       {
         status: 500,
-        headers: {
-          "Content-Type":                "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+        headers: { "Content-Type": "application/json", ...corsHeaders },
       }
     );
   }
