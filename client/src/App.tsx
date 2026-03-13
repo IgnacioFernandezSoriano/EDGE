@@ -7,7 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Home from "./pages/Home";
 import LoginPage from "./pages/LoginPage";
-
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 
 // Guard: redirige al login si el usuario no está autenticado
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -35,6 +35,8 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={() => <ProtectedRoute component={Home} />} />
+      {/* Ruta pública para el reset de contraseña — Supabase redirige aquí con el token */}
+      <Route path={"/reset-password"} component={ResetPasswordPage} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

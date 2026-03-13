@@ -9,6 +9,8 @@ interface AuthContextType {
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,7 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     });
 
-    // Escuchar cambios de sesión (login / logout / refresh de token)
+    // Escuchar cambios de sesión (login / logout / refresh de token / password recovery)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setIsLoading(false);
@@ -43,12 +45,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  /** Envía el email de recuperación de contraseña.
+   *  Supabase redirige al usuario a /reset-password con el token en la URL. */
+  const resetPassword = async (email: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) return { error: error.message };
+    return { error: null };
+  };
+
+  /** Actualiza la contraseña del usuario autenticado (usado en /reset-password). */
+  const updatePassword = async (newPassword: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { error: error.message };
+    return { error: null };
+  };
+
   const user = session?.user ?? null;
-  // El rol de admin se lee de los metadatos del usuario en el JWT
   const isAdmin = user?.user_metadata?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ session, user, isAdmin, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, user, isAdmin, isLoading, signIn, signOut, resetPassword, updatePassword }}>
       {children}
     </AuthContext.Provider>
   );
