@@ -43,6 +43,47 @@ const CATEGORY_DESC: Record<string, string> = {
   MAESTRO_AUSENTE:    'El código IMPC aparece en los datos operativos (EDI o RFID) pero no existe en la tabla de centros postales (postal_centers). Puede ser un centro nuevo, un código mal escrito o un alias no registrado.',
   CASE_NORMALIZATION: 'El código IMPC está escrito en minúsculas o con formato incorrecto en los datos de origen. Se propone normalizar a mayúsculas para mantener la consistencia con el maestro.',
 };
+// ── Contexto explicativo por tipo de outlier temporal ────────────────────
+function getOutlierContext(entry: AuditLogEntry): { label: string; detail: string } | null {
+  if (entry.audit_category !== 'OUTLIER_TEMPORAL') return null;
+  const val = entry.original_value ? parseFloat(entry.original_value) : null;
+  const valStr = val !== null ? `${val > 0 ? '+' : ''}${val.toFixed(2)}h` : '—';
+  const group = entry.group_context || '—';
+  const flag = entry.outlier_flag || '';
+
+  if (entry.audit_check === 'DEPARTURE_LAG_OUTLIER') {
+    if (flag === 'NEGATIVO') {
+      return {
+        label: 'Lag salida negativo',
+        detail: `La lectura RFID en ${group} ocurrió ${Math.abs(val || 0).toFixed(2)}h ANTES del PREDES (${valStr}). Posible error de zona horaria en el centro de origen.`,
+      };
+    }
+    return {
+      label: 'Lag salida outlier',
+      detail: `Tiempo entre PREDES y lectura RFID de origen en ${group}: ${valStr}. Se desvía del rango normal del centro.`,
+    };
+  }
+  if (entry.audit_check === 'ARRIVAL_LEAD_OUTLIER') {
+    if (flag === 'NEGATIVO') {
+      return {
+        label: 'Lead llegada negativo',
+        detail: `La lectura RFID de destino en ${group} ocurrió ${Math.abs(val || 0).toFixed(2)}h ANTES del REDES (${valStr}). Posible error de captura.`,
+      };
+    }
+    return {
+      label: 'Lead llegada outlier',
+      detail: `Tiempo entre lectura RFID de destino y REDES en ruta ${group}: ${valStr}. Se desvía del rango normal de la ruta.`,
+    };
+  }
+  if (entry.audit_check === 'EDI_TRANSIT_OUTLIER') {
+    return {
+      label: 'Tránsito EDI outlier',
+      detail: `Tiempo de tránsito EDI (PREDES→REDES) en ruta ${group}: ${valStr}. Se desvía del rango normal de esa ruta. Excluir para no distorsionar el benchmark RFID vs EDI.`,
+    };
+  }
+  return null;
+}
+
 const ACTION_LABEL: Record<string, string> = {
   ALTA:               'Alta nueva',
   CORRECCION:         'Corrección',
@@ -400,7 +441,14 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
       } else if (sortField === 'source_s9id') {
         cmp = (a.source_s9id || '').localeCompare(b.source_s9id || '');
       } else if (sortField === 'original_value') {
-        cmp = (a.original_value || '').localeCompare(b.original_value || '');
+        // Ordenación numérica cuando el valor es un número (horas), alfabética en otro caso
+        const numA = parseFloat(a.original_value || '');
+        const numB = parseFloat(b.original_value || '');
+        if (!isNaN(numA) && !isNaN(numB)) {
+          cmp = numA - numB;
+        } else {
+          cmp = (a.original_value || '').localeCompare(b.original_value || '');
+        }
       } else if (sortField === 'admin_decision') {
         cmp = (a.admin_decision || 'z').localeCompare(b.admin_decision || 'z');
       }
@@ -582,14 +630,35 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
                     <Badge text={CATEGORY_LABEL[entry.audit_category]}
                       className="bg-indigo-50 text-indigo-600 border-indigo-100 whitespace-nowrap" />
                   </td>
-                  <td className="px-4 py-3 max-w-[200px]">
-                    <p className="text-slate-700 text-xs truncate">{entry.audit_check}</p>
+                  <td className="px-4 py-3 max-w-[260px]">
+                    {(() => {
+                      const ctx = getOutlierContext(entry);
+                      if (ctx) {
+                        return (
+                          <div>
+                            <p className="text-xs font-semibold text-slate-700 mb-0.5">{ctx.label}</p>
+                            <p className="text-xs text-slate-500 leading-snug">{ctx.detail}</p>
+                          </div>
+                        );
+                      }
+                      return <p className="text-slate-700 text-xs">{entry.audit_check}</p>;
+                    })()}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-mono text-xs text-slate-500">{entry.source_s9id || '—'}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="font-mono text-xs text-red-500">{entry.original_value || '—'}</span>
+                    {(() => {
+                      const num = entry.original_value ? parseFloat(entry.original_value) : null;
+                      if (num !== null && !isNaN(num)) {
+                        const isNeg = num < 0;
+                        return (
+                          <span className={`font-mono text-xs font-semibold ${
+                            isNeg ? 'text-red-600' : num > 100 ? 'text-orange-600' : 'text-slate-600'
+                          }`}>
+                            {num > 0 ? '+' : ''}{num.toFixed(2)}h
+                          </span>
+                        );
+                      }
+                      return <span className="font-mono text-xs text-slate-500">{entry.original_value || '—'}</span>;
+                    })()}
                   </td>
                   <td className="px-4 py-3">
                     {entry.admin_decision ? (
