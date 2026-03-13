@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 import { useTrackingData } from '@/hooks/useTrackingData';
 import { useEpcisData } from '@/hooks/useEpcisData';
-import { fetchMatchedTagsCount } from '@/lib/supabase';
+import { fetchMatchedTagsCount, supabase } from '@/lib/supabase';
 import { KpiCard } from '@/components/KpiCard';
 import { DataTable } from '@/components/DataTable';
 import { EpcisDataTable } from '@/components/EpcisDataTable';
@@ -143,12 +143,332 @@ function FilterBanner({
   );
 }
 
+/* ─── Admin Panel ─── */
+type AccessRequest = {
+  id: number;
+  email: string;
+  full_name: string;
+  organization: string | null;
+  country: string;
+  reason: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+};
+
+type AuthUser = {
+  id: string;
+  email: string;
+  created_at: string;
+  last_sign_in_at: string | null;
+  user_metadata: { role?: string; country?: string; full_name?: string };
+};
+
+function AdminPanel({ onClose }: { onClose: () => void }) {
+  const [tab, setTab] = useState<'users' | 'requests'>('requests');
+  const [requests, setRequests] = useState<AccessRequest[]>([]);
+  const [users, setUsers] = useState<AuthUser[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
+  const [actionLoading, setActionLoading] = useState<number | string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // New user form
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newCountry, setNewCountry] = useState('');
+  const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
+  const [newPwd, setNewPwd] = useState('');
+  const [creatingUser, setCreatingUser] = useState(false);
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+
+  const loadData = async () => {
+    setLoadingData(true);
+    const [reqRes, usersRes] = await Promise.all([
+      supabase.from('access_requests').select('*').order('created_at', { ascending: false }),
+      supabase.rpc('admin_list_users').select('*'),
+    ]);
+    if (reqRes.data) setRequests(reqRes.data as AccessRequest[]);
+    // admin_list_users may not exist yet — fallback gracefully
+    if (usersRes.data) setUsers(usersRes.data as AuthUser[]);
+    setLoadingData(false);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const updateRequestStatus = async (id: number, status: 'approved' | 'rejected') => {
+    setActionLoading(id);
+    await supabase.from('access_requests').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id);
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    setActionLoading(null);
+    showToast(status === 'approved' ? 'Request approved' : 'Request rejected');
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingUser(true);
+    const metadata = newRole === 'admin'
+      ? { role: 'admin', full_name: newName }
+      : { country: newCountry, full_name: newName };
+    const { error } = await supabase.auth.admin.createUser({
+      email: newEmail,
+      password: newPwd,
+      user_metadata: metadata,
+      email_confirm: true,
+    });
+    setCreatingUser(false);
+    if (error) { showToast('Error: ' + error.message); }
+    else {
+      showToast('User created successfully');
+      setNewEmail(''); setNewName(''); setNewCountry(''); setNewPwd(''); setNewRole('user');
+      loadData();
+    }
+  };
+
+  const statusBadge = (s: string) => {
+    if (s === 'pending') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Pending</span>;
+    if (s === 'approved') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Approved</span>;
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Rejected</span>;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">User Management</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Manage users and access requests</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-100 px-6 flex-shrink-0">
+          {(['requests', 'users'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 transition ${
+                tab === t ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}>
+              {t === 'requests' ? `Access Requests${requests.filter(r => r.status === 'pending').length > 0 ? ` (${requests.filter(r => r.status === 'pending').length})` : ''}` : 'Users'}
+            </button>
+          ))}
+        </div>
+
+        {/* Toast */}
+        {toast && (
+          <div className="mx-6 mt-3 p-2.5 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700 flex-shrink-0">{toast}</div>
+        )}
+
+        {/* Content */}
+        <div className="overflow-y-auto flex-1 px-6 py-4">
+          {loadingData ? (
+            <div className="flex items-center justify-center py-12">
+              <svg className="animate-spin w-6 h-6 text-indigo-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+            </div>
+          ) : (
+            <>
+              {/* ── ACCESS REQUESTS TAB ── */}
+              {tab === 'requests' && (
+                <div className="space-y-3">
+                  {requests.length === 0 ? (
+                    <p className="text-sm text-slate-400 text-center py-8">No access requests yet.</p>
+                  ) : requests.map(req => (
+                    <div key={req.id} className="border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm text-slate-800">{req.full_name}</span>
+                            {statusBadge(req.status)}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{req.email}</p>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                            <span className="text-xs text-slate-600"><span className="font-medium">Country:</span> {req.country}</span>
+                            {req.organization && <span className="text-xs text-slate-600"><span className="font-medium">Org:</span> {req.organization}</span>}
+                          </div>
+                          {req.reason && <p className="text-xs text-slate-500 mt-1.5 italic">"{req.reason}"</p>}
+                          <p className="text-xs text-slate-400 mt-1">{new Date(req.created_at).toLocaleDateString()}</p>
+                        </div>
+                        {req.status === 'pending' && (
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button onClick={() => updateRequestStatus(req.id, 'approved')} disabled={actionLoading === req.id}
+                              className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white text-xs font-semibold transition">
+                              {actionLoading === req.id ? '…' : 'Approve'}
+                            </button>
+                            <button onClick={() => updateRequestStatus(req.id, 'rejected')} disabled={actionLoading === req.id}
+                              className="px-3 py-1.5 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 text-xs font-semibold transition">
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── USERS TAB ── */}
+              {tab === 'users' && (
+                <div className="space-y-5">
+                  {/* Create new user form */}
+                  <div className="border border-slate-200 rounded-xl p-4">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3">Create new user</h3>
+                    <form onSubmit={handleCreateUser} className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Full name</label>
+                        <input type="text" required value={newName} onChange={e => setNewName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="John Smith" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
+                        <input type="email" required value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="user@example.com" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
+                        <select value={newRole} onChange={e => setNewRole(e.target.value as 'user' | 'admin')}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                          <option value="user">Country user</option>
+                          <option value="admin">Administrator</option>
+                        </select>
+                      </div>
+                      {newRole === 'user' && (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">Country</label>
+                          <input type="text" required={newRole === 'user'} value={newCountry} onChange={e => setNewCountry(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. Spain" />
+                        </div>
+                      )}
+                      <div className={newRole === 'admin' ? 'col-span-2' : ''}>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Temporary password</label>
+                        <input type="text" required value={newPwd} onChange={e => setNewPwd(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Min. 8 characters" />
+                      </div>
+                      <div className="col-span-2 flex justify-end">
+                        <button type="submit" disabled={creatingUser}
+                          className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold transition">
+                          {creatingUser ? 'Creating…' : 'Create user'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Change Password Modal ─── */
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const { updatePassword } = useAuth();
+  const [current, setCurrent] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (newPwd.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (newPwd !== confirm) { setError('Passwords do not match.'); return; }
+    setLoading(true);
+    const { error } = await updatePassword(newPwd);
+    setLoading(false);
+    if (error) { setError(error); } else { setSuccess(true); setTimeout(onClose, 2000); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-sm mx-4 p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-base font-semibold text-slate-800">Change password</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        {success ? (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <p className="text-sm text-slate-600">Password updated successfully.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">New password</label>
+              <div className="relative">
+                <input type={showNew ? 'text' : 'password'} required value={newPwd} onChange={e => setNewPwd(e.target.value)}
+                  className="w-full px-3 py-2 pr-10 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="••••••••" />
+                <button type="button" onClick={() => setShowNew(v => !v)} tabIndex={-1}
+                  className="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-slate-600">
+                  {showNew
+                    ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                    : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  }
+                </button>
+              </div>
+              {newPwd.length > 0 && (
+                <div className="flex gap-1 mt-1.5">
+                  {[1,2,3,4].map(l => (
+                    <div key={l} className={`h-1 flex-1 rounded-full ${newPwd.length >= l*3 ? l<=1?'bg-red-400':l<=2?'bg-yellow-400':l<=3?'bg-blue-400':'bg-green-500' : 'bg-slate-200'}`} />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Confirm new password</label>
+              <div className="relative">
+                <input type={showConfirm ? 'text' : 'password'} required value={confirm} onChange={e => setConfirm(e.target.value)}
+                  className="w-full px-3 py-2 pr-10 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="••••••••" />
+                <button type="button" onClick={() => setShowConfirm(v => !v)} tabIndex={-1}
+                  className="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-slate-600">
+                  {showConfirm
+                    ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                    : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  }
+                </button>
+              </div>
+            </div>
+            {error && (
+              <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 border border-red-200">
+                <svg className="w-4 h-4 text-red-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>
+                <p className="text-xs text-red-700">{error}</p>
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition">Cancel</button>
+              <button type="submit" disabled={loading} className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold transition">
+                {loading ? 'Saving…' : 'Update'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── User menu (logout + user info) ─── */
 function UserMenu() {
   const { user, isAdmin, signOut } = useAuth();
   const [open, setOpen] = useState(false);
+  const [showChangePwd, setShowChangePwd] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   return (
+    <>
+    {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+    {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
     <div className="relative flex-shrink-0">
       <button
         onClick={() => setOpen(o => !o)}
@@ -177,24 +497,52 @@ function UserMenu() {
           {/* Backdrop */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           {/* Dropdown */}
-          <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-200 z-50 overflow-hidden">
+          <div className="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-lg border border-slate-200 z-50 overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100">
               <p className="text-xs text-slate-400">Signed in as</p>
               <p className="text-sm font-semibold text-slate-800 truncate">{user?.email}</p>
+              {isAdmin && <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">Administrator</span>}
             </div>
-            <button
-              onClick={signOut}
-              className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              Sign out
-            </button>
+            <div className="py-1">
+              {/* Change password */}
+              <button
+                onClick={() => { setOpen(false); setShowChangePwd(true); }}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+              >
+                <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                Change password
+              </button>
+              {/* Admin panel — solo visible para admins */}
+              {isAdmin && (
+                <button
+                  onClick={() => { setOpen(false); setShowAdminPanel(true); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition"
+                >
+                  <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  User management
+                </button>
+              )}
+            </div>
+            <div className="border-t border-slate-100">
+              <button
+                onClick={signOut}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign out
+              </button>
+            </div>
           </div>
         </>
       )}
     </div>
+    </>
   );
 }
 
