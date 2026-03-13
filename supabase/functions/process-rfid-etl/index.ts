@@ -50,22 +50,19 @@ interface ReaderMaster {
 }
 
 interface RfidRecord {
-  document_id:           string;
-  event_time_local:      string | null;
-  event_time_offset:     string | null;
-  record_time:           string | null;
-  location:              string | null;
-  read_point_id:         string | null;
-  tag_id:                string;
-  impc_code:             string | null;
-  s9id:                  string;
-  event_type:            string;
-  impc_code_corrected:   string;
-  country_corrected:     string | null;
-  center_name_corrected: string | null;
-  etl_processed_at:      string;
+  document_id:      string;
+  event_time_local: string | null;
+  event_time_offset: string | null;
+  record_time:      string | null;
+  location:         string | null;
+  read_point_id:    string | null;
+  tag_id:           string;
+  impc_code:        string;   // Valor definitivo resuelto desde rfid_readers_master
+  s9id:             string;
+  event_type:       string;
+  etl_processed_at: string;
   // Para agrupación interna (no se guarda en BD)
-  _sort_time?:           number;
+  _sort_time?:      number;
 }
 
 interface IssueRow {
@@ -359,21 +356,18 @@ async function fase2Transformacion(
     } catch { sortTime = 0; }
 
     classified.push({
-      document_id:           docId || crypto.randomUUID(),
-      event_time_local:      row.event_time_local   ?? null,
-      event_time_offset:     row.event_time_offset  ?? null,
-      record_time:           row.record_time        ?? null,
-      location:              row.location           ?? null,
-      read_point_id:         readPointId,
-      tag_id:                tagId,
-      impc_code:             row.impc_code          ?? null,
+      document_id:      docId || crypto.randomUUID(),
+      event_time_local: row.event_time_local  ?? null,
+      event_time_offset: row.event_time_offset ?? null,
+      record_time:      row.record_time       ?? null,
+      location:         row.location          ?? null,
+      read_point_id:    readPointId,
+      tag_id:           tagId,
+      impc_code:        readerImpc,   // Siempre el valor corregido del maestro
       s9id,
-      event_type:            eventType,
-      impc_code_corrected:   readerImpc,
-      country_corrected:     country,
-      center_name_corrected: centerName,
-      etl_processed_at:      now,
-      _sort_time:            sortTime,
+      event_type:       eventType,
+      etl_processed_at: now,
+      _sort_time:       sortTime,
     });
   }
 
