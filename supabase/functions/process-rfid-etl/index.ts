@@ -3,36 +3,29 @@
  * ==========================================
  * ETL del Informe RFID — Proyecto EDGE
  *
- * Reemplaza el script Python process_rfid_etl.py para funcionar
- * sin servidor propio (arquitectura Netlify + Supabase).
- *
- * Fases del proceso
+ * Proceso completo:
  * -----------------
- *   1. EXTRACCIÓN     — Parsea el CSV recibido y lo carga en staging_rfid_events
- *   2. TRANSFORMACIÓN — Enriquece y clasifica cada evento (ORIGIN/DESTINATION/INTERMEDIATE)
+ *   1. EXTRACCIÓN     — Parsea el CSV y lo carga en staging_rfid_events
+ *   2. TRANSFORMACIÓN — Para cada lectura:
+ *        a) Determina el IMPC del lector desde rfid_readers_master
+ *        b) Clasifica como ORIGIN/DESTINATION comparando IMPC con s9id
+ *        c) Descarta lecturas INTERMEDIATE (lector no es ni origen ni destino)
+ *        d) Agrupa por (tag_id, impc_code, event_type):
+ *             - ORIGIN     → se queda con la lectura MÁS RECIENTE (última salida)
+ *             - DESTINATION → se queda con la lectura MÁS ANTIGUA (primera entrada)
  *   3. LOGGING        — Registra incongruencias en log_rfid_inconsistencies
- *   4. CARGA          — Upsert en la tabla RFID con los datos enriquecidos
+ *   4. CARGA          — Upsert en tabla RFID con los registros consolidados
  *   5. SINCRONIZACIÓN — Mantiene postal_centers alineada con rfid_readers_master
  *   6. LIMPIEZA       — Vacía staging_rfid_events
- *
- * Invocación (desde el frontend)
- * --------------------------------
- *   POST https://<project>.supabase.co/functions/v1/process-rfid-etl
- *   Headers:
- *     Authorization: Bearer <anon_key>
- *     Content-Type: multipart/form-data   (cuando se sube un CSV)
- *     Content-Type: application/json      (para modo backfill/sync-only)
- *   Body (multipart): file=<csv_file>
- *   Body (json):      { "mode": "backfill" | "sync-only" }
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ─── Configuración ────────────────────────────────────────────────────────────
 
-const SUPABASE_URL        = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const BATCH_SIZE          = 500;
+const BATCH_SIZE           = 500;
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -56,13 +49,23 @@ interface ReaderMaster {
   center_name:   string | null;
 }
 
-interface EnrichedRow {
+interface RfidRecord {
   document_id:           string;
-  event_type:            string | null;
-  impc_code_corrected:   string | null;
+  event_time_local:      string | null;
+  event_time_offset:     string | null;
+  record_time:           string | null;
+  location:              string | null;
+  read_point_id:         string | null;
+  tag_id:                string;
+  impc_code:             string | null;
+  s9id:                  string;
+  event_type:            string;
+  impc_code_corrected:   string;
   country_corrected:     string | null;
   center_name_corrected: string | null;
   etl_processed_at:      string;
+  // Para agrupación interna (no se guarda en BD)
+  _sort_time?:           number;
 }
 
 interface IssueRow {
@@ -81,28 +84,16 @@ interface IssueRow {
 function classifyEvent(
   readerImpc: string,
   s9id: string
-): { eventType: string; issueDetail: string } {
-  if (!s9id || s9id.length < 12) {
-    return { eventType: "UNKNOWN", issueDetail: `s9id demasiado corto o nulo: '${s9id}'` };
-  }
-  if (!readerImpc) {
-    return { eventType: "UNKNOWN", issueDetail: "reader_impc es nulo" };
-  }
+): "ORIGIN" | "DESTINATION" | "INTERMEDIATE" | "UNKNOWN" {
+  if (!s9id || s9id.length < 12 || !readerImpc) return "UNKNOWN";
 
   const originImpc = s9id.slice(0, 6).toUpperCase();
   const destImpc   = s9id.slice(6, 12).toUpperCase();
   const rImpc      = readerImpc.toUpperCase();
 
-  if (rImpc === originImpc) {
-    return { eventType: "ORIGIN", issueDetail: "" };
-  } else if (rImpc === destImpc) {
-    return { eventType: "DESTINATION", issueDetail: "" };
-  } else {
-    return {
-      eventType: "INTERMEDIATE",
-      issueDetail: `Lector ${rImpc} no coincide con origen (${originImpc}) ni destino (${destImpc}) del s9id`,
-    };
-  }
+  if (rImpc === originImpc)  return "ORIGIN";
+  if (rImpc === destImpc)    return "DESTINATION";
+  return "INTERMEDIATE";
 }
 
 // ─── Parseo de CSV ────────────────────────────────────────────────────────────
@@ -111,10 +102,8 @@ function parseCsv(text: string): Record<string, string>[] {
   const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   if (lines.length < 2) return [];
 
-  // Detectar separador (coma o punto y coma)
   const firstLine = lines[0];
   const sep = firstLine.includes(";") ? ";" : ",";
-
   const headers = firstLine.split(sep).map(h => h.trim().replace(/^"|"$/g, ""));
   const rows: Record<string, string>[] = [];
 
@@ -122,7 +111,6 @@ function parseCsv(text: string): Record<string, string>[] {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // Parseo simple respetando comillas
     const values: string[] = [];
     let current = "";
     let inQuotes = false;
@@ -139,9 +127,7 @@ function parseCsv(text: string): Record<string, string>[] {
     values.push(current.trim());
 
     const row: Record<string, string> = {};
-    headers.forEach((h, idx) => {
-      row[h] = values[idx] ?? "";
-    });
+    headers.forEach((h, idx) => { row[h] = values[idx] ?? ""; });
     rows.push(row);
   }
 
@@ -153,16 +139,17 @@ function parseCsv(text: string): Record<string, string>[] {
 async function selectAll(
   db: ReturnType<typeof createClient>,
   table: string,
-  query: Record<string, string> = {}
+  opts: { select?: string } = {}
 ): Promise<any[]> {
   const allRows: any[] = [];
   let from = 0;
   const pageSize = 1000;
 
   while (true) {
-    let q = db.from(table).select(query.select ?? "*").range(from, from + pageSize - 1);
-    if (query.event_type === "is.null") q = q.is("event_type", null);
-    const { data, error } = await q;
+    const { data, error } = await db
+      .from(table)
+      .select(opts.select ?? "*")
+      .range(from, from + pageSize - 1);
     if (error) throw new Error(`selectAll(${table}): ${error.message}`);
     if (!data || data.length === 0) break;
     allRows.push(...data);
@@ -227,15 +214,17 @@ async function fase1Extraccion(
   }
 
   if (mode === "backfill") {
-    const rfidRows = await selectAll(db, "RFID", {
-      select: "id,document_id,event_time_local,event_time_offset,record_time,location,read_point_id,tag_id,impc_code,s9id",
-      event_type: "is.null",
-    });
-    if (!rfidRows.length) {
-      console.log("  No hay registros pendientes en RFID. ETL completado.");
+    // Backfill: procesar registros RFID que no tienen event_type
+    const { data, error } = await db
+      .from("RFID")
+      .select("id,document_id,event_time_local,event_time_offset,record_time,location,read_point_id,tag_id,impc_code,s9id")
+      .is("event_type", null);
+    if (error) throw new Error(`backfill select: ${error.message}`);
+    if (!data || data.length === 0) {
+      console.log("  No hay registros pendientes en RFID.");
       return 0;
     }
-    const staging: StagingRow[] = rfidRows.map(r => ({
+    const staging: StagingRow[] = data.map(r => ({
       document_id:       r.document_id       ?? null,
       event_time_local:  r.event_time_local   ?? null,
       event_time_offset: r.event_time_offset  ?? null,
@@ -252,7 +241,6 @@ async function fase1Extraccion(
     return staging.length;
   }
 
-  // Modo incremental: staging ya fue cargado externamente
   const existing = await selectAll(db, "staging_rfid_events", { select: "id" });
   console.log(`  Modo incremental: ${existing.length} registros en staging.`);
   return existing.length;
@@ -262,24 +250,27 @@ async function fase2Transformacion(
   db: ReturnType<typeof createClient>,
   etlRunId: string,
   readersMaster: Map<string, ReaderMaster>
-): Promise<{ enriched: EnrichedRow[]; issues: IssueRow[]; stagingRows: any[] }> {
+): Promise<{ consolidated: RfidRecord[]; issues: IssueRow[]; intermediateCount: number }> {
   console.log("━━━ FASE 2: TRANSFORMACIÓN ━━━");
 
   const staging = await selectAll(db, "staging_rfid_events", { select: "*" });
-  console.log(`  ${staging.length} registros en staging para procesar.`);
+  console.log(`  ${staging.length} registros en staging.`);
 
-  const enriched: EnrichedRow[] = [];
   const issues: IssueRow[] = [];
   const now = new Date().toISOString();
-  const stats = { ORIGIN: 0, DESTINATION: 0, INTERMEDIATE: 0, UNKNOWN: 0 };
+
+  // Paso 2a: Clasificar cada lectura
+  const classified: RfidRecord[] = [];
+  let intermediateCount = 0;
+  let unknownCount = 0;
 
   for (const row of staging) {
-    const readPointId = row.read_point_id ?? "";
-    const s9id        = row.s9id         ?? "";
-    const tagId       = row.tag_id       ?? "";
-    const docId       = row.document_id  ?? "";
+    const readPointId = (row.read_point_id ?? "").trim();
+    const s9id        = (row.s9id         ?? "").trim();
+    const tagId       = (row.tag_id       ?? "").trim();
+    const docId       = (row.document_id  ?? "").trim();
 
-    // Validación de campos obligatorios
+    // Validar campos obligatorios
     const missing: string[] = [];
     if (!readPointId) missing.push("read_point_id");
     if (!s9id)        missing.push("s9id");
@@ -288,7 +279,7 @@ async function fase2Transformacion(
     if (missing.length) {
       issues.push({
         etl_run_id:       etlRunId,
-        source_record_id: String(row.id),
+        source_record_id: String(row.id ?? docId),
         read_point_id:    readPointId || null,
         s9id:             s9id || null,
         tag_id:           tagId || null,
@@ -296,20 +287,20 @@ async function fase2Transformacion(
         issue_detail:     `Campos obligatorios nulos: ${missing.join(", ")}`,
         severity:         "ALTO",
       });
-      stats.UNKNOWN++;
+      unknownCount++;
       continue;
     }
 
-    // Búsqueda en el maestro de lectores
+    // Resolver IMPC desde el maestro de lectores
     const masterEntry = readersMaster.get(readPointId);
-    let readerImpc: string;
-    let country: string | null;
-    let centerName: string | null;
+    let readerImpc:  string;
+    let country:     string | null;
+    let centerName:  string | null;
 
     if (!masterEntry) {
       issues.push({
         etl_run_id:       etlRunId,
-        source_record_id: String(row.id),
+        source_record_id: String(row.id ?? docId),
         read_point_id:    readPointId,
         s9id,
         tag_id:           tagId,
@@ -317,52 +308,111 @@ async function fase2Transformacion(
         issue_detail:     `Lector '${readPointId}' no encontrado en rfid_readers_master. Se usará impc_code original.`,
         severity:         "MEDIO",
       });
-      readerImpc  = row.impc_code ?? "";
-      country     = null;
-      centerName  = null;
+      readerImpc = (row.impc_code ?? "").trim();
+      country    = null;
+      centerName = null;
     } else {
-      readerImpc  = masterEntry.impc_code;
-      country     = masterEntry.country;
-      centerName  = masterEntry.center_name;
+      readerImpc = masterEntry.impc_code;
+      country    = masterEntry.country;
+      centerName = masterEntry.center_name;
     }
 
-    // Clasificación del evento
-    const { eventType, issueDetail } = classifyEvent(readerImpc, s9id);
+    // Clasificar
+    const eventType = classifyEvent(readerImpc, s9id);
 
-    if (eventType === "UNKNOWN") {
+    // Descartar lecturas INTERMEDIATE — no se cargan en RFID
+    if (eventType === "INTERMEDIATE") {
+      intermediateCount++;
       issues.push({
         etl_run_id:       etlRunId,
-        source_record_id: String(row.id),
+        source_record_id: String(row.id ?? docId),
         read_point_id:    readPointId,
         s9id,
         tag_id:           tagId,
-        issue_type:       "S9ID_INVALID",
-        issue_detail:     issueDetail,
-        severity:         "ALTO",
+        issue_type:       "INTERMEDIATE_DISCARDED",
+        issue_detail:     `Lector ${readerImpc} no es ni origen (${s9id.slice(0,6)}) ni destino (${s9id.slice(6,12)}) del s9id. Lectura descartada.`,
+        severity:         "INFO",
       });
+      continue;
     }
 
-    stats[eventType as keyof typeof stats]++;
-
-    if (docId) {
-      enriched.push({
-        document_id:           docId,
-        event_type:            eventType !== "UNKNOWN" ? eventType : null,
-        impc_code_corrected:   masterEntry ? readerImpc : null,
-        country_corrected:     country,
-        center_name_corrected: centerName,
-        etl_processed_at:      now,
+    if (eventType === "UNKNOWN") {
+      unknownCount++;
+      issues.push({
+        etl_run_id:       etlRunId,
+        source_record_id: String(row.id ?? docId),
+        read_point_id:    readPointId,
+        s9id,
+        tag_id:           tagId,
+        issue_type:       "UNKNOWN_EVENT_TYPE",
+        issue_detail:     `No se pudo clasificar la lectura (s9id: '${s9id}', impc: '${readerImpc}').`,
+        severity:         "MEDIO",
       });
+      continue;
+    }
+
+    // Calcular tiempo para ordenación
+    let sortTime = 0;
+    try {
+      sortTime = new Date(row.event_time_local ?? row.record_time ?? "").getTime();
+      if (isNaN(sortTime)) sortTime = 0;
+    } catch { sortTime = 0; }
+
+    classified.push({
+      document_id:           docId || crypto.randomUUID(),
+      event_time_local:      row.event_time_local   ?? null,
+      event_time_offset:     row.event_time_offset  ?? null,
+      record_time:           row.record_time        ?? null,
+      location:              row.location           ?? null,
+      read_point_id:         readPointId,
+      tag_id:                tagId,
+      impc_code:             row.impc_code          ?? null,
+      s9id,
+      event_type:            eventType,
+      impc_code_corrected:   readerImpc,
+      country_corrected:     country,
+      center_name_corrected: centerName,
+      etl_processed_at:      now,
+      _sort_time:            sortTime,
+    });
+  }
+
+  console.log(`  Clasificados: ${classified.length} válidos, ${intermediateCount} intermedias descartadas, ${unknownCount} desconocidos.`);
+
+  // Paso 2b: Agrupar por (tag_id, impc_code_corrected, event_type)
+  //   - ORIGIN      → conservar la lectura MÁS RECIENTE (última salida del centro)
+  //   - DESTINATION → conservar la lectura MÁS ANTIGUA  (primera entrada al centro)
+  const groupMap = new Map<string, RfidRecord>();
+
+  for (const rec of classified) {
+    const key = `${rec.tag_id}|${rec.impc_code_corrected}|${rec.event_type}`;
+    const existing = groupMap.get(key);
+
+    if (!existing) {
+      groupMap.set(key, rec);
+    } else {
+      if (rec.event_type === "ORIGIN") {
+        // Quedarse con la más reciente
+        if ((rec._sort_time ?? 0) > (existing._sort_time ?? 0)) {
+          groupMap.set(key, rec);
+        }
+      } else {
+        // DESTINATION: quedarse con la más antigua
+        if ((rec._sort_time ?? 0) < (existing._sort_time ?? 0)) {
+          groupMap.set(key, rec);
+        }
+      }
     }
   }
 
-  console.log(
-    `  Clasificación: ORIGIN=${stats.ORIGIN}  DESTINATION=${stats.DESTINATION}  ` +
-    `INTERMEDIATE=${stats.INTERMEDIATE}  UNKNOWN=${stats.UNKNOWN}`
-  );
-  console.log(`  Incongruencias detectadas: ${issues.length}`);
+  const consolidated = Array.from(groupMap.values()).map(r => {
+    const { _sort_time, ...rest } = r;
+    return rest as RfidRecord;
+  });
 
-  return { enriched, issues, stagingRows: staging };
+  console.log(`  Consolidados: ${classified.length} lecturas → ${consolidated.length} registros únicos.`);
+
+  return { consolidated, issues, intermediateCount };
 }
 
 async function fase3Logging(
@@ -371,7 +421,7 @@ async function fase3Logging(
 ): Promise<void> {
   console.log("━━━ FASE 3: LOGGING ━━━");
   if (!issues.length) {
-    console.log("  Sin incongruencias que registrar.");
+    console.log("  Sin incongruencias.");
     return;
   }
   await insertBatch(db, "log_rfid_inconsistencies", issues);
@@ -380,112 +430,81 @@ async function fase3Logging(
 
 async function fase4Carga(
   db: ReturnType<typeof createClient>,
-  enriched: EnrichedRow[],
-  stagingRows: any[]
+  records: RfidRecord[]
 ): Promise<number> {
   console.log("━━━ FASE 4: CARGA ━━━");
-  if (!enriched.length) {
-    console.log("  Sin registros enriquecidos para cargar.");
+  if (!records.length) {
+    console.log("  Sin registros para cargar.");
     return 0;
   }
-
-  const RFID_COLUMNS = new Set([
-    "id", "document_id", "event_time_local", "event_time_offset",
-    "record_time", "location", "read_point_id", "tag_id", "impc_code", "s9id",
-    "event_type", "impc_code_corrected", "country_corrected",
-    "center_name_corrected", "etl_processed_at",
-  ]);
-
-  const enrichByDocId = new Map(enriched.map(e => [e.document_id, e]));
-
-  const upsertRows: any[] = [];
-  for (const row of stagingRows) {
-    const docId = row.document_id;
-    if (!docId || !enrichByDocId.has(docId)) continue;
-    const enrich = enrichByDocId.get(docId)!;
-    const merged: Record<string, any> = {};
-    for (const [k, v] of Object.entries(row)) {
-      if (RFID_COLUMNS.has(k)) merged[k] = v;
-    }
-    merged.event_type            = enrich.event_type;
-    merged.impc_code_corrected   = enrich.impc_code_corrected;
-    merged.country_corrected     = enrich.country_corrected;
-    merged.center_name_corrected = enrich.center_name_corrected;
-    merged.etl_processed_at      = enrich.etl_processed_at;
-    upsertRows.push(merged);
-  }
-
-  console.log(`  Cargando ${upsertRows.length} registros en la tabla RFID...`);
-  await upsertBatch(db, "RFID", upsertRows, "document_id");
-  console.log(`  Carga completada: ${upsertRows.length} registros.`);
-  return upsertRows.length;
+  await upsertBatch(db, "RFID", records, "document_id");
+  console.log(`  ${records.length} registros cargados en tabla RFID.`);
+  return records.length;
 }
 
 async function fase5Sincronizacion(
   db: ReturnType<typeof createClient>,
   readersMaster: Map<string, ReaderMaster>
 ): Promise<void> {
-  console.log("━━━ FASE 5: SINCRONIZACIÓN (rfid_readers_master → postal_centers) ━━━");
+  console.log("━━━ FASE 5: SINCRONIZACIÓN postal_centers ━━━");
 
-  const pcRows = await selectAll(db, "postal_centers", { select: "impc_code" });
-  const existingImpcs = new Set(pcRows.map((r: any) => r.impc_code));
+  const existing = await selectAll(db, "postal_centers", { select: "impc_code" });
+  const existingSet = new Set(existing.map((r: any) => r.impc_code));
 
-  const newEntries: any[] = [];
-  const seenImpcs = new Set<string>();
-  for (const reader of readersMaster.values()) {
-    const impc = reader.impc_code;
-    if (!existingImpcs.has(impc) && !seenImpcs.has(impc)) {
-      newEntries.push({ impc_code: impc, country: reader.country, center_name: reader.center_name });
-      seenImpcs.add(impc);
+  const toInsert: any[] = [];
+  for (const [, reader] of readersMaster) {
+    if (!existingSet.has(reader.impc_code)) {
+      toInsert.push({
+        impc_code:   reader.impc_code,
+        country:     reader.country ?? "",
+        center_name: reader.center_name ?? reader.impc_code,
+      });
     }
   }
 
-  if (newEntries.length) {
-    await insertBatch(db, "postal_centers", newEntries);
-    console.log(`  ${newEntries.length} nuevos centros añadidos a postal_centers.`);
+  if (toInsert.length) {
+    await insertBatch(db, "postal_centers", toInsert);
+    console.log(`  ${toInsert.length} nuevos centros añadidos a postal_centers.`);
   } else {
-    console.log(`  postal_centers ya sincronizada (${existingImpcs.size} centros). Sin cambios.`);
+    console.log("  postal_centers ya está sincronizada.");
   }
 }
 
-async function fase6Limpieza(db: ReturnType<typeof createClient>): Promise<void> {
+async function fase6Limpieza(
+  db: ReturnType<typeof createClient>
+): Promise<void> {
   console.log("━━━ FASE 6: LIMPIEZA ━━━");
-  const { error } = await db.from("staging_rfid_events").delete().gte("id", 0);
+  const { error } = await db.from("staging_rfid_events").delete().neq("id", 0);
   if (error) {
-    console.warn(`  Advertencia al vaciar staging: ${error.message}`);
+    // Intentar con gt
+    const { error: e2 } = await db.from("staging_rfid_events").delete().gt("id", 0);
+    if (e2) console.warn(`  Advertencia al limpiar staging: ${e2.message}`);
+    else console.log("  staging_rfid_events vaciado.");
   } else {
-    console.log("  Staging vaciado correctamente.");
+    console.log("  staging_rfid_events vaciado.");
   }
 }
 
-// ─── Orquestador Principal ────────────────────────────────────────────────────
+// ─── Orquestador ─────────────────────────────────────────────────────────────
 
 async function runEtl(
   mode: string,
   csvRows: Record<string, string>[] | null
 ): Promise<Record<string, any>> {
+  const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const etlRunId  = crypto.randomUUID();
   const startTime = Date.now();
 
   console.log("=".repeat(60));
-  console.log("  INICIO ETL RFID (Supabase Edge Function)");
-  console.log(`  Run ID : ${etlRunId}`);
-  console.log(`  Modo   : ${mode}`);
-  console.log(`  Inicio : ${new Date().toISOString()}`);
+  console.log(`ETL RFID — run_id: ${etlRunId} — modo: ${mode}`);
   console.log("=".repeat(60));
 
-  const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-
-  // Cargar el maestro de lectores en memoria
+  // Cargar maestro de lectores
   const masterRows = await selectAll(db, "rfid_readers_master", { select: "*" });
   const readersMaster = new Map<string, ReaderMaster>(
     masterRows.map((r: any) => [r.read_point_id, r as ReaderMaster])
   );
-  console.log(`  ${readersMaster.size} lectores cargados en el maestro.`);
-
-  if (!readersMaster.size) {
-    throw new Error("rfid_readers_master está vacío. Abortando ETL.");
-  }
+  console.log(`  Maestro de lectores: ${readersMaster.size} entradas.`);
 
   let result: Record<string, any> = { etl_run_id: etlRunId, mode };
 
@@ -495,24 +514,24 @@ async function runEtl(
   } else {
     const nStaged = await fase1Extraccion(db, mode, csvRows);
     if (nStaged === 0) {
-      result.message = "Sin datos que procesar. ETL finalizado.";
-      return result;
+      result = { ...result, staged: 0, consolidated: 0, loaded: 0, issues: 0, intermediate_discarded: 0, duration_ms: Date.now() - startTime };
+    } else {
+      const { consolidated, issues, intermediateCount } = await fase2Transformacion(db, etlRunId, readersMaster);
+      await fase3Logging(db, issues);
+      const nLoaded = await fase4Carga(db, consolidated);
+      await fase5Sincronizacion(db, readersMaster);
+      await fase6Limpieza(db);
+
+      result = {
+        ...result,
+        staged:               nStaged,
+        consolidated:         consolidated.length,
+        intermediate_discarded: intermediateCount,
+        loaded:               nLoaded,
+        issues:               issues.length,
+        duration_ms:          Date.now() - startTime,
+      };
     }
-
-    const { enriched, issues, stagingRows } = await fase2Transformacion(db, etlRunId, readersMaster);
-    await fase3Logging(db, issues);
-    const nLoaded = await fase4Carga(db, enriched, stagingRows);
-    await fase5Sincronizacion(db, readersMaster);
-    await fase6Limpieza(db);
-
-    result = {
-      ...result,
-      staged:         nStaged,
-      enriched:       enriched.length,
-      loaded:         nLoaded,
-      issues:         issues.length,
-      duration_ms:    Date.now() - startTime,
-    };
   }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -526,14 +545,12 @@ async function runEtl(
 // ─── Handler HTTP ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  // CORS headers reutilizables
   const corsHeaders = {
     "Access-Control-Allow-Origin":  "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type, apikey, x-client-info, x-supabase-api-version",
   };
 
-  // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -552,7 +569,6 @@ Deno.serve(async (req: Request) => {
     const contentType = req.headers.get("content-type") ?? "";
 
     if (contentType.includes("multipart/form-data")) {
-      // Subida de CSV
       const formData = await req.formData();
       const file = formData.get("file") as File | null;
       if (!file) {
@@ -566,7 +582,6 @@ Deno.serve(async (req: Request) => {
       mode = "csv";
       console.log(`  CSV recibido: ${csvRows.length} filas, archivo: ${file.name}`);
     } else {
-      // Modo JSON (backfill, sync-only, incremental)
       const body = await req.json().catch(() => ({}));
       mode = body.mode ?? "backfill";
     }
