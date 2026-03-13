@@ -1276,48 +1276,48 @@ export default function AdminAuditPage() {
     }
 
     try {
-      const response = await fetch('/api/audit/run', {
+      // Llamar a la Supabase Edge Function run-audit-benchmark
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+      const fnUrl = `${SUPABASE_URL}/functions/v1/run-audit-benchmark`;
+
+      const response = await fetch(fnUrl, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+        },
+        body: JSON.stringify({}),
       });
 
-      if (!response.ok || !response.body) {
-        const err = await response.json().catch(() => ({ error: 'Error desconocido' }));
-        setRunLogs(prev => [...prev, { type: 'error', message: err.error || `HTTP ${response.status}` }]);
-        setRunResult({ success: false, message: err.error || 'Error al iniciar el audit' });
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        const msg = result.error || `HTTP ${response.status}`;
+        setRunLogs(prev => [...prev, { type: 'error', message: msg }]);
+        setRunResult({ success: false, message: msg });
         setAuditRunning(false);
         return;
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop() || '';
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue;
-          try {
-            const event = JSON.parse(part.slice(6));
-            if (event.type === 'done') {
-              setRunResult({ success: event.success, message: event.message });
-              setAuditRunning(false);
-              if (event.success) {
-                toast.success('Audit completado. Recargando datos...');
-                setTimeout(() => refetchAudit(), 1500);
-              } else {
-                toast.error('El audit finalizó con errores.');
-              }
-            } else {
-              setRunLogs(prev => [...prev, { type: event.type, message: event.message }]);
-            }
-          } catch { /* ignore parse errors */ }
-        }
+      // Mostrar los logs devueltos por la función
+      if (result.logs && Array.isArray(result.logs)) {
+        setRunLogs(result.logs.map((line: string) => ({
+          type: line.includes('error') || line.includes('Error') ? 'error' : 'log',
+          message: line,
+        })));
       }
+
+      const summary = `Audit completado: ${result.total_entries} incongruencias detectadas en ${result.total_events} registros. ` +
+        `IMPC_MISMATCH: ${result.by_check?.IMPC_MISMATCH_RFID ?? 0}, ` +
+        `CASE_NORMALIZATION: ${result.by_check?.CASE_NORMALIZATION ?? 0}, ` +
+        `MAESTRO_AUSENTE: ${result.by_check?.MAESTRO_AUSENTE ?? 0}.`;
+
+      setRunResult({ success: true, message: summary });
+      setAuditRunning(false);
+      toast.success('Audit completado. Recargando datos...');
+      setTimeout(() => refetchAudit(), 1500);
+
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error de red';
       setRunLogs(prev => [...prev, { type: 'error', message: msg }]);
