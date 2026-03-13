@@ -1001,7 +1001,269 @@ function MasterReviewSection({ user }: { user: { email?: string } }) {
 }
 
 // ── Componente principal ───────────────────────────────────────────────────
-type Tab = 'dashboard' | 'audit-log' | 'master-review';
+// ── Componente: Carga RFID ────────────────────────────────────────────────
+interface EtlStatusData {
+  running: boolean;
+  lastRunAt: string | null;
+  lastRunMode: string | null;
+  lastRunResult: 'success' | 'error' | null;
+  lastRunDuration: number | null;
+  lastRunLog: string[];
+}
+
+function RfidUploadSection() {
+  const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [etlStatus, setEtlStatus] = useState<EtlStatusData | null>(null);
+  const [polling, setPolling] = useState(false);
+
+  const getToken = async (): Promise<string | null> => {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token ?? null;
+  };
+
+  const fetchStatus = async () => {
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/etl/rfid/status', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data: EtlStatusData = await res.json();
+        setEtlStatus(data);
+        return data;
+      }
+    } catch (e) {
+      console.error('Error al consultar estado ETL:', e);
+    }
+    return null;
+  };
+
+  const startPolling = () => {
+    setPolling(true);
+    const interval = setInterval(async () => {
+      const status = await fetchStatus();
+      if (status && !status.running) {
+        clearInterval(interval);
+        setPolling(false);
+        setUploading(false);
+        if (status.lastRunResult === 'success') {
+          toast.success(`ETL completado en ${status.lastRunDuration?.toFixed(1)}s`);
+        } else {
+          toast.error('El ETL finalizó con errores. Revisa el log.');
+        }
+      }
+    }, 2000);
+  };
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const token = await getToken();
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/etl/rfid/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (res.ok) {
+        toast.success('Archivo subido. ETL iniciado...');
+        setFile(null);
+        startPolling();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Error al subir el archivo');
+        setUploading(false);
+      }
+    } catch (e) {
+      toast.error('Error de conexión');
+      setUploading(false);
+    }
+  };
+
+  const handleBackfill = async () => {
+    setUploading(true);
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/etl/rfid/run', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'backfill' }),
+      });
+      if (res.ok) {
+        toast.success('ETL backfill iniciado...');
+        startPolling();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Error al iniciar el ETL');
+        setUploading(false);
+      }
+    } catch (e) {
+      toast.error('Error de conexión');
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped?.name.endsWith('.csv')) setFile(dropped);
+    else toast.error('Solo se permiten archivos CSV');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold text-slate-800">Carga de Datos RFID</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Sube un archivo CSV con datos brutos de lecturas RFID. El pipeline ETL transformará,
+          clasificará y cargará los datos automáticamente en la tabla RFID.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Panel de subida */}
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-700 mb-4">Subir archivo CSV</h3>
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+              dragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+            }`}
+            onClick={() => document.getElementById('rfid-file-input')?.click()}
+          >
+            <input
+              id="rfid-file-input" type="file" accept=".csv" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }}
+            />
+            <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </div>
+            {file ? (
+              <div>
+                <p className="text-sm font-medium text-indigo-700">{file.name}</p>
+                <p className="text-xs text-slate-400 mt-1">{(file.size / 1024).toFixed(1)} KB</p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm font-medium text-slate-600">Arrastra tu CSV aquí</p>
+                <p className="text-xs text-slate-400 mt-1">o haz clic para seleccionar</p>
+              </div>
+            )}
+          </div>
+          <div className="mt-4 p-3 bg-slate-50 rounded-lg">
+            <p className="text-xs font-semibold text-slate-600 mb-1">Columnas esperadas:</p>
+            <p className="text-xs font-mono text-slate-500 leading-relaxed break-all">
+              document_id, event_time_local, event_time_offset, record_time, location, read_point_id, tag_id, impc_code, s9id
+            </p>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={handleUpload}
+              disabled={!file || uploading}
+              className="flex-1 bg-indigo-600 text-white text-sm font-medium py-2.5 px-4 rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            >
+              {uploading && polling ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Procesando...
+                </>
+              ) : 'Subir y procesar'}
+            </button>
+            {file && (
+              <button onClick={() => setFile(null)} disabled={uploading}
+                className="px-3 py-2.5 text-sm text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40">
+                Cancelar
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Panel de estado del ETL */}
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-slate-700">Estado del ETL</h3>
+            <button onClick={fetchStatus} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Actualizar</button>
+          </div>
+          {!etlStatus ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-slate-400">Pulsa «Actualizar» para ver el estado</p>
+              <button onClick={fetchStatus}
+                className="mt-3 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg transition-colors">
+                Consultar estado
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                  etlStatus.running ? 'bg-amber-400 animate-pulse' :
+                  etlStatus.lastRunResult === 'success' ? 'bg-emerald-400' :
+                  etlStatus.lastRunResult === 'error' ? 'bg-red-400' : 'bg-slate-300'
+                }`} />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">
+                    {etlStatus.running ? 'ETL en ejecución...' :
+                     etlStatus.lastRunResult === 'success' ? 'Último ETL completado con éxito' :
+                     etlStatus.lastRunResult === 'error' ? 'Último ETL finalizado con errores' :
+                     'Sin ejecuciones recientes'}
+                  </p>
+                  {etlStatus.lastRunAt && (
+                    <p className="text-xs text-slate-400">
+                      {new Date(etlStatus.lastRunAt).toLocaleString('es-ES')}
+                      {etlStatus.lastRunMode && ` · Modo: ${etlStatus.lastRunMode}`}
+                      {etlStatus.lastRunDuration && ` · ${etlStatus.lastRunDuration.toFixed(1)}s`}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {etlStatus.lastRunLog.length > 0 && (
+                <div className="bg-slate-900 rounded-lg p-3 max-h-52 overflow-y-auto">
+                  {etlStatus.lastRunLog.slice(-25).map((line, i) => (
+                    <p key={i} className={`text-xs font-mono leading-5 ${
+                      line.includes('ERROR') ? 'text-red-400' :
+                      line.includes('WARNING') ? 'text-amber-400' :
+                      line.includes('━━━') ? 'text-indigo-300 font-semibold' :
+                      'text-slate-300'
+                    }`}>{line}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <div className="border-t border-slate-100 mt-4 pt-4">
+            <p className="text-xs font-semibold text-slate-500 mb-3">Acciones manuales</p>
+            <button
+              onClick={handleBackfill}
+              disabled={uploading || (etlStatus?.running ?? false)}
+              className="w-full text-sm text-slate-600 border border-slate-200 py-2 px-4 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Reprocesar todos los registros (backfill)
+            </button>
+            <p className="text-xs text-slate-400 mt-1.5">
+              Reclasifica todos los registros de la tabla RFID sin event_type.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Componente principal ────────────────────────────────────────────────
+type Tab = 'dashboard' | 'audit-log' | 'master-review' | 'rfid-upload';
 
 export default function AdminAuditPage() {
   const { user, isAdmin } = useAuth();
@@ -1117,6 +1379,7 @@ export default function AdminAuditPage() {
       label: 'Revisión de Maestros',
       badge: pendingCount > 0 ? pendingCount : undefined,
     },
+    { id: 'rfid-upload', label: 'Carga RFID' },
   ];
 
   return (
@@ -1245,6 +1508,7 @@ export default function AdminAuditPage() {
         )}
         {activeTab === 'audit-log' && <AuditLogSection user={user || {}} />}
         {activeTab === 'master-review' && <MasterReviewSection user={user || {}} />}
+        {activeTab === 'rfid-upload' && <RfidUploadSection />}
       </div>
     </div>
   );

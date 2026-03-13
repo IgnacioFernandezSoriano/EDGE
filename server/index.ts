@@ -3,21 +3,120 @@ import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { spawn } from "child_process";
+import fs from "fs";
+import multer from "multer";
 import { createClient } from "@supabase/supabase-js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Supabase client for token validation (server-side)
+// ── Supabase clients ───────────────────────────────────────────────────────
+// Anon key for audit pipeline (existing)
 const supabaseUrl  = process.env.VITE_SUPABASE_URL  || "https://ewyhmmixqcubqokphebh.supabase.co";
 const supabaseAnon = process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWhtbWl4cWN1YnFva3BoZWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5OTc3MjMsImV4cCI6MjA4ODU3MzcyM30.xMtcrn12c9r0Q_Q0e46Ptsci7Y31YnB5V9MSBHgj20k";
 const supabase = createClient(supabaseUrl, supabaseAnon);
 
-// Path to the audit pipeline script
-const AUDIT_PIPELINE = "/home/ubuntu/edge_analysis/run_audit_pipeline.py";
+// Service role key for ETL RFID (needs write access)
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWhtbWl4cWN1YnFva3BoZWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mjk5NzcyMywiZXhwIjoyMDg4NTczNzIzfQ.7UPBH4yhb2niowAPsVA7xdAf9G89XnzZxo5JO1TBCQk";
 
-// Track running audit process to prevent concurrent executions
+// ── Script paths ───────────────────────────────────────────────────────────
+const AUDIT_PIPELINE = "/home/ubuntu/edge_analysis/run_audit_pipeline.py";
+const RFID_ETL_SCRIPT = path.resolve(__dirname, "..", "scripts", "process_rfid_etl.py");
+
+// ── State tracking ─────────────────────────────────────────────────────────
 let auditRunning = false;
+
+interface EtlStatus {
+  running: boolean;
+  lastRunAt: string | null;
+  lastRunMode: string | null;
+  lastRunResult: "success" | "error" | null;
+  lastRunDuration: number | null;
+  lastRunLog: string[];
+}
+const etlStatus: EtlStatus = {
+  running: false,
+  lastRunAt: null,
+  lastRunMode: null,
+  lastRunResult: null,
+  lastRunDuration: null,
+  lastRunLog: [],
+};
+
+// ── Multer: CSV upload ─────────────────────────────────────────────────────
+const UPLOADS_DIR = path.resolve(__dirname, "..", "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    cb(null, `rfid_upload_${Date.now()}_${file.originalname}`);
+  },
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "text/csv" || file.originalname.endsWith(".csv")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Solo se permiten archivos CSV"));
+    }
+  },
+});
+
+// ── ETL runner ─────────────────────────────────────────────────────────────
+function runEtlProcess(mode: string, csvFilePath?: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const args = ["--mode", mode];
+    if (mode === "csv" && csvFilePath) args.push("--file", csvFilePath);
+
+    const startTime = Date.now();
+    etlStatus.running = true;
+    etlStatus.lastRunAt = new Date().toISOString();
+    etlStatus.lastRunMode = mode;
+    etlStatus.lastRunLog = [];
+
+    const proc = spawn("python3.11", [RFID_ETL_SCRIPT, ...args], {
+      env: { ...process.env, SUPABASE_URL: supabaseUrl, SUPABASE_SERVICE_KEY },
+    });
+
+    proc.stdout.on("data", (data: Buffer) => {
+      data.toString().split("\n").filter(Boolean).forEach(line => {
+        console.log(`[ETL] ${line}`);
+        etlStatus.lastRunLog.push(line);
+        if (etlStatus.lastRunLog.length > 500) etlStatus.lastRunLog.shift();
+      });
+    });
+
+    proc.stderr.on("data", (data: Buffer) => {
+      data.toString().split("\n").filter(Boolean).forEach(line => {
+        console.error(`[ETL ERR] ${line}`);
+        etlStatus.lastRunLog.push(`ERROR: ${line}`);
+      });
+    });
+
+    proc.on("close", (code) => {
+      etlStatus.running = false;
+      etlStatus.lastRunDuration = (Date.now() - startTime) / 1000;
+      if (csvFilePath && fs.existsSync(csvFilePath)) fs.unlinkSync(csvFilePath);
+      if (code === 0) {
+        etlStatus.lastRunResult = "success";
+        resolve();
+      } else {
+        etlStatus.lastRunResult = "error";
+        reject(new Error(`ETL finalizado con código de error: ${code}`));
+      }
+    });
+
+    proc.on("error", (err) => {
+      etlStatus.running = false;
+      etlStatus.lastRunResult = "error";
+      reject(err);
+    });
+  });
+}
 
 async function startServer() {
   const app = express();
@@ -42,7 +141,6 @@ async function startServer() {
       res.status(401).json({ error: "Token inválido o caducado" });
       return;
     }
-    // Check admin role via user metadata or app_metadata
     const role = user.app_metadata?.role || user.user_metadata?.role;
     if (role !== "admin") {
       res.status(403).json({ error: "Acceso denegado: se requiere rol admin" });
@@ -51,19 +149,18 @@ async function startServer() {
     next();
   }
 
-  // ── GET /api/audit/status — estado del proceso ────────────────────────
+  // ── GET /api/audit/status — estado del audit pipeline (existing) ──────
   app.get("/api/audit/status", requireAdmin, (_req, res) => {
     res.json({ running: auditRunning });
   });
 
-  // ── POST /api/audit/run — ejecutar pipeline con SSE streaming ─────────
+  // ── POST /api/audit/run — ejecutar audit pipeline con SSE (existing) ──
   app.post("/api/audit/run", requireAdmin, (req, res) => {
     if (auditRunning) {
       res.status(409).json({ error: "El audit ya está en ejecución" });
       return;
     }
 
-    // Server-Sent Events headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -82,17 +179,11 @@ async function startServer() {
     });
 
     proc.stdout.on("data", (chunk: Buffer) => {
-      const lines = chunk.toString().split("\n").filter(Boolean);
-      for (const line of lines) {
-        send("log", { message: line });
-      }
+      chunk.toString().split("\n").filter(Boolean).forEach(line => send("log", { message: line }));
     });
 
     proc.stderr.on("data", (chunk: Buffer) => {
-      const lines = chunk.toString().split("\n").filter(Boolean);
-      for (const line of lines) {
-        send("error", { message: line });
-      }
+      chunk.toString().split("\n").filter(Boolean).forEach(line => send("error", { message: line }));
     });
 
     proc.on("close", (code: number | null) => {
@@ -111,13 +202,56 @@ async function startServer() {
       res.end();
     });
 
-    // If client disconnects, kill the process
     req.on("close", () => {
-      if (auditRunning) {
-        proc.kill();
-        auditRunning = false;
-      }
+      if (auditRunning) { proc.kill(); auditRunning = false; }
     });
+  });
+
+  // ── GET /api/etl/rfid/status — estado del ETL RFID ───────────────────
+  app.get("/api/etl/rfid/status", requireAdmin, (_req, res) => {
+    res.json(etlStatus);
+  });
+
+  // ── POST /api/etl/rfid/upload — subir CSV y ejecutar ETL ─────────────
+  app.post(
+    "/api/etl/rfid/upload",
+    requireAdmin,
+    upload.single("file"),
+    async (req, res) => {
+      if (etlStatus.running) {
+        res.status(409).json({ error: "El ETL ya está en ejecución. Espera a que termine." });
+        return;
+      }
+      if (!req.file) {
+        res.status(400).json({ error: "No se ha proporcionado ningún archivo CSV" });
+        return;
+      }
+      const csvPath = req.file.path;
+      console.log(`[ETL] CSV recibido: ${csvPath} (${req.file.size} bytes)`);
+      res.status(202).json({
+        message: "ETL iniciado. Consulta /api/etl/rfid/status para seguir el progreso.",
+        file: req.file.originalname,
+        size: req.file.size,
+      });
+      runEtlProcess("csv", csvPath).catch(err => console.error(`[ETL] Error: ${err.message}`));
+    }
+  );
+
+  // ── POST /api/etl/rfid/run — ejecutar ETL en modo backfill/incremental
+  app.post("/api/etl/rfid/run", requireAdmin, async (req, res) => {
+    if (etlStatus.running) {
+      res.status(409).json({ error: "El ETL ya está en ejecución. Espera a que termine." });
+      return;
+    }
+    const mode = (req.body?.mode as string) || "incremental";
+    if (!["backfill", "incremental", "sync-only"].includes(mode)) {
+      res.status(400).json({ error: `Modo no válido: ${mode}` });
+      return;
+    }
+    res.status(202).json({
+      message: `ETL iniciado en modo '${mode}'. Consulta /api/etl/rfid/status para seguir el progreso.`,
+    });
+    runEtlProcess(mode).catch(err => console.error(`[ETL] Error: ${err.message}`));
   });
 
   // ── Serve static frontend ─────────────────────────────────────────────
@@ -128,7 +262,6 @@ async function startServer() {
 
   app.use(express.static(staticPath));
 
-  // Handle client-side routing - serve index.html for all routes
   app.get("*", (_req, res) => {
     res.sendFile(path.join(staticPath, "index.html"));
   });
