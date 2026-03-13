@@ -76,8 +76,8 @@ export default function ResetPasswordPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">EDGE Dashboard</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">RFID & EDI Tracking System</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">EDGE LEG2 Support Tool</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">UPU Postal Monitoring Platform</p>
         </div>
 
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-8">
@@ -257,7 +257,7 @@ export default function ResetPasswordPage() {
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          Universal Postal Union — EDGE RFID Monitoring
+          Universal Postal Union — EDGE LEG2 Support Tool
         </p>
       </div>
     </div>
