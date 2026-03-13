@@ -6,11 +6,12 @@
  * Design: Operational Intelligence — white + slate + indigo accent
  * Font: DM Sans (body) + Inter (headings/numbers) — consistente con Home.tsx
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog, useMasterPending } from '@/hooks/useAuditData';
 import type { AuditLogEntry, MasterPendingEntry } from '@/hooks/useAuditData';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const SEVERITY_COLOR: Record<string, string> = {
@@ -1005,8 +1006,86 @@ type Tab = 'dashboard' | 'audit-log' | 'master-review';
 export default function AdminAuditPage() {
   const { user, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-  const { summary, loading: auditLoading } = useAuditLog();
+  const { summary, loading: auditLoading, refetch: refetchAudit } = useAuditLog();
   const { pendingCount, loading: masterLoading } = useMasterPending();
+
+  // ── Ejecución manual del Audit ─────────────────────────────────────────
+  const [auditRunning, setAuditRunning] = useState(false);
+  const [showRunLog, setShowRunLog] = useState(false);
+  const [runLogs, setRunLogs] = useState<{ type: string; message: string }[]>([]);
+  const [runResult, setRunResult] = useState<{ success: boolean; message: string } | null>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [runLogs]);
+
+  const handleRunAudit = useCallback(async () => {
+    if (auditRunning) return;
+    setAuditRunning(true);
+    setShowRunLog(true);
+    setRunLogs([{ type: 'info', message: 'Iniciando Audit de Carga de Datos...' }]);
+    setRunResult(null);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+      setRunLogs([{ type: 'error', message: 'No se pudo obtener el token de sesión.' }]);
+      setRunResult({ success: false, message: 'Error de autenticación' });
+      setAuditRunning(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/audit/run', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok || !response.body) {
+        const err = await response.json().catch(() => ({ error: 'Error desconocido' }));
+        setRunLogs(prev => [...prev, { type: 'error', message: err.error || `HTTP ${response.status}` }]);
+        setRunResult({ success: false, message: err.error || 'Error al iniciar el audit' });
+        setAuditRunning(false);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(part.slice(6));
+            if (event.type === 'done') {
+              setRunResult({ success: event.success, message: event.message });
+              setAuditRunning(false);
+              if (event.success) {
+                toast.success('Audit completado. Recargando datos...');
+                setTimeout(() => refetchAudit(), 1500);
+              } else {
+                toast.error('El audit finalizó con errores.');
+              }
+            } else {
+              setRunLogs(prev => [...prev, { type: event.type, message: event.message }]);
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error de red';
+      setRunLogs(prev => [...prev, { type: 'error', message: msg }]);
+      setRunResult({ success: false, message: msg });
+      setAuditRunning(false);
+    }
+  }, [auditRunning, refetchAudit]);
 
   // Guardia de seguridad: solo admin
   if (!isAdmin) {
@@ -1053,12 +1132,84 @@ export default function AdminAuditPage() {
             </div>
             <h1 className="text-xl font-bold text-slate-800">Audit de Carga de Datos</h1>
           </div>
-          <div className="text-xs text-slate-400 text-right">
-            <p className="font-medium text-slate-600">{user?.email}</p>
-            <p>Administrador</p>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleRunAudit}
+              disabled={auditRunning}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                auditRunning
+                  ? 'bg-indigo-100 text-indigo-400 cursor-not-allowed'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm hover:shadow-md'
+              }`}
+            >
+              {auditRunning ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Ejecutando...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Ejecutar Audit
+                </>
+              )}
+            </button>
+            <div className="text-xs text-slate-400 text-right">
+              <p className="font-medium text-slate-600">{user?.email}</p>
+              <p>Administrador</p>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Panel de log de ejecución */}
+      {showRunLog && (
+        <div className="bg-slate-900 border-b border-slate-700">
+          <div className="max-w-7xl mx-auto px-6 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Log de ejecución del Audit</p>
+              {!auditRunning && (
+                <button onClick={() => setShowRunLog(false)}
+                  className="text-slate-500 hover:text-slate-300 text-xs">Cerrar</button>
+              )}
+            </div>
+            <div className="bg-slate-950 rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs">
+              {runLogs.map((log, i) => (
+                <div key={i} className={`py-0.5 ${
+                  log.type === 'error' ? 'text-red-400' :
+                  log.type === 'warning' ? 'text-amber-400' :
+                  log.type === 'success' ? 'text-emerald-400' :
+                  'text-slate-300'
+                }`}>
+                  <span className="text-slate-600 mr-2">[{i.toString().padStart(2, '0')}]</span>
+                  {log.message}
+                </div>
+              ))}
+              {auditRunning && (
+                <div className="text-indigo-400 animate-pulse py-0.5">▶ Procesando...</div>
+              )}
+              <div ref={logEndRef} />
+            </div>
+            {runResult && (
+              <div className={`mt-2 px-3 py-2 rounded-lg text-xs font-semibold ${
+                runResult.success
+                  ? 'bg-emerald-900/50 text-emerald-300 border border-emerald-700'
+                  : 'bg-red-900/50 text-red-300 border border-red-700'
+              }`}>
+                {runResult.success ? '✓' : '✗'} {runResult.message}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white border-b border-slate-200 px-6">
