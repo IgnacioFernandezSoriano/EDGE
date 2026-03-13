@@ -196,3 +196,21 @@ export async function fetchTrackingEvents(): Promise<TrackingEvent[]> {
     order: 'id.asc',
   });
 }
+
+/**
+ * Obtiene el conjunto de S9IDs que el administrador ha marcado como DELETE
+ * en el Audit de Carga de Datos. Estos registros deben ser excluidos de los
+ * informes de benchmark RFID vs EDI para no distorsionar los KPIs.
+ */
+export async function fetchAuditExcludedS9ids(): Promise<Set<string>> {
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/audit_data_load_log`);
+  url.searchParams.set('select', 'source_s9id');
+  url.searchParams.set('admin_decision', 'eq.DELETE');
+  url.searchParams.set('source_s9id', 'not.is.null');
+
+  const res = await fetch(url.toString(), { headers });
+  if (!res.ok) return new Set();
+  const data: { source_s9id: string }[] = await res.json();
+  return new Set(data.map(r => r.source_s9id).filter(Boolean));
+}

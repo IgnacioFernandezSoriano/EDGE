@@ -37,6 +37,12 @@ const CATEGORY_LABEL: Record<string, string> = {
   MAESTRO_AUSENTE:     'Maestro Ausente',
   CASE_NORMALIZATION:  'Normalización Case',
 };
+const CATEGORY_DESC: Record<string, string> = {
+  IMPC_MISMATCH:      'El código IMPC registrado en la lectura RFID no coincide con el que indica el S9ID. La fuente de verdad es el S9ID. Los registros auto-corregidos ya han sido ajustados; los pendientes requieren decisión manual.',
+  OUTLIER_TEMPORAL:   'El tiempo registrado (departure lag, arrival lead o tránsito EDI) se desvía significativamente de la mediana del grupo (centro o ruta). Estos registros son candidatos a ser eliminados de los datos operativos para que NO distorsionen los informes de benchmark de comparación entre RFID y EDI. Causas habituales: error de captura de timestamp, problema de zona horaria en el centro de origen, o caso genuinamente atípico que requiere investigación.',
+  MAESTRO_AUSENTE:    'El código IMPC aparece en los datos operativos (EDI o RFID) pero no existe en la tabla de centros postales (postal_centers). Puede ser un centro nuevo, un código mal escrito o un alias no registrado.',
+  CASE_NORMALIZATION: 'El código IMPC está escrito en minúsculas o con formato incorrecto en los datos de origen. Se propone normalizar a mayúsculas para mantener la consistencia con el maestro.',
+};
 const ACTION_LABEL: Record<string, string> = {
   ALTA:               'Alta nueva',
   CORRECCION:         'Corrección',
@@ -334,7 +340,20 @@ function AuditDetailModal({
   );
 }
 
-// ── Sección: Registro de Audit ─────────────────────────────────────────────
+// ── Sección: Registro de Audit ──────────────────────────────────────────────────────────────────────────────────
+type SortField = 'severity' | 'audit_category' | 'source_s9id' | 'original_value' | 'admin_decision';
+type SortDir = 'asc' | 'desc';
+const SEVERITY_ORDER: Record<string, number> = { CRITICO: 0, ALTO: 1, MEDIO: 2, BAJO: 3 };
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  return (
+    <span className="ml-1 inline-flex flex-col gap-[1px] align-middle">
+      <svg className={`w-2 h-2 ${active && dir === 'asc' ? 'text-indigo-600 opacity-100' : 'opacity-30'}`} viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0z"/></svg>
+      <svg className={`w-2 h-2 ${active && dir === 'desc' ? 'text-indigo-600 opacity-100' : 'opacity-30'}`} viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0h8z"/></svg>
+    </span>
+  );
+}
+
 function AuditLogSection({ user }: { user: { email?: string } }) {
   const { entries, loading, error, updateDecision, bulkUpdateDecision, refetch } = useAuditLog();
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null);
@@ -344,9 +363,16 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [filterDecision, setFilterDecision] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+  const [sortField, setSortField] = useState<SortField>('severity');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('asc'); }
+  };
 
   const filtered = useMemo(() => {
-    return entries.filter(e => {
+    const base = entries.filter(e => {
       if (filterSeverity !== 'ALL' && e.severity !== filterSeverity) return false;
       if (filterResolution !== 'ALL' && e.resolution !== filterResolution) return false;
       if (filterCategory !== 'ALL' && e.audit_category !== filterCategory) return false;
@@ -364,7 +390,23 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
       }
       return true;
     });
-  }, [entries, filterSeverity, filterResolution, filterCategory, filterDecision, search]);
+    // Ordenación bidireccional por columna
+    return [...base].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'severity') {
+        cmp = (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9);
+      } else if (sortField === 'audit_category') {
+        cmp = (a.audit_category || '').localeCompare(b.audit_category || '');
+      } else if (sortField === 'source_s9id') {
+        cmp = (a.source_s9id || '').localeCompare(b.source_s9id || '');
+      } else if (sortField === 'original_value') {
+        cmp = (a.original_value || '').localeCompare(b.original_value || '');
+      } else if (sortField === 'admin_decision') {
+        cmp = (a.admin_decision || 'z').localeCompare(b.admin_decision || 'z');
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [entries, filterSeverity, filterResolution, filterCategory, filterDecision, search, sortField, sortDir]);
 
   const handleDecision = async (id: string, decision: 'KEEP' | 'DELETE', notes: string) => {
     const { error: err } = await updateDecision(id, decision, notes, user.email || 'admin');
@@ -431,14 +473,22 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
           <option value="MEDIO">Medio</option>
           <option value="BAJO">Bajo</option>
         </select>
-        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
-          className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-          <option value="ALL">Todas las categorías</option>
-          <option value="IMPC_MISMATCH">IMPC Mismatch</option>
-          <option value="OUTLIER_TEMPORAL">Outlier Temporal</option>
-          <option value="MAESTRO_AUSENTE">Maestro Ausente</option>
-          <option value="CASE_NORMALIZATION">Normalización Case</option>
-        </select>
+        <div className="flex flex-col gap-1">
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            <option value="ALL">Todas las categorías</option>
+            <option value="IMPC_MISMATCH">IMPC Mismatch</option>
+            <option value="OUTLIER_TEMPORAL">Outlier Temporal</option>
+            <option value="MAESTRO_AUSENTE">Maestro Ausente</option>
+            <option value="CASE_NORMALIZATION">Normalización Case</option>
+          </select>
+          {filterCategory !== 'ALL' && CATEGORY_DESC[filterCategory] && (
+            <p className="text-xs text-slate-500 max-w-sm leading-relaxed bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+              <span className="font-semibold text-indigo-700">{CATEGORY_LABEL[filterCategory]}:</span>{' '}
+              {CATEGORY_DESC[filterCategory]}
+            </p>
+          )}
+        </div>
         <select value={filterDecision} onChange={e => setFilterDecision(e.target.value)}
           className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
           <option value="ALL">Todas las decisiones</option>
@@ -493,12 +543,22 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
                     onChange={toggleSelectAll}
                     className="rounded border-slate-300" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Severidad</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Categoría</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('severity')}>
+                  Severidad <SortIcon active={sortField === 'severity'} dir={sortDir} />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('audit_category')}>
+                  Categoría <SortIcon active={sortField === 'audit_category'} dir={sortDir} />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Descripción</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">S9ID</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Valor original</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Decisión</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('source_s9id')}>
+                  S9ID <SortIcon active={sortField === 'source_s9id'} dir={sortDir} />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('original_value')}>
+                  Valor original <SortIcon active={sortField === 'original_value'} dir={sortDir} />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('admin_decision')}>
+                  Decisión <SortIcon active={sortField === 'admin_decision'} dir={sortDir} />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Acción</th>
               </tr>
             </thead>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchTrackingEvents, TrackingEvent } from '@/lib/supabase';
+import { fetchTrackingEvents, fetchAuditExcludedS9ids, TrackingEvent } from '@/lib/supabase';
 
 export interface DateRange {
   from: string | null; // ISO date string YYYY-MM-DD
@@ -546,6 +546,7 @@ export function filterEventsByCountry(
 
 export function useTrackingData() {
   const [allEvents, setAllEvents] = useState<TrackingEvent[]>([]);
+  const [excludedS9ids, setExcludedS9ids] = useState<Set<string>>(new Set());
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null });
   const [originCountry, setOriginCountry] = useState<string | null>(null);
   const [destCountry, setDestCountry] = useState<string | null>(null);
@@ -553,9 +554,20 @@ export function useTrackingData() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchTrackingEvents()
-      .then(data => {
-        setAllEvents(data);
+    // Cargamos en paralelo los eventos y los S9IDs excluidos por el Audit de Carga de Datos.
+    // Los registros marcados como DELETE por el administrador se excluyen automáticamente
+    // de todos los informes de benchmark RFID vs EDI para no distorsionar los KPIs.
+    Promise.all([
+      fetchTrackingEvents(),
+      fetchAuditExcludedS9ids(),
+    ])
+      .then(([data, excluded]) => {
+        setExcludedS9ids(excluded);
+        // Filtrar: excluir registros cuyo s9id esté marcado como DELETE en el audit
+        const clean = excluded.size > 0
+          ? data.filter(e => !excluded.has(e.s9id))
+          : data;
+        setAllEvents(clean);
         setLoading(false);
       })
       .catch(err => {
@@ -672,5 +684,7 @@ export function useTrackingData() {
     setDestCountry,
     allOriginCountries,
     allDestCountries,
+    /** Número de registros excluidos por el Audit de Carga de Datos (admin_decision = DELETE) */
+    auditExcludedCount: excludedS9ids.size,
   };
 }
