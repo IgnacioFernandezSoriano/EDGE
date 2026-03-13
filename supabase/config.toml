@@ -1,0 +1,5 @@
+[project]
+id = "ewyhmmixqcubqokphebh"
+
+[functions.process-rfid-etl]
+verify_jwt = true

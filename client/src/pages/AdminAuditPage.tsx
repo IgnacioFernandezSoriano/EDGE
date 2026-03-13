@@ -1002,107 +1002,83 @@ function MasterReviewSection({ user }: { user: { email?: string } }) {
 
 // ── Componente principal ───────────────────────────────────────────────────
 // ── Componente: Carga RFID ────────────────────────────────────────────────
-interface EtlStatusData {
-  running: boolean;
-  lastRunAt: string | null;
-  lastRunMode: string | null;
-  lastRunResult: 'success' | 'error' | null;
-  lastRunDuration: number | null;
-  lastRunLog: string[];
+// URL de la Supabase Edge Function del ETL RFID
+const EDGE_FUNCTION_URL = 'https://ewyhmmixqcubqokphebh.supabase.co/functions/v1/process-rfid-etl';
+
+interface EtlResult {
+  success: boolean;
+  etl_run_id?: string;
+  mode?: string;
+  staged?: number;
+  enriched?: number;
+  loaded?: number;
+  issues?: number;
+  duration_ms?: number;
+  message?: string;
+  error?: string;
 }
 
 function RfidUploadSection() {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [etlStatus, setEtlStatus] = useState<EtlStatusData | null>(null);
-  const [polling, setPolling] = useState(false);
+  const [lastResult, setLastResult] = useState<EtlResult | null>(null);
 
   const getToken = async (): Promise<string | null> => {
     const { data } = await supabase.auth.getSession();
     return data?.session?.access_token ?? null;
   };
 
-  const fetchStatus = async () => {
-    try {
-      const token = await getToken();
-      const res = await fetch('/api/etl/rfid/status', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data: EtlStatusData = await res.json();
-        setEtlStatus(data);
-        return data;
-      }
-    } catch (e) {
-      console.error('Error al consultar estado ETL:', e);
-    }
-    return null;
-  };
-
-  const startPolling = () => {
-    setPolling(true);
-    const interval = setInterval(async () => {
-      const status = await fetchStatus();
-      if (status && !status.running) {
-        clearInterval(interval);
-        setPolling(false);
-        setUploading(false);
-        if (status.lastRunResult === 'success') {
-          toast.success(`ETL completado en ${status.lastRunDuration?.toFixed(1)}s`);
-        } else {
-          toast.error('El ETL finalizó con errores. Revisa el log.');
-        }
-      }
-    }, 2000);
-  };
-
   const handleUpload = async () => {
     if (!file) return;
     setUploading(true);
+    setLastResult(null);
     try {
       const token = await getToken();
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/etl/rfid/upload', {
+      const res = await fetch(EDGE_FUNCTION_URL, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      if (res.ok) {
-        toast.success('Archivo subido. ETL iniciado...');
+      const data: EtlResult = await res.json();
+      setLastResult(data);
+      if (data.success) {
+        const secs = data.duration_ms ? (data.duration_ms / 1000).toFixed(1) : '?';
+        toast.success(`ETL completado: ${data.loaded ?? 0} registros cargados en ${secs}s`);
         setFile(null);
-        startPolling();
       } else {
-        const err = await res.json();
-        toast.error(err.error || 'Error al subir el archivo');
-        setUploading(false);
+        toast.error(data.error || 'El ETL finalizó con errores');
       }
     } catch (e) {
-      toast.error('Error de conexión');
+      toast.error('Error de conexión con la Edge Function');
+    } finally {
       setUploading(false);
     }
   };
 
   const handleBackfill = async () => {
     setUploading(true);
+    setLastResult(null);
     try {
       const token = await getToken();
-      const res = await fetch('/api/etl/rfid/run', {
+      const res = await fetch(EDGE_FUNCTION_URL, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: 'backfill' }),
       });
-      if (res.ok) {
-        toast.success('ETL backfill iniciado...');
-        startPolling();
+      const data: EtlResult = await res.json();
+      setLastResult(data);
+      if (data.success) {
+        const secs = data.duration_ms ? (data.duration_ms / 1000).toFixed(1) : '?';
+        toast.success(`Backfill completado: ${data.loaded ?? 0} registros en ${secs}s`);
       } else {
-        const err = await res.json();
-        toast.error(err.error || 'Error al iniciar el ETL');
-        setUploading(false);
+        toast.error(data.error || 'El backfill finalizó con errores');
       }
     } catch (e) {
-      toast.error('Error de conexión');
+      toast.error('Error de conexión con la Edge Function');
+    } finally {
       setUploading(false);
     }
   };
@@ -1191,63 +1167,64 @@ function RfidUploadSection() {
           </div>
         </div>
 
-        {/* Panel de estado del ETL */}
+        {/* Panel de resultado del ETL */}
         <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-700">Estado del ETL</h3>
-            <button onClick={fetchStatus} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Actualizar</button>
-          </div>
-          {!etlStatus ? (
-            <div className="text-center py-8">
-              <p className="text-sm text-slate-400">Pulsa «Actualizar» para ver el estado</p>
-              <button onClick={fetchStatus}
-                className="mt-3 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg transition-colors">
-                Consultar estado
-              </button>
+          <h3 className="text-sm font-semibold text-slate-700 mb-4">Resultado del ETL</h3>
+
+          {uploading ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <svg className="w-8 h-8 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <p className="text-sm text-slate-500">Ejecutando ETL en Supabase...</p>
+              <p className="text-xs text-slate-400">Esto puede tardar entre 10 y 60 segundos según el volumen de datos.</p>
+            </div>
+          ) : !lastResult ? (
+            <div className="text-center py-10">
+              <p className="text-sm text-slate-400">Sube un CSV o ejecuta un backfill para ver el resultado.</p>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
-                  etlStatus.running ? 'bg-amber-400 animate-pulse' :
-                  etlStatus.lastRunResult === 'success' ? 'bg-emerald-400' :
-                  etlStatus.lastRunResult === 'error' ? 'bg-red-400' : 'bg-slate-300'
+                  lastResult.success ? 'bg-emerald-400' : 'bg-red-400'
                 }`} />
-                <div>
-                  <p className="text-sm font-medium text-slate-700">
-                    {etlStatus.running ? 'ETL en ejecución...' :
-                     etlStatus.lastRunResult === 'success' ? 'Último ETL completado con éxito' :
-                     etlStatus.lastRunResult === 'error' ? 'Último ETL finalizado con errores' :
-                     'Sin ejecuciones recientes'}
-                  </p>
-                  {etlStatus.lastRunAt && (
-                    <p className="text-xs text-slate-400">
-                      {new Date(etlStatus.lastRunAt).toLocaleString('es-ES')}
-                      {etlStatus.lastRunMode && ` · Modo: ${etlStatus.lastRunMode}`}
-                      {etlStatus.lastRunDuration && ` · ${etlStatus.lastRunDuration.toFixed(1)}s`}
-                    </p>
-                  )}
-                </div>
+                <p className="text-sm font-medium text-slate-700">
+                  {lastResult.success ? 'ETL completado con éxito' : 'ETL finalizado con errores'}
+                </p>
               </div>
-              {etlStatus.lastRunLog.length > 0 && (
-                <div className="bg-slate-900 rounded-lg p-3 max-h-52 overflow-y-auto">
-                  {etlStatus.lastRunLog.slice(-25).map((line, i) => (
-                    <p key={i} className={`text-xs font-mono leading-5 ${
-                      line.includes('ERROR') ? 'text-red-400' :
-                      line.includes('WARNING') ? 'text-amber-400' :
-                      line.includes('━━━') ? 'text-indigo-300 font-semibold' :
-                      'text-slate-300'
-                    }`}>{line}</p>
+              {lastResult.success && (
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Registros en staging', value: lastResult.staged ?? 0 },
+                    { label: 'Registros cargados', value: lastResult.loaded ?? 0 },
+                    { label: 'Incongruencias', value: lastResult.issues ?? 0 },
+                    { label: 'Duración', value: lastResult.duration_ms ? `${(lastResult.duration_ms / 1000).toFixed(1)}s` : '-' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-slate-50 rounded-lg p-3">
+                      <p className="text-xs text-slate-400">{label}</p>
+                      <p className="text-lg font-bold text-slate-800">{value}</p>
+                    </div>
                   ))}
                 </div>
               )}
+              {!lastResult.success && lastResult.error && (
+                <div className="bg-red-50 border border-red-100 rounded-lg p-3">
+                  <p className="text-xs text-red-700 font-mono">{lastResult.error}</p>
+                </div>
+              )}
+              {lastResult.message && (
+                <p className="text-xs text-slate-500">{lastResult.message}</p>
+              )}
             </div>
           )}
+
           <div className="border-t border-slate-100 mt-4 pt-4">
             <p className="text-xs font-semibold text-slate-500 mb-3">Acciones manuales</p>
             <button
               onClick={handleBackfill}
-              disabled={uploading || (etlStatus?.running ?? false)}
+              disabled={uploading}
               className="w-full text-sm text-slate-600 border border-slate-200 py-2 px-4 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Reprocesar todos los registros (backfill)
