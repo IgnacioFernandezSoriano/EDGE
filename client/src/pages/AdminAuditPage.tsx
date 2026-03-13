@@ -403,6 +403,7 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
   const [filterResolution, setFilterResolution] = useState<string>('ALL');
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [filterDecision, setFilterDecision] = useState<string>('ALL');
+  const [filterAuditCheck, setFilterAuditCheck] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('severity');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -417,6 +418,7 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
       if (filterSeverity !== 'ALL' && e.severity !== filterSeverity) return false;
       if (filterResolution !== 'ALL' && e.resolution !== filterResolution) return false;
       if (filterCategory !== 'ALL' && e.audit_category !== filterCategory) return false;
+      if (filterAuditCheck !== 'ALL' && e.audit_check !== filterAuditCheck) return false;
       if (filterDecision === 'PENDING' && e.admin_decision !== null && e.admin_decision !== undefined) return false;
       if (filterDecision === 'KEEP' && e.admin_decision !== 'KEEP') return false;
       if (filterDecision === 'DELETE' && e.admin_decision !== 'DELETE') return false;
@@ -454,7 +456,7 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [entries, filterSeverity, filterResolution, filterCategory, filterDecision, search, sortField, sortDir]);
+  }, [entries, filterSeverity, filterResolution, filterCategory, filterDecision, filterAuditCheck, search, sortField, sortDir]);
 
   const handleDecision = async (id: string, decision: 'KEEP' | 'DELETE', notes: string) => {
     const { error: err } = await updateDecision(id, decision, notes, user.email || 'admin');
@@ -537,6 +539,42 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
             </p>
           )}
         </div>
+        {/* Subcategoría — se actualiza dinámicamente según la categoría seleccionada */}
+        <div className="flex flex-col gap-1">
+          <select
+            value={filterAuditCheck}
+            onChange={e => setFilterAuditCheck(e.target.value)}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            <option value="ALL">Todas las subcategorías</option>
+            {/* OUTLIER_TEMPORAL */}
+            <option value="DEPARTURE_LAG_OUTLIER">Lag de salida (RFID vs PREDES)</option>
+            <option value="ARRIVAL_LEAD_OUTLIER">Lead de llegada (RFID vs REDES)</option>
+            <option value="EDI_TRANSIT_OUTLIER">Tránsito EDI (PREDES→REDES)</option>
+            {/* IMPC_MISMATCH */}
+            <option value="IMPC_MISMATCH_RFID">IMPC Mismatch RFID</option>
+            <option value="IMPC_MISMATCH_INTERMEDIATE">IMPC Mismatch intermedio</option>
+            {/* MAESTRO */}
+            <option value="IMPC_NOT_IN_MASTER">IMPC no en maestro</option>
+            <option value="CASE_NORMALIZATION">Normalización de case</option>
+          </select>
+          {filterAuditCheck !== 'ALL' && (() => {
+            const desc: Record<string, string> = {
+              DEPARTURE_LAG_OUTLIER: 'Diferencia entre la lectura RFID de origen y el PREDES. Solo se considera incidencia si |valor| ≥ 48h.',
+              ARRIVAL_LEAD_OUTLIER: 'Diferencia entre la lectura RFID de destino y el REDES. Solo se considera incidencia si |valor| ≥ 48h.',
+              EDI_TRANSIT_OUTLIER: 'Tiempo de tránsito EDI (PREDES→REDES) por ruta. Outliers que distorsionan el benchmark RFID vs EDI.',
+              IMPC_MISMATCH_RFID: 'El impc_code de la lectura RFID no coincide con el IMPC que indica el s9id. Fuente de verdad: s9id.',
+              IMPC_MISMATCH_INTERMEDIATE: 'Lecturas RFID intermedias cuyo IMPC no puede determinarse automáticamente.',
+              IMPC_NOT_IN_MASTER: 'Código IMPC presente en datos operativos pero ausente en postal_centers.',
+              CASE_NORMALIZATION: 'Código IMPC en minúsculas en los datos de origen. Propuesta de normalización a mayúsculas.',
+            };
+            return desc[filterAuditCheck] ? (
+              <p className="text-xs text-slate-500 max-w-sm leading-relaxed bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                <span className="font-semibold text-amber-700">Subcategoría:</span>{' '}{desc[filterAuditCheck]}
+              </p>
+            ) : null;
+          })()}
+        </div>
+
         <select value={filterDecision} onChange={e => setFilterDecision(e.target.value)}
           className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
           <option value="ALL">Todas las decisiones</option>
@@ -597,12 +635,13 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('audit_category')}>
                   Categoría <SortIcon active={sortField === 'audit_category'} dir={sortDir} />
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Subcategoría / Centro</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Descripción</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('source_s9id')}>
-                  S9ID <SortIcon active={sortField === 'source_s9id'} dir={sortDir} />
+                  Identificador <SortIcon active={sortField === 'source_s9id'} dir={sortDir} />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('original_value')}>
-                  Valor original <SortIcon active={sortField === 'original_value'} dir={sortDir} />
+                  Desviación <SortIcon active={sortField === 'original_value'} dir={sortDir} />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600" onClick={() => handleSort('admin_decision')}>
                   Decisión <SortIcon active={sortField === 'admin_decision'} dir={sortDir} />
@@ -630,18 +669,23 @@ function AuditLogSection({ user }: { user: { email?: string } }) {
                     <Badge text={CATEGORY_LABEL[entry.audit_category]}
                       className="bg-indigo-50 text-indigo-600 border-indigo-100 whitespace-nowrap" />
                   </td>
+                  {/* Subcategoría / Centro */}
+                  <td className="px-4 py-3">
+                    <div>
+                      <p className="text-xs font-mono font-semibold text-slate-600">{entry.audit_check}</p>
+                      {entry.group_context && (
+                        <p className="text-xs text-slate-400 mt-0.5">{entry.group_context}</p>
+                      )}
+                    </div>
+                  </td>
+                  {/* Descripción contextual */}
                   <td className="px-4 py-3 max-w-[260px]">
                     {(() => {
                       const ctx = getOutlierContext(entry);
                       if (ctx) {
-                        return (
-                          <div>
-                            <p className="text-xs font-semibold text-slate-700 mb-0.5">{ctx.label}</p>
-                            <p className="text-xs text-slate-500 leading-snug">{ctx.detail}</p>
-                          </div>
-                        );
+                        return <p className="text-xs text-slate-500 leading-snug">{ctx.detail}</p>;
                       }
-                      return <p className="text-slate-700 text-xs">{entry.audit_check}</p>;
+                      return <p className="text-slate-500 text-xs">{entry.notes || '—'}</p>;
                     })()}
                   </td>
                   <td className="px-4 py-3">
