@@ -214,3 +214,66 @@ export async function fetchAuditExcludedS9ids(): Promise<Set<string>> {
   const data: { source_s9id: string }[] = await res.json();
   return new Set(data.map(r => r.source_s9id).filter(Boolean));
 }
+
+// ── RFID table types and fetcher ───────────────────────────────────────────
+
+/**
+ * Represents a single RFID reading row from the RFID table.
+ * The `event_type` column is set by the ETL pipeline:
+ *   ORIGIN      — reader centre matches s9id positions 0-5 (departure)
+ *   DESTINATION — reader centre matches s9id positions 6-11 (arrival)
+ *   INTERMEDIATE — reader centre is neither origin nor destination
+ *   UNKNOWN     — could not be classified
+ */
+export interface RfidReading {
+  document_id: string;
+  event_time_local: string | null;
+  event_time_offset: string | null;
+  record_time: string | null;
+  location: string | null;
+  read_point_id: string | null;
+  tag_id: string | null;
+  impc_code: string | null;
+  s9id: string;
+  // ETL-enriched columns
+  event_type: 'ORIGIN' | 'DESTINATION' | 'INTERMEDIATE' | 'UNKNOWN' | null;
+  impc_code_corrected: string | null;
+  country_corrected: string | null;
+  center_name_corrected: string | null;
+  etl_processed_at: string | null;
+}
+
+/**
+ * Fetches all rows from the RFID table.
+ * Supports optional date filtering on event_time_local.
+ */
+export async function fetchRfidReadings(
+  dateFrom?: string,
+  dateTo?: string
+): Promise<RfidReading[]> {
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
+  url.searchParams.set('select', '*');
+  url.searchParams.set('order', 'event_time_local.asc');
+  if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
+
+  let allData: RfidReading[] = [];
+  let offset = 0;
+  const pageSize = 1000;
+
+  while (true) {
+    const pageUrl = new URL(url.toString());
+    pageUrl.searchParams.set('offset', String(offset));
+    pageUrl.searchParams.set('limit', String(pageSize));
+
+    const res = await fetch(pageUrl.toString(), { headers });
+    if (!res.ok) throw new Error(`Supabase RFID error: ${res.status} ${await res.text()}`);
+    const data: RfidReading[] = await res.json();
+    allData = allData.concat(data);
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return allData;
+}

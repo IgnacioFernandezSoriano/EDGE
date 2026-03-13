@@ -600,15 +600,12 @@ export default function Home() {
       .catch(() => setMatchedTagsData(null));
   }, [dateRange.from, dateRange.to, originCountry, destCountry, countryToImpc, allDataBounds.min, allDataBounds.max]);
 
-  /* RFID tab data — derived from tracking_events (no separate fetch) */
+  /* RFID tab data — fetched directly from the RFID table (ETL-enriched) */
   const epcis = useEpcisData({
     dateFrom: dateRange.from || undefined,
     dateTo: dateRange.to || undefined,
     originCountry: originCountry || undefined,
     destCountry: destCountry || undefined,
-    allEvents,
-    loading,
-    error,
   });
 
   /* Date label for CSV filename */
