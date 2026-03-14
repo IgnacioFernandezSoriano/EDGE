@@ -775,7 +775,7 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span className="text-amber-800">
-                <strong>Showing last 30 days</strong> for faster loading.
+                <strong>Showing last 12 months</strong> for faster loading.
                 {loadingAll && <span className="ml-2 text-amber-600 italic">Loading full history…</span>}
               </span>
             </div>

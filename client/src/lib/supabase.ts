@@ -217,18 +217,30 @@ export function daysAgoISO(n: number): string {
 }
 
 /**
+ * Returns the ISO date string for N months ago (UTC), e.g. "2025-03-14".
+ */
+export function monthsAgoISO(n: number): string {
+  const d = new Date();
+  d.setUTCMonth(d.getUTCMonth() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Default window applied on initial load (12 months covers all operational data). */
+export const DEFAULT_WINDOW_MONTHS = 12;
+
+/**
  * Fetches tracking_events rows.
- * When dateFrom/dateTo are omitted the function defaults to the last 30 days
- * so the initial page load only downloads a fraction of the full dataset.
- * Pass dateFrom='' (empty string) to load all historical data.
+ * When dateFrom/dateTo are omitted the function defaults to the last 12 months
+ * so the initial page load covers all operational data without downloading
+ * the full historical archive. Pass dateFrom='' (empty string) to load everything.
  */
 export async function fetchTrackingEvents(
   dateFrom?: string,
   dateTo?: string
 ): Promise<TrackingEvent[]> {
   const headers = await getAuthHeaders();
-  // Default window: last 30 days.  Pass dateFrom='' to bypass.
-  const effectiveFrom = dateFrom !== undefined ? dateFrom : daysAgoISO(30);
+  // Default window: last 12 months.  Pass dateFrom='' to bypass.
+  const effectiveFrom = dateFrom !== undefined ? dateFrom : monthsAgoISO(DEFAULT_WINDOW_MONTHS);
 
   const url = new URL(`${SUPABASE_URL}/rest/v1/tracking_events`);
   url.searchParams.set('select', TRACKING_EVENTS_COLS);
@@ -322,8 +334,10 @@ export async function fetchRfidReadings(
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
   url.searchParams.set('select', RFID_COLS);
   url.searchParams.set('order', 'event_time_local.asc');
-  if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
-  if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
+  // Default window: last 12 months.  Pass dateFrom='' to bypass.
+  const effectiveFrom = dateFrom !== undefined ? dateFrom : monthsAgoISO(DEFAULT_WINDOW_MONTHS);
+  if (effectiveFrom) url.searchParams.append('event_time_local', `gte.${effectiveFrom}T00:00:00`);
+  if (dateTo)        url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
 
   let allData: RfidReading[] = [];
   let offset = 0;
