@@ -157,13 +157,18 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
     const originRow = originRows[0] ?? null;
     const destRow   = destRows[0]   ?? null;
 
-    // If no ORIGIN reading, fall back to the first reading of any type
-    const effectiveOrigin = originRow ?? sorted[0];
+    // If no ORIGIN reading, fall back to the first non-DESTINATION reading,
+    // or as a last resort the first reading of any type — but never the same
+    // row that is already being used as the destination.
+    const nonDestRows = sorted.filter(r => r.event_type !== 'DESTINATION');
+    const effectiveOrigin = originRow ?? nonDestRows[0] ?? null;
 
     // Derive IMPC from s9id if not available from reader master
     const s9idOriginImpc = s9id.length >= 12 ? s9id.slice(0, 6).toUpperCase() : null;
     const s9idDestImpc   = s9id.length >= 12 ? s9id.slice(6, 12).toUpperCase() : null;
 
+    // When effectiveOrigin is null (only DESTINATION readings exist for this s9id),
+    // derive origin metadata from the s9id itself — no synthetic timestamp.
     const originImpc    = effectiveOrigin?.impc_code_corrected || effectiveOrigin?.impc_code || s9idOriginImpc || '';
     const originCountry = effectiveOrigin?.country_corrected || '';
     const originCentre  = effectiveOrigin?.center_name_corrected || originImpc;
@@ -199,7 +204,7 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
 
     journeys.push({
       s9id,
-      tag_id: effectiveOrigin?.tag_id || '',
+      tag_id: effectiveOrigin?.tag_id || destRow?.tag_id || '',
       origin_country: originCountry,
       origin_centre: originCentre,
       origin_impc: originImpc,
