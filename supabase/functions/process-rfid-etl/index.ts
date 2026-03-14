@@ -365,10 +365,9 @@ async function fase2Transformacion(
     const tagId       = (row.tag_id       ?? "").trim();
     const docId       = (row.document_id  ?? "").trim();
 
-    // Validar campos obligatorios
+    // Validar campos obligatorios (s9id es opcional — fallback a tag_id)
     const missing: string[] = [];
     if (!readPointId) missing.push("read_point_id");
-    if (!s9id)        missing.push("s9id");
     if (!tagId)       missing.push("tag_id");
 
     if (missing.length) {
@@ -385,6 +384,9 @@ async function fase2Transformacion(
       unknownCount++;
       continue;
     }
+
+    // Fallback: si s9id está vacío, usar tag_id como identificador del viaje
+    const effectiveS9id = s9id || tagId;
 
     // Resolver IMPC desde el maestro de lectores
     const masterEntry = readersMaster.get(readPointId);
@@ -420,7 +422,7 @@ async function fase2Transformacion(
     } catch { sortTime = 0; }
 
     candidates.push({
-      row, readPointId, s9id, tagId, docId,
+      row, readPointId, s9id: effectiveS9id, tagId, docId,
       readerImpc, country, centerName,
       location: row.location ?? null,
       sortTime,
