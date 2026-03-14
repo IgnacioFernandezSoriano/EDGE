@@ -437,9 +437,23 @@ async function fase4Carga(
     console.log("  Sin registros para cargar.");
     return 0;
   }
-  await upsertBatch(db, "RFID", records, "document_id");
-  console.log(`  ${records.length} registros cargados en tabla RFID.`);
-  return records.length;
+  // Mapear a las columnas reales de la tabla RFID (sin columnas _corrected)
+  const rows = records.map(r => ({
+    document_id:       r.document_id,
+    event_time_local:  r.event_time_local,
+    event_time_offset: r.event_time_offset,
+    record_time:       r.record_time,
+    location:          r.location,
+    read_point_id:     r.read_point_id,
+    tag_id:            r.tag_id,
+    impc_code:         r.impc_code_corrected,  // usar el IMPC corregido por el maestro
+    s9id:              r.s9id,
+    event_type:        r.event_type,
+    etl_processed_at:  r.etl_processed_at,
+  }));
+  await upsertBatch(db, "RFID", rows, "document_id");
+  console.log(`  ${rows.length} registros cargados en tabla RFID.`);
+  return rows.length;
 }
 
 async function fase5Sincronizacion(
