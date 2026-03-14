@@ -642,8 +642,18 @@ async function fase4Carga(
     console.log("  Sin registros para cargar.");
     return 0;
   }
+  // Deduplicar por document_id para evitar conflictos en el upsert
+  const dedupMap = new Map<string, RfidRecord>();
+  for (const r of records) {
+    if (!dedupMap.has(r.document_id)) dedupMap.set(r.document_id, r);
+  }
+  const deduped = Array.from(dedupMap.values());
+  if (deduped.length < records.length) {
+    console.log(`  Deduplicados ${records.length - deduped.length} registros con document_id repetido.`);
+  }
+
   // Mapear a las columnas reales de la tabla RFID (sin columnas _corrected)
-  const rows = records.map(r => ({
+  const rows = deduped.map(r => ({
     document_id:       r.document_id,
     event_time_local:  r.event_time_local,
     event_time_offset: r.event_time_offset,
