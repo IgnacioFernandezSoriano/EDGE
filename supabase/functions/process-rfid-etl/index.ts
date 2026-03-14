@@ -451,16 +451,18 @@ async function fase5Sincronizacion(
   const existing = await selectAll(db, "postal_centers", { select: "impc_code" });
   const existingSet = new Set(existing.map((r: any) => r.impc_code));
 
-  const toInsert: any[] = [];
+  // Construir mapa deduplicado por impc_code (varios lectores pueden tener el mismo IMPC)
+  const toInsertMap = new Map<string, any>();
   for (const [, reader] of readersMaster) {
-    if (!existingSet.has(reader.impc_code)) {
-      toInsert.push({
+    if (!toInsertMap.has(reader.impc_code)) {
+      toInsertMap.set(reader.impc_code, {
         impc_code:   reader.impc_code,
         country:     reader.country ?? "",
         center_name: reader.center_name ?? reader.impc_code,
       });
     }
   }
+  const toInsert = Array.from(toInsertMap.values());
 
   if (toInsert.length) {
     // Usar upsert para evitar errores de clave duplicada en ejecuciones sucesivas
