@@ -570,6 +570,9 @@ export default function Home() {
     allOriginCountries, allDestCountries,
   } = useTrackingData();
   const [activeTab, setActiveTab] = useState('RFID');
+  // Lazy-load flag: once the RFID tab is activated for the first time, we keep
+  // fetching even if the user switches away (so data is ready when they return).
+  const [rfidEverActive, setRfidEverActive] = useState(activeTab === 'RFID');
   const [tableFilter, setTableFilter] = useState('ALL');
 
   /* Matched Tags count from ID Relation table */
@@ -600,8 +603,12 @@ export default function Home() {
       .catch(() => setMatchedTagsData(null));
   }, [dateRange.from, dateRange.to, originCountry, destCountry, countryToImpc, allDataBounds.min, allDataBounds.max]);
 
-  /* RFID tab data — fetched directly from the RFID table (ETL-enriched) */
+  /* RFID tab data — fetched directly from the RFID table (ETL-enriched).
+   * enabled=rfidEverActive ensures the fetch only starts when the user first
+   * opens the RFID tab, avoiding an unnecessary network request on initial load
+   * when the user may only need the EDI/Departure/Arrival tabs. */
   const epcis = useEpcisData({
+    enabled: rfidEverActive,
     dateFrom: dateRange.from || undefined,
     dateTo: dateRange.to || undefined,
     originCountry: originCountry || undefined,
@@ -690,7 +697,7 @@ export default function Home() {
               <div className="flex flex-col items-center gap-1">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 px-1">RFID</span>
                 <button
-                  onClick={() => setActiveTab('RFID')}
+                  onClick={() => { setActiveTab('RFID'); setRfidEverActive(true); }}
                   className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-150 ${
                     activeTab === 'RFID'
                       ? 'bg-indigo-600 text-white shadow-md'
@@ -709,7 +716,7 @@ export default function Home() {
                   {['Departure', 'Arrival', 'Transit', 'Data'].map(tab => (
                     <button
                       key={tab}
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => { setActiveTab(tab); if (tab === 'RFID') setRfidEverActive(true); }}
                       className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-150 ${
                         activeTab === tab
                           ? 'bg-amber-500 text-white shadow-md'
@@ -730,7 +737,7 @@ export default function Home() {
             <select
               className="md:hidden text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white"
               value={activeTab}
-              onChange={e => setActiveTab(e.target.value)}
+              onChange={e => { setActiveTab(e.target.value); if (e.target.value === 'RFID') setRfidEverActive(true); }}
             >
               {TABS.map(t => <option key={t}>{t}</option>)}
             </select>

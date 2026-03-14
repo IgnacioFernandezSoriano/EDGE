@@ -378,6 +378,12 @@ export interface EpcisFilters {
   dateTo?: string;
   originCountry?: string;
   destCountry?: string;
+  /**
+   * When false, the hook skips the fetch entirely and returns empty data.
+   * Use this to implement lazy loading: only fetch when the RFID tab is first activated.
+   * Defaults to true.
+   */
+  enabled?: boolean;
   /** @deprecated No longer used — data now comes from the RFID table directly */
   allEvents?: unknown[];
   loading?: boolean;
@@ -391,15 +397,15 @@ export interface EpcisFilters {
  * Date filters are applied server-side via the Supabase query.
  */
 export function useEpcisData(filters: EpcisFilters = {}) {
+  const enabled = filters.enabled !== false; // default true
   const [allReadings, setAllReadings] = useState<RfidReading[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled); // only show spinner when enabled
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
+    if (!enabled) return; // skip fetch when tab has not been activated yet
     let cancelled = false;
     setLoading(true);
     setError(null);
-
     fetchRfidReadings(filters.dateFrom, filters.dateTo)
       .then(data => {
         if (!cancelled) {
@@ -413,10 +419,9 @@ export function useEpcisData(filters: EpcisFilters = {}) {
           setLoading(false);
         }
       });
-
     return () => { cancelled = true; };
-    // Re-fetch when date filters change
-  }, [filters.dateFrom, filters.dateTo]);
+    // Re-fetch when date filters change or when enabled transitions to true
+  }, [enabled, filters.dateFrom, filters.dateTo]);
 
   // Build journeys from all readings
   const allJourneys = useMemo(() => readingsToJourneys(allReadings), [allReadings]);
