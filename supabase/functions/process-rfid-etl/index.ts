@@ -81,11 +81,30 @@ interface IssueRow {
 
 // ─── Lógica de Clasificación ──────────────────────────────────────────────────
 
+/**
+ * Determina si un centro es un AMU (Air Mail Unit) o aeropuerto.
+ * Regla: el center_name o la location contienen "AMU" o "Airport" (case-insensitive).
+ * Estos centros, cuando aparecen como INTERMEDIATE, se reclasifican como DESTINATION
+ * porque representan la primera entrada física del objeto al país destino.
+ */
+function isAmuOrAirport(centerName: string | null, location: string | null): boolean {
+  const haystack = `${centerName ?? ""} ${location ?? ""}`.toUpperCase();
+  return haystack.includes("AMU") || haystack.includes("AIRPORT");
+}
+
+/**
+ * Clasifica una lectura según el s9id estándar UPU (6 letras IMPC origen + 6 letras IMPC destino).
+ * Si el s9id no sigue ese formato, devuelve "UNKNOWN" para procesamiento por orden temporal.
+ */
 function classifyEvent(
   readerImpc: string,
   s9id: string
 ): "ORIGIN" | "DESTINATION" | "INTERMEDIATE" | "UNKNOWN" {
   if (!s9id || s9id.length < 12 || !readerImpc) return "UNKNOWN";
+
+  // Verificar que las primeras 12 posiciones son letras (s9id estándar UPU)
+  const prefix12 = s9id.slice(0, 12);
+  if (!/^[A-Za-z]{12}/.test(prefix12)) return "UNKNOWN";
 
   const originImpc = s9id.slice(0, 6).toUpperCase();
   const destImpc   = s9id.slice(6, 12).toUpperCase();
@@ -246,6 +265,33 @@ async function fase1Extraccion(
   return existing.length;
 }
 
+// Helper: construye un RfidRecord a partir de un Candidate con el event_type indicado
+function buildRecord(
+  c: { row: any; readPointId: string; s9id: string; tagId: string; docId: string;
+        readerImpc: string; country: string | null; centerName: string | null;
+        location: string | null; sortTime: number },
+  eventType: string,
+  now: string
+): RfidRecord {
+  return {
+    document_id:           c.docId || crypto.randomUUID(),
+    event_time_local:      c.row.event_time_local   ?? null,
+    event_time_offset:     c.row.event_time_offset  ?? null,
+    record_time:           c.row.record_time        ?? null,
+    location:              c.location,
+    read_point_id:         c.readPointId,
+    tag_id:                c.tagId,
+    impc_code:             c.row.impc_code          ?? null,
+    s9id:                  c.s9id,
+    event_type:            eventType,
+    impc_code_corrected:   c.readerImpc,
+    country_corrected:     c.country,
+    center_name_corrected: c.centerName,
+    etl_processed_at:      now,
+    _sort_time:            c.sortTime,
+  };
+}
+
 async function fase2Transformacion(
   db: ReturnType<typeof createClient>,
   etlRunId: string,
@@ -259,9 +305,23 @@ async function fase2Transformacion(
   const issues: IssueRow[] = [];
   const now = new Date().toISOString();
 
-  // Paso 2a: Clasificar cada lectura
-  const classified: RfidRecord[] = [];
-  let intermediateCount = 0;
+  // Paso 2a: Resolver IMPC y calcular tiempo para cada lectura del staging
+  // Resultado: array de candidatos con su IMPC corregido y sort_time
+  interface Candidate {
+    row:        any;
+    readPointId: string;
+    s9id:       string;
+    tagId:      string;
+    docId:      string;
+    readerImpc: string;
+    country:    string | null;
+    centerName: string | null;
+    location:   string | null;
+    sortTime:   number;
+    isAmu:      boolean;
+  }
+
+  const candidates: Candidate[] = [];
   let unknownCount = 0;
 
   for (const row of staging) {
@@ -317,40 +377,6 @@ async function fase2Transformacion(
       centerName = masterEntry.center_name;
     }
 
-    // Clasificar
-    const eventType = classifyEvent(readerImpc, s9id);
-
-    // Descartar lecturas INTERMEDIATE — no se cargan en RFID
-    if (eventType === "INTERMEDIATE") {
-      intermediateCount++;
-      issues.push({
-        etl_run_id:       etlRunId,
-        source_record_id: String(row.id ?? docId),
-        read_point_id:    readPointId,
-        s9id,
-        tag_id:           tagId,
-        issue_type:       "INTERMEDIATE_DISCARDED",
-        issue_detail:     `Lector ${readerImpc} no es ni origen (${s9id.slice(0,6)}) ni destino (${s9id.slice(6,12)}) del s9id. Lectura descartada.`,
-        severity:         "INFO",
-      });
-      continue;
-    }
-
-    if (eventType === "UNKNOWN") {
-      unknownCount++;
-      issues.push({
-        etl_run_id:       etlRunId,
-        source_record_id: String(row.id ?? docId),
-        read_point_id:    readPointId,
-        s9id,
-        tag_id:           tagId,
-        issue_type:       "UNKNOWN_EVENT_TYPE",
-        issue_detail:     `No se pudo clasificar la lectura (s9id: '${s9id}', impc: '${readerImpc}').`,
-        severity:         "MEDIO",
-      });
-      continue;
-    }
-
     // Calcular tiempo para ordenación
     let sortTime = 0;
     try {
@@ -358,28 +384,176 @@ async function fase2Transformacion(
       if (isNaN(sortTime)) sortTime = 0;
     } catch { sortTime = 0; }
 
-    classified.push({
-      document_id:           docId || crypto.randomUUID(),
-      event_time_local:      row.event_time_local   ?? null,
-      event_time_offset:     row.event_time_offset  ?? null,
-      record_time:           row.record_time        ?? null,
-      location:              row.location           ?? null,
-      read_point_id:         readPointId,
-      tag_id:                tagId,
-      impc_code:             row.impc_code          ?? null,
-      s9id,
-      event_type:            eventType,
-      impc_code_corrected:   readerImpc,
-      country_corrected:     country,
-      center_name_corrected: centerName,
-      etl_processed_at:      now,
-      _sort_time:            sortTime,
+    candidates.push({
+      row, readPointId, s9id, tagId, docId,
+      readerImpc, country, centerName,
+      location: row.location ?? null,
+      sortTime,
+      isAmu: isAmuOrAirport(centerName, row.location ?? null),
     });
+  }
+
+  // Paso 2b: Clasificar cada candidato
+  //
+  // Regla 1 — S9id estándar UPU (primeros 12 caracteres son letras):
+  //   ORIGIN / DESTINATION según posición en el s9id.
+  //   INTERMEDIATE: si el centro es AMU/Airport → reclasificar como DESTINATION.
+  //                 si no → descartar.
+  //
+  // Regla 2 — S9id no estándar (sin IMPC en el identificador):
+  //   Agrupar por tag_id, ordenar por timestamp.
+  //   Primero = ORIGIN, último = DESTINATION, medio = INTERMEDIATE.
+  //   INTERMEDIATE AMU/Airport → reclasificar como DESTINATION (entrada al país).
+  //
+  // La regla AMU/Airport aplica en ambos casos.
+
+  const classified: RfidRecord[] = [];
+  let intermediateCount = 0;
+
+  // Separar s9ids estándar de no estándar
+  const standardCandidates  = candidates.filter(c => /^[A-Za-z]{12}/.test(c.s9id));
+  const nonStandardCandidates = candidates.filter(c => !/^[A-Za-z]{12}/.test(c.s9id));
+
+  // ── Regla 1: S9ids estándar ──
+  for (const c of standardCandidates) {
+    const eventType = classifyEvent(c.readerImpc, c.s9id);
+
+    if (eventType === "INTERMEDIATE") {
+      if (c.isAmu) {
+        // AMU/Airport intermedio → reclasificar como DESTINATION
+        classified.push(buildRecord(c, "DESTINATION", now));
+        issues.push({
+          etl_run_id:       etlRunId,
+          source_record_id: String(c.row.id ?? c.docId),
+          read_point_id:    c.readPointId,
+          s9id:             c.s9id,
+          tag_id:           c.tagId,
+          issue_type:       "AMU_RECLASSIFIED_AS_DESTINATION",
+          issue_detail:     `Centro AMU/Airport '${c.readerImpc}' (${c.centerName}) reclasificado de INTERMEDIATE a DESTINATION.`,
+          severity:         "INFO",
+        });
+      } else {
+        intermediateCount++;
+        issues.push({
+          etl_run_id:       etlRunId,
+          source_record_id: String(c.row.id ?? c.docId),
+          read_point_id:    c.readPointId,
+          s9id:             c.s9id,
+          tag_id:           c.tagId,
+          issue_type:       "INTERMEDIATE_DISCARDED",
+          issue_detail:     `Lector ${c.readerImpc} no es ni origen (${c.s9id.slice(0,6)}) ni destino (${c.s9id.slice(6,12)}) del s9id. Lectura descartada.`,
+          severity:         "INFO",
+        });
+      }
+      continue;
+    }
+
+    if (eventType === "UNKNOWN") {
+      unknownCount++;
+      issues.push({
+        etl_run_id:       etlRunId,
+        source_record_id: String(c.row.id ?? c.docId),
+        read_point_id:    c.readPointId,
+        s9id:             c.s9id,
+        tag_id:           c.tagId,
+        issue_type:       "UNKNOWN_EVENT_TYPE",
+        issue_detail:     `No se pudo clasificar la lectura (s9id: '${c.s9id}', impc: '${c.readerImpc}').`,
+        severity:         "MEDIO",
+      });
+      continue;
+    }
+
+    classified.push(buildRecord(c, eventType, now));
+  }
+
+  // ── Regla 2: S9ids no estándar — clasificación por orden temporal ──
+  // Agrupar por (tag_id, s9id) y ordenar por sortTime
+  const nonStdGroups = new Map<string, Candidate[]>();
+  for (const c of nonStandardCandidates) {
+    const key = `${c.tagId}|${c.s9id}`;
+    if (!nonStdGroups.has(key)) nonStdGroups.set(key, []);
+    nonStdGroups.get(key)!.push(c);
+  }
+
+  for (const [, group] of nonStdGroups) {
+    group.sort((a, b) => a.sortTime - b.sortTime);
+
+    if (group.length === 1) {
+      // Solo una lectura: no se puede determinar rol, se descarta
+      const c = group[0];
+      unknownCount++;
+      issues.push({
+        etl_run_id:       etlRunId,
+        source_record_id: String(c.row.id ?? c.docId),
+        read_point_id:    c.readPointId,
+        s9id:             c.s9id,
+        tag_id:           c.tagId,
+        issue_type:       "SINGLE_READ_NO_ROUTE",
+        issue_detail:     `S9id no estándar con una sola lectura — no se puede determinar ORIGIN/DESTINATION.`,
+        severity:         "BAJO",
+      });
+      continue;
+    }
+
+    // Primera lectura = ORIGIN
+    classified.push(buildRecord(group[0], "ORIGIN", now));
+
+    // Lecturas intermedias: descartar salvo AMU/Airport → DESTINATION
+    // Si hay un AMU/Airport, se convierte en el DESTINATION real y se ignoran las posteriores
+    let destinationAssigned = false;
+    for (let i = 1; i < group.length - 1; i++) {
+      const c = group[i];
+      if (!destinationAssigned && c.isAmu) {
+        classified.push(buildRecord(c, "DESTINATION", now));
+        destinationAssigned = true;
+        issues.push({
+          etl_run_id:       etlRunId,
+          source_record_id: String(c.row.id ?? c.docId),
+          read_point_id:    c.readPointId,
+          s9id:             c.s9id,
+          tag_id:           c.tagId,
+          issue_type:       "AMU_RECLASSIFIED_AS_DESTINATION",
+          issue_detail:     `Centro AMU/Airport '${c.readerImpc}' (${c.centerName}) reclasificado de INTERMEDIATE a DESTINATION (s9id no estándar).`,
+          severity:         "INFO",
+        });
+      } else {
+        intermediateCount++;
+        issues.push({
+          etl_run_id:       etlRunId,
+          source_record_id: String(c.row.id ?? c.docId),
+          read_point_id:    c.readPointId,
+          s9id:             c.s9id,
+          tag_id:           c.tagId,
+          issue_type:       "INTERMEDIATE_DISCARDED",
+          issue_detail:     `Lectura intermedia descartada (s9id no estándar, lector: ${c.readerImpc}).`,
+          severity:         "INFO",
+        });
+      }
+    }
+
+    // Última lectura = DESTINATION (si no se asignó ya por AMU)
+    if (!destinationAssigned) {
+      classified.push(buildRecord(group[group.length - 1], "DESTINATION", now));
+    } else {
+      // Si ya hay DESTINATION por AMU, la última lectura es INTERMEDIATE
+      intermediateCount++;
+      const last = group[group.length - 1];
+      issues.push({
+        etl_run_id:       etlRunId,
+        source_record_id: String(last.row.id ?? last.docId),
+        read_point_id:    last.readPointId,
+        s9id:             last.s9id,
+        tag_id:           last.tagId,
+        issue_type:       "INTERMEDIATE_DISCARDED",
+        issue_detail:     `Lectura posterior al AMU/Airport descartada — DESTINATION ya asignado (lector: ${last.readerImpc}).`,
+        severity:         "INFO",
+      });
+    }
   }
 
   console.log(`  Clasificados: ${classified.length} válidos, ${intermediateCount} intermedias descartadas, ${unknownCount} desconocidos.`);
 
-  // Paso 2b: Agrupar por (tag_id, impc_code_corrected, event_type)
+  // Paso 2c: Agrupar por (tag_id, impc_code_corrected, event_type)
   //   - ORIGIN      → conservar la lectura MÁS RECIENTE (última salida del centro)
   //   - DESTINATION → conservar la lectura MÁS ANTIGUA  (primera entrada al centro)
   const groupMap = new Map<string, RfidRecord>();
@@ -392,15 +566,9 @@ async function fase2Transformacion(
       groupMap.set(key, rec);
     } else {
       if (rec.event_type === "ORIGIN") {
-        // Quedarse con la más reciente
-        if ((rec._sort_time ?? 0) > (existing._sort_time ?? 0)) {
-          groupMap.set(key, rec);
-        }
+        if ((rec._sort_time ?? 0) > (existing._sort_time ?? 0)) groupMap.set(key, rec);
       } else {
-        // DESTINATION: quedarse con la más antigua
-        if ((rec._sort_time ?? 0) < (existing._sort_time ?? 0)) {
-          groupMap.set(key, rec);
-        }
+        if ((rec._sort_time ?? 0) < (existing._sort_time ?? 0)) groupMap.set(key, rec);
       }
     }
   }
