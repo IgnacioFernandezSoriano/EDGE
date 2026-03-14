@@ -207,11 +207,51 @@ const TRACKING_EVENTS_COLS = [
   'origin_match', 'dest_match', 'full_route_validated',
 ].join(',');
 
-export async function fetchTrackingEvents(): Promise<TrackingEvent[]> {
-  return fetchAll('tracking_events', {
-    select: TRACKING_EVENTS_COLS,
-    order: 'id.asc',
-  });
+/**
+ * Returns the ISO date string for N days ago (UTC), e.g. "2026-02-12".
+ */
+export function daysAgoISO(n: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Fetches tracking_events rows.
+ * When dateFrom/dateTo are omitted the function defaults to the last 30 days
+ * so the initial page load only downloads a fraction of the full dataset.
+ * Pass dateFrom='' (empty string) to load all historical data.
+ */
+export async function fetchTrackingEvents(
+  dateFrom?: string,
+  dateTo?: string
+): Promise<TrackingEvent[]> {
+  const headers = await getAuthHeaders();
+  // Default window: last 30 days.  Pass dateFrom='' to bypass.
+  const effectiveFrom = dateFrom !== undefined ? dateFrom : daysAgoISO(30);
+
+  const url = new URL(`${SUPABASE_URL}/rest/v1/tracking_events`);
+  url.searchParams.set('select', TRACKING_EVENTS_COLS);
+  url.searchParams.set('order', 'id.asc');
+  // Filter by predes_time (primary date column) within the requested window
+  if (effectiveFrom) url.searchParams.append('predes_time', `gte.${effectiveFrom}T00:00:00`);
+  if (dateTo)        url.searchParams.append('predes_time', `lte.${dateTo}T23:59:59`);
+
+  let allData: TrackingEvent[] = [];
+  let offset = 0;
+  const pageSize = 1000;
+  while (true) {
+    const pageUrl = new URL(url.toString());
+    pageUrl.searchParams.set('offset', String(offset));
+    pageUrl.searchParams.set('limit', String(pageSize));
+    const res = await fetch(pageUrl.toString(), { headers });
+    if (!res.ok) throw new Error(`Supabase error: ${res.status} ${await res.text()}`);
+    const data: TrackingEvent[] = await res.json();
+    allData = allData.concat(data);
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+  return allData;
 }
 
 /**

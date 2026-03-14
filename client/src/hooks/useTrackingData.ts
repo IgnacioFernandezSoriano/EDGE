@@ -552,29 +552,40 @@ export function useTrackingData() {
   const [destCountry, setDestCountry] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Whether the current dataset covers only the default 30-day window (true)
+  // or the full historical dataset (false).
+  const [isDefaultWindow, setIsDefaultWindow] = useState(true);
+  const [loadingAll, setLoadingAll] = useState(false);
+
+  const loadEvents = (dateFrom?: string, dateTo?: string) => {
+    return Promise.all([
+      fetchTrackingEvents(dateFrom, dateTo),
+      fetchAuditExcludedS9ids(),
+    ]).then(([data, excluded]) => {
+      setExcludedS9ids(excluded);
+      const clean = excluded.size > 0
+        ? data.filter(e => !excluded.has(e.s9id))
+        : data;
+      setAllEvents(clean);
+    });
+  };
 
   useEffect(() => {
-    // Cargamos en paralelo los eventos y los S9IDs excluidos por el Audit de Carga de Datos.
-    // Los registros marcados como DELETE por el administrador se excluyen automáticamente
-    // de todos los informes de benchmark RFID vs EDI para no distorsionar los KPIs.
-    Promise.all([
-      fetchTrackingEvents(),
-      fetchAuditExcludedS9ids(),
-    ])
-      .then(([data, excluded]) => {
-        setExcludedS9ids(excluded);
-        // Filtrar: excluir registros cuyo s9id esté marcado como DELETE en el audit
-        const clean = excluded.size > 0
-          ? data.filter(e => !excluded.has(e.s9id))
-          : data;
-        setAllEvents(clean);
-        setLoading(false);
-      })
-      .catch(err => {
-        setError(err.message);
-        setLoading(false);
-      });
+    // Initial load: default 30-day window for fast startup.
+    // fetchTrackingEvents() with no args uses daysAgoISO(30) internally.
+    loadEvents()
+      .then(() => setLoading(false))
+      .catch(err => { setError(err.message); setLoading(false); });
   }, []);
+
+  /** Load the full historical dataset (all dates). Shows a secondary spinner. */
+  const loadAllHistory = () => {
+    if (!isDefaultWindow || loadingAll) return;
+    setLoadingAll(true);
+    loadEvents('') // empty string = no date filter
+      .then(() => { setIsDefaultWindow(false); setLoadingAll(false); })
+      .catch(() => setLoadingAll(false));
+  };
 
   // Step 1: date filter
   const dateFiltered = useMemo(
@@ -678,6 +689,9 @@ export function useTrackingData() {
     dateRange,
     setDateRange,
     allDataBounds,
+    isDefaultWindow,
+    loadingAll,
+    loadAllHistory,
     originCountry,
     setOriginCountry,
     destCountry,
