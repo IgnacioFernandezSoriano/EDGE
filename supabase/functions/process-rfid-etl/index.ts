@@ -463,8 +463,9 @@ async function fase5Sincronizacion(
   }
 
   if (toInsert.length) {
-    await insertBatch(db, "postal_centers", toInsert);
-    console.log(`  ${toInsert.length} nuevos centros añadidos a postal_centers.`);
+    // Usar upsert para evitar errores de clave duplicada en ejecuciones sucesivas
+    await upsertBatch(db, "postal_centers", toInsert, "impc_code");
+    console.log(`  ${toInsert.length} centros sincronizados en postal_centers.`);
   } else {
     console.log("  postal_centers ya está sincronizada.");
   }
