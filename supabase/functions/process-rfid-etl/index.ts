@@ -260,6 +260,41 @@ async function fase1Extraccion(
     return staging.length;
   }
 
+  if (mode === "from-table") {
+    // Lee directamente de india_rfid en lotes paginados de 10.000 filas
+    console.log("  Modo from-table: leyendo india_rfid en lotes de 10.000...");
+    const PAGE = 10000;
+    let from = 0;
+    let total = 0;
+    while (true) {
+      const { data, error } = await db
+        .from("india_rfid")
+        .select("document_id,event_time_local,event_time_offset,record_time,location,read_point_id,tag_id,impc_code,s9id")
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(`from-table select: ${error.message}`);
+      if (!data || data.length === 0) break;
+      const staging: StagingRow[] = data.map(r => ({
+        document_id:       r.document_id       ?? null,
+        event_time_local:  r.event_time_local   ?? null,
+        event_time_offset: r.event_time_offset  ?? null,
+        record_time:       r.record_time        ?? null,
+        location:          r.location           ?? null,
+        read_point_id:     r.read_point_id      ?? null,
+        tag_id:            r.tag_id             ?? null,
+        impc_code:         r.impc_code          ?? null,
+        s9id:              r.s9id               ?? null,
+        source:            "FROM_TABLE",
+      }));
+      await insertBatch(db, "staging_rfid_events", staging);
+      total += staging.length;
+      console.log(`    Lote offset ${from}: ${staging.length} filas cargadas (total: ${total})`);
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
+    console.log(`  from-table completo: ${total} registros en staging.`);
+    return total;
+  }
+
   const existing = await selectAll(db, "staging_rfid_events", { select: "id" });
   console.log(`  Modo incremental: ${existing.length} registros en staging.`);
   return existing.length;
