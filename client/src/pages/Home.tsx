@@ -1169,23 +1169,23 @@ export default function Home() {
                     <KpiCard
                       title="RFID Departures"
                       value={epcis.stats.withOriginReading.toLocaleString()}
-                      subtitle="tag IDs with DEPARTURE event"
+                      subtitle="tag IDs with ORIGIN or DEPARTURE"
                       badge={{ label: 'departure', color: 'blue' }}
-                      tooltip="Unique tag IDs in the RFID table that have at least one reading classified as event_type = DEPARTURE (last reading before crossing an international border)."
+                      tooltip="Unique tag IDs in the RFID table with a known origin reading: tags with event_type = ORIGIN (first reading at dispatch centre) or DEPARTURE (last reading before crossing a border). Includes complete and partial journeys."
                     />
                     <KpiCard
                       title="RFID Arrivals"
                       value={epcis.stats.withDestReading.toLocaleString()}
-                      subtitle="tag IDs with ARRIVAL event"
+                      subtitle="tag IDs with DESTINATION or ARRIVAL"
                       badge={{ label: 'arrival', color: 'green' }}
-                      tooltip="Unique tag IDs in the RFID table that have at least one reading classified as event_type = ARRIVAL (first reading after crossing an international border)."
+                      tooltip="Unique tag IDs in the RFID table with a known destination reading: tags with event_type = DESTINATION (last reading at delivery centre) or ARRIVAL (first reading after crossing a border). Includes complete and partial journeys."
                     />
                     <KpiCard
                       title="End-to-End Pairs"
                       value={epcis.stats.endToEndPairs.toLocaleString()}
                       subtitle="tag IDs with ORIGIN and DESTINATION"
                       badge={{ label: 'e2e', color: 'amber' }}
-                      tooltip="Unique tag IDs in the RFID table that have both an ORIGIN event (first reading at dispatch centre) and a DESTINATION event (last reading at delivery centre)."
+                      tooltip="Unique tag IDs with readings at both ends of the journey: ORIGIN or DEPARTURE at the sending side, and DESTINATION or ARRIVAL at the receiving side. These are the receptacles for which a full transit can be measured."
                     />
                   </div>
 

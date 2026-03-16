@@ -181,8 +181,10 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
     // ARRIVAL = first reading after crossing border
     const arrRow     = sorted.find(r => r.event_type === 'ARRIVAL') ?? null;
 
-    // Need at least an ORIGIN row to build a journey
-    if (!originRow) continue;
+    // Need at least one known event to build a journey
+    // A tag without ORIGIN but with DEPARTURE/ARRIVAL/DESTINATION is still a valid partial journey
+    const anchorRow = originRow ?? depRow ?? arrRow ?? destRow;
+    if (!anchorRow) continue;
 
     // Helper: extract country and centre from a reading
     function getCentre(r: RfidReading): { country: string; centre: string; impc: string } {
@@ -192,8 +194,9 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
       return { country, centre, impc };
     }
 
-    const originInfo = getCentre(originRow);
-    const originTime = originRow.event_time_local || originRow.record_time || '';
+    // Use originRow if available; fall back to anchorRow for partial journeys
+    const originInfo = getCentre(originRow ?? anchorRow);
+    const originTime = (originRow ?? anchorRow).event_time_local || (originRow ?? anchorRow).record_time || '';
 
     // hasDest is true when a DESTINATION row exists AND it is at a DIFFERENT
     // centre than ORIGIN.  We compare impc_code when both are non-empty;
@@ -283,7 +286,8 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
       full_journey_hours:          fullJourneyHours,
       has_destination:    hasDest,
       has_international:  hasIntl,
-      is_both_rfid:       originRow !== null && destRow !== null,
+      // is_both_rfid: tag has both ORIGIN (or DEPARTURE) and DESTINATION (or ARRIVAL)
+      is_both_rfid:       (originRow !== null || depRow !== null) && (destRow !== null || arrRow !== null),
       centres_visited:    centresVisited,
     });
   }
@@ -415,10 +419,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const transitCdf = buildCDF(transitValues);
 
   const totalReadings = journeys.reduce((sum, j) => sum + j.origin_readings + j.dest_readings, 0);
-  // RFID Departures: unique tag_ids with event_type DEPARTURE
-  const withOriginReading = journeys.filter(j => j.departure_time !== null).length;
-  // RFID Arrivals: unique tag_ids with event_type ARRIVAL
-  const withDestReading = journeys.filter(j => j.arrival_time !== null).length;
+  // RFID Departures: tags with ORIGIN or DEPARTURE (known at origin, complete or partial journey)
+  const withOriginReading = journeys.filter(j => j.origin_time !== '' && j.origin_time !== null).length;
+  // RFID Arrivals: tags with DESTINATION or ARRIVAL (known at destination, complete or partial journey)
+  const withDestReading = journeys.filter(j => j.dest_time !== null || j.arrival_time !== null).length;
 
   return {
     totalReadings,
