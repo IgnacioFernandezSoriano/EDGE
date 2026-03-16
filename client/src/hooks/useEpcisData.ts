@@ -415,8 +415,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const transitCdf = buildCDF(transitValues);
 
   const totalReadings = journeys.reduce((sum, j) => sum + j.origin_readings + j.dest_readings, 0);
-  const withOriginReading = journeys.filter(j => j.origin_impc && j.origin_readings > 0).length;
-  const withDestReading = journeys.filter(j => j.has_destination || j.has_international).length;
+  // RFID Departures: unique tag_ids with event_type DEPARTURE
+  const withOriginReading = journeys.filter(j => j.departure_time !== null).length;
+  // RFID Arrivals: unique tag_ids with event_type ARRIVAL
+  const withDestReading = journeys.filter(j => j.arrival_time !== null).length;
 
   return {
     totalReadings,

@@ -1130,7 +1130,7 @@ export default function Home() {
         {activeTab === 'RFID' && (
           <Section
             title="RFID Analysis"
-            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles · ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
+            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · ${epcis.stats.withOriginReading.toLocaleString()} departures · ${epcis.stats.withDestReading.toLocaleString()} arrivals · ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
           >
             {epcis.loading && (
               <div className="flex items-center justify-center py-16">
@@ -1155,37 +1155,37 @@ export default function Home() {
                       value={matchedTagsData != null ? matchedTagsData.count.toLocaleString() : '—'}
                       subtitle={matchedTagsData?.minDate && matchedTagsData?.maxDate
                         ? `${matchedTagsData.minDate} → ${matchedTagsData.maxDate}`
-                        : 'tag ID ↔ s9id pairs in ID Relation'}
+                        : 'records in ID Relation table'}
                       badge={{ label: 'id-match', color: 'blue' }}
-                      tooltip="Number of tag ID ↔ s9id records in the ID Relation table for the selected date period. Dates shown are the first and last matching record."
+                      tooltip="Total records in the ID Relation table for the selected date and country filters. Represents receptacles for which a tag ID ↔ s9id mapping exists."
                     />
                     <KpiCard
-                      title="Total RFID Receptacles"
+                      title="Total ID Receptacles"
                       value={epcis.stats.uniqueReceptacles.toLocaleString()}
-                      subtitle="unique s9ids with has_rfid in tracking_events"
+                      subtitle="unique tag IDs in RFID table"
                       badge={{ label: 'rfid', color: 'blue' }}
-                      tooltip="Total unique receptacles with has_rfid = true in tracking_events."
+                      tooltip="Total unique tag IDs in the RFID table for the selected filters. Each tag ID represents one physical receptacle tracked by RFID."
                     />
                     <KpiCard
                       title="RFID Departures"
                       value={epcis.stats.withOriginReading.toLocaleString()}
-                      subtitle="with RFID reading at origin centre"
-                      badge={{ label: 'origin', color: 'blue' }}
-                      tooltip="Receptacles with rfid_origin_impc set in tracking_events (BOTH + ORIGIN_ONLY cases)."
+                      subtitle="tag IDs with DEPARTURE event"
+                      badge={{ label: 'departure', color: 'blue' }}
+                      tooltip="Unique tag IDs in the RFID table that have at least one reading classified as event_type = DEPARTURE (last reading before crossing an international border)."
                     />
                     <KpiCard
                       title="RFID Arrivals"
                       value={epcis.stats.withDestReading.toLocaleString()}
-                      subtitle="with RFID reading at destination centre"
-                      badge={{ label: 'dest', color: 'green' }}
-                      tooltip="Receptacles with rfid_dest_impc set in tracking_events (BOTH + DEST_ONLY cases)."
+                      subtitle="tag IDs with ARRIVAL event"
+                      badge={{ label: 'arrival', color: 'green' }}
+                      tooltip="Unique tag IDs in the RFID table that have at least one reading classified as event_type = ARRIVAL (first reading after crossing an international border)."
                     />
                     <KpiCard
                       title="End-to-End Pairs"
                       value={epcis.stats.endToEndPairs.toLocaleString()}
-                      subtitle="RFID reading at both origin & destination"
+                      subtitle="tag IDs with ORIGIN and DESTINATION"
                       badge={{ label: 'e2e', color: 'amber' }}
-                      tooltip="Receptacles with RFID readings at both origin and destination centres (rfid_case = BOTH)."
+                      tooltip="Unique tag IDs in the RFID table that have both an ORIGIN event (first reading at dispatch centre) and a DESTINATION event (last reading at delivery centre)."
                     />
                   </div>
 
