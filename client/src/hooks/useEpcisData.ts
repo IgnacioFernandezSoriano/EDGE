@@ -194,9 +194,14 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
     const originInfo = getCentre(originRow);
     const originTime = originRow.event_time_local || originRow.record_time || '';
 
-    const hasDest = destRow !== null;
-    const destInfo = hasDest ? getCentre(destRow!) : null;
-    const destTime = hasDest ? (destRow!.event_time_local || destRow!.record_time || null) : null;
+    // hasDest is true only when DESTINATION is at a DIFFERENT centre than ORIGIN
+    // (if same impc_code, the tag is PENDING — only one centre visited)
+    const destRowRaw = destRow;
+    const destInfoRaw = destRowRaw ? getCentre(destRowRaw) : null;
+    const hasDest = destRowRaw !== null && destInfoRaw !== null &&
+      destInfoRaw.impc !== originInfo.impc;
+    const destInfo = hasDest ? destInfoRaw : null;
+    const destTime = hasDest ? (destRowRaw!.event_time_local || destRowRaw!.record_time || null) : null;
 
     const hasIntl = depRow !== null && arrRow !== null;
     const depInfo  = depRow  ? getCentre(depRow)  : null;
