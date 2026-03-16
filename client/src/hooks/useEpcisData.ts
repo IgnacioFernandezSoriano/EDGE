@@ -65,7 +65,8 @@ export interface RfidJourney {
   arrival_impc: string | null;
   arrival_time: string | null;
   // Times
-  transit_hours: number | null;           // DEPARTURE → ARRIVAL (international)
+  transit_hours: number | null;           // ORIGIN → DESTINATION (total, for table column)
+  international_transit_hours: number | null; // DEPARTURE → ARRIVAL only (for KPI)
   full_journey_hours: number | null;      // ORIGIN → DESTINATION (full)
   has_destination: boolean;
   has_international: boolean;             // has DEPARTURE + ARRIVAL pair
@@ -213,15 +214,18 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
     const tag_id = originRow.tag_id || tagKey;
     const s9id   = (originRow.s9id && originRow.s9id !== tag_id) ? originRow.s9id : tag_id;
 
-    // Transit time: prefer DEPARTURE → ARRIVAL (international boundary crossing).
-    // Fallback: use ORIGIN → DESTINATION when centres differ but no border crossing recorded.
+    // transit_hours: ORIGIN → DESTINATION total time (shown in table column)
     let transitHours: number | null = null;
-    if (hasIntl && depTime && arrTime) {
-      const diffMs = new Date(arrTime).getTime() - new Date(depTime).getTime();
-      if (diffMs > 0) transitHours = Math.round((diffMs / 3600000) * 10) / 10;
-    } else if (hasDest && originTime && destTime) {
+    if (hasDest && originTime && destTime) {
       const diffMs = new Date(destTime).getTime() - new Date(originTime).getTime();
       if (diffMs > 0) transitHours = Math.round((diffMs / 3600000) * 10) / 10;
+    }
+
+    // international_transit_hours: DEPARTURE → ARRIVAL only (used for KPI)
+    let intlTransitHours: number | null = null;
+    if (hasIntl && depTime && arrTime) {
+      const diffMs = new Date(arrTime).getTime() - new Date(depTime).getTime();
+      if (diffMs > 0) intlTransitHours = Math.round((diffMs / 3600000) * 10) / 10;
     }
 
     // Full journey time: ORIGIN → DESTINATION
@@ -262,8 +266,9 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
       arrival_impc:      arrInfo?.impc ?? null,
       arrival_time:      arrTime,
       // Times
-      transit_hours:      transitHours,
-      full_journey_hours: fullJourneyHours,
+      transit_hours:               transitHours,
+      international_transit_hours: intlTransitHours,
+      full_journey_hours:          fullJourneyHours,
       has_destination:    hasDest,
       has_international:  hasIntl,
       is_both_rfid:       originRow !== null && destRow !== null,
@@ -279,9 +284,9 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   // endToEnd: journeys with DEPARTURE + ARRIVAL (international transit measured)
   const endToEnd = journeys.filter(j => j.has_international);
   const bothRfid  = journeys.filter(j => j.is_both_rfid);
-  // Transit values: use DEPARTURE→ARRIVAL time (international transit)
+  // KPI transit values: use DEPARTURE→ARRIVAL (international_transit_hours) only
   const transitValues = endToEnd
-    .map(j => j.transit_hours!)
+    .map(j => j.international_transit_hours!)
     .filter(h => h !== null && h > 0) as number[];
 
   const times = journeys.map(j => j.origin_time).filter(Boolean).sort();
@@ -341,11 +346,11 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   // Departure by centre — use departure_centre (last centre before border crossing)
   const depCentreMap = new Map<string, { country: string; hours: number[] }>();
   for (const j of endToEnd) {
-    if (j.transit_hours === null || j.transit_hours < 0) continue;
+    if (j.international_transit_hours === null || j.international_transit_hours < 0) continue;
     const key = j.departure_centre || j.origin_centre || 'Unknown';
     const country = j.departure_country || j.origin_country;
     if (!depCentreMap.has(key)) depCentreMap.set(key, { country, hours: [] });
-    depCentreMap.get(key)!.hours.push(j.transit_hours);
+    depCentreMap.get(key)!.hours.push(j.international_transit_hours);
   }
   const departureByCentre = Array.from(depCentreMap.entries())
     .map(([centre, v]) => ({
@@ -359,11 +364,11 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   // Arrival by centre — use arrival_centre (first centre after border crossing)
   const arrCentreMap = new Map<string, { country: string; hours: number[] }>();
   for (const j of endToEnd) {
-    if (j.transit_hours === null || j.transit_hours < 0) continue;
+    if (j.international_transit_hours === null || j.international_transit_hours < 0) continue;
     const key = j.arrival_centre || j.dest_centre || 'Unknown';
     const country = j.arrival_country || j.dest_country || '';
     if (!arrCentreMap.has(key)) arrCentreMap.set(key, { country, hours: [] });
-    arrCentreMap.get(key)!.hours.push(j.transit_hours);
+    arrCentreMap.get(key)!.hours.push(j.international_transit_hours);
   }
   const arrivalByCentre = Array.from(arrCentreMap.entries())
     .map(([centre, v]) => ({
@@ -383,7 +388,7 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     if (!routeMap.has(key)) routeMap.set(key, { origin: originC, dest: destC, count: 0, hours: [] });
     const v = routeMap.get(key)!;
     v.count++;
-    if (j.transit_hours !== null && j.transit_hours > 0) v.hours.push(j.transit_hours);
+    if (j.international_transit_hours !== null && j.international_transit_hours > 0) v.hours.push(j.international_transit_hours);
   }
   const byRoute = Array.from(routeMap.entries())
     .map(([route, v]) => ({
