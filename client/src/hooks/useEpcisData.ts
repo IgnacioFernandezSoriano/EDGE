@@ -492,6 +492,28 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     fetchRfidReadings(recentFrom, undefined)
       .then(recentData => {
         if (cancelled) return;
+
+        // If no recent data, skip the progressive approach and load everything directly
+        if (recentData.length === 0) {
+          setBackgroundLoading(true);
+          fetchRfidReadings(undefined, undefined)
+            .then(allData => {
+              if (!cancelled) {
+                setAllReadings(allData);
+                setLoading(false);
+                setBackgroundLoading(false);
+              }
+            })
+            .catch(err => {
+              if (!cancelled) {
+                setError(err.message ?? 'Error al cargar datos RFID');
+                setLoading(false);
+                setBackgroundLoading(false);
+              }
+            });
+          return;
+        }
+
         setAllReadings(recentData);
         setLoading(false); // UI is now usable with recent data
 
