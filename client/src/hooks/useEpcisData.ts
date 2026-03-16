@@ -213,10 +213,14 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
     const tag_id = originRow.tag_id || tagKey;
     const s9id   = (originRow.s9id && originRow.s9id !== tag_id) ? originRow.s9id : tag_id;
 
-    // International transit time: DEPARTURE → ARRIVAL
+    // Transit time: prefer DEPARTURE → ARRIVAL (international boundary crossing).
+    // Fallback: use ORIGIN → DESTINATION when centres differ but no border crossing recorded.
     let transitHours: number | null = null;
     if (hasIntl && depTime && arrTime) {
       const diffMs = new Date(arrTime).getTime() - new Date(depTime).getTime();
+      if (diffMs > 0) transitHours = Math.round((diffMs / 3600000) * 10) / 10;
+    } else if (hasDest && originTime && destTime) {
+      const diffMs = new Date(destTime).getTime() - new Date(originTime).getTime();
       if (diffMs > 0) transitHours = Math.round((diffMs / 3600000) * 10) / 10;
     }
 
