@@ -711,7 +711,7 @@ export default function Home() {
               <div className="flex flex-col items-center gap-1">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-amber-500 px-1">EDI / RFID Benchmark</span>
                 <div className="flex items-center gap-1">
-                  {['Departure', 'Arrival', 'Transit', 'Data'].map(tab => (
+                  {['Benchmark'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -774,8 +774,17 @@ export default function Home() {
           total={allEvents.length}
         />
 
-        {/* ════════════════════ DEPARTURE ════════════════════ */}
-        {activeTab === 'Departure' && (
+        {/* ════════════════════ BENCHMARK ════════════════════ */}
+        {activeTab === 'Benchmark' && (
+          <Section
+            title="RFID vs EDI Benchmark"
+            subtitle="Direct comparison between RFID physical readings and EDI declared events — only receptacles with a pair in both RFID and datos EDI via ID Relation"
+          >
+            <BenchmarkPanel />
+          </Section>
+        )}
+        {/* ════════════════════ DEPARTURE (legacy — hidden) ════════════════════ */}
+        {activeTab === 'Departure_legacy' && (
           <Section
             title="Departure Event: RFID vs PREDES"
             subtitle="Comparison of the first RFID reading at the origin centre against the PREDES (pre-advice of dispatch) EDI message. Positive values = RFID detected AFTER PREDES."
@@ -897,7 +906,7 @@ export default function Home() {
         )}
 
         {/* ════════════════════ ARRIVAL ════════════════════ */}
-        {activeTab === 'Arrival' && (
+        {activeTab === 'Arrival_legacy' && (
           <Section
             title="Arrival Event: RFID vs RESDES"
             subtitle="Comparison of the last RFID reading at the destination centre against the RESDES (advice of receipt) EDI message. Negative values = RFID detected BEFORE RESDES (real-time advantage)."
@@ -1025,7 +1034,7 @@ export default function Home() {
         )}
 
         {/* ════════════════════ TRANSIT ════════════════════ */}
-        {activeTab === 'Transit' && (
+        {activeTab === 'Transit_legacy' && (
           <Section
             title="Transit Time Comparison"
             subtitle="For receptacles with RFID readings at both origin and destination centres: physical transit (RFID) vs declared transit (EDI: RESDES − PREDES)."
@@ -1562,7 +1571,7 @@ export default function Home() {
           </Section>
         )}
         {/* ════════════════════ DATA TABLE ════════════════════ */}
-        {activeTab === 'Data' && (
+        {activeTab === 'Data_legacy' && (
           <Section
             title="Detailed Data"
             subtitle={`All ${events.length.toLocaleString()} receptacles from the tracking_events table with pre-calculated metrics`}
