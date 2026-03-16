@@ -1,8 +1,8 @@
 /**
  * useBenchmarkData — Benchmark RFID vs EDI
  *
- * Reads from the materialized view `benchmark_rfid_edi` which pre-computes
- * the join: RFID ↔ ID Relation ↔ datos EDI
+ * Reads from the materialized view `benchmark_rfid_edi`.
+ * Supports global filters: dateFrom, dateTo, originCountry, destCountry.
  *
  * EDI event chain (logical order):
  *   PREDES → CARDIT → RESDIT74 → RESDIT21 → RESDES
@@ -15,6 +15,14 @@
  */
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+
+/* ── Filter params ──────────────────────────────────────────────────────────── */
+export interface BenchmarkFilters {
+  dateFrom?:      string;
+  dateTo?:        string;
+  originCountry?: string;
+  destCountry?:   string;
+}
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 export interface BenchmarkRow {
@@ -58,6 +66,16 @@ export interface BenchmarkRow {
   has_edi_transit:   boolean;
 }
 
+export interface CentreStats {
+  centre:     string;
+  impc:       string;
+  country:    string;
+  n:          number;
+  mean:       number | null;
+  mode:       number | null;
+  median:     number | null;
+}
+
 export interface RouteStats {
   route:   string;
   origin:  string;
@@ -96,9 +114,11 @@ export interface BenchmarkStats {
   missingResdes:   number;
   avgDeltaPredesH: number | null;
   avgDeltaResdesH: number | null;
-  byRoute: RouteStats[];
-  rfTransitCdf:  { x: number; pct: number }[];
-  ediTransitCdf: { x: number; pct: number }[];
+  byRoute:         RouteStats[];
+  byOriginCentre:  CentreStats[];   // Δ PREDES by origin centre
+  byDestCentre:    CentreStats[];   // Δ RESDES by destination centre
+  rfTransitCdf:    { x: number; pct: number }[];
+  ediTransitCdf:   { x: number; pct: number }[];
 }
 
 /* ── Math helpers ───────────────────────────────────────────────────────────── */
@@ -111,6 +131,18 @@ function median(arr: number[]): number | null {
   const s = [...arr].sort((a, b) => a - b);
   const m = Math.floor(s.length / 2);
   return s.length % 2 !== 0 ? s[m] : Math.round(((s[m - 1] + s[m]) / 2) * 10) / 10;
+}
+function mode(arr: number[]): number | null {
+  if (!arr.length) return null;
+  // Round to nearest hour for grouping
+  const rounded = arr.map(v => Math.round(v));
+  const freq: Record<number, number> = {};
+  for (const v of rounded) freq[v] = (freq[v] ?? 0) + 1;
+  let maxCount = 0, modeVal = rounded[0];
+  for (const [k, c] of Object.entries(freq)) {
+    if (c > maxCount) { maxCount = c; modeVal = Number(k); }
+  }
+  return modeVal;
 }
 function buildCDF(values: number[], steps = 50): { x: number; pct: number }[] {
   if (!values.length) return [];
@@ -125,18 +157,28 @@ function buildCDF(values: number[], steps = 50): { x: number; pct: number }[] {
   });
 }
 
-/* ── Fetch from materialized view ───────────────────────────────────────────── */
-async function fetchBenchmarkRows(): Promise<BenchmarkRow[]> {
+/* ── Fetch from materialized view with filters ──────────────────────────────── */
+async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkRow[]> {
   const PAGE = 1000;
   const allRows: BenchmarkRow[] = [];
   let from = 0;
 
   while (true) {
-    const { data, error } = await supabase
+    let q = supabase
       .from('benchmark_rfid_edi')
       .select('*')
       .range(from, from + PAGE - 1);
 
+    // Date filter: apply on edi_predes_time (departure side)
+    if (filters.dateFrom) q = q.gte('edi_predes_time', filters.dateFrom);
+    if (filters.dateTo)   q = q.lte('edi_predes_time', filters.dateTo + 'T23:59:59Z');
+
+    // Country filter: match against rf_origin_country / rf_dest_country
+    // Fall back to edi_origin_impc prefix match when rf country is null
+    if (filters.originCountry) q = q.eq('rf_origin_country', filters.originCountry);
+    if (filters.destCountry)   q = q.eq('rf_dest_country',   filters.destCountry);
+
+    const { data, error } = await q;
     if (error) throw new Error(`benchmark_rfid_edi: ${error.message}`);
     if (!data || data.length === 0) break;
 
@@ -148,16 +190,51 @@ async function fetchBenchmarkRows(): Promise<BenchmarkRow[]> {
   return allRows;
 }
 
+/* ── Centre-level delta stats ───────────────────────────────────────────────── */
+function buildCentreStats(
+  rows: BenchmarkRow[],
+  getCentre: (r: BenchmarkRow) => string | null,
+  getImpc:   (r: BenchmarkRow) => string | null,
+  getCountry:(r: BenchmarkRow) => string | null,
+  getDelta:  (r: BenchmarkRow) => number | null,
+  hasData:   (r: BenchmarkRow) => boolean,
+): CentreStats[] {
+  const map = new Map<string, { impc: string; country: string; deltas: number[] }>();
+
+  for (const r of rows) {
+    if (!hasData(r)) continue;
+    const delta = getDelta(r);
+    if (delta === null) continue;
+    const centre  = getCentre(r)  || getImpc(r) || '?';
+    const impc    = getImpc(r)    || '?';
+    const country = getCountry(r) || '?';
+    if (!map.has(centre)) map.set(centre, { impc, country, deltas: [] });
+    map.get(centre)!.deltas.push(Number(delta));
+  }
+
+  return Array.from(map.entries())
+    .map(([centre, v]) => ({
+      centre,
+      impc:    v.impc,
+      country: v.country,
+      n:       v.deltas.length,
+      mean:    mean(v.deltas),
+      mode:    mode(v.deltas),
+      median:  median(v.deltas),
+    }))
+    .sort((a, b) => b.n - a.n);
+}
+
 /* ── Stats ──────────────────────────────────────────────────────────────────── */
 function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   const depRows     = rows.filter(r => r.has_rf_departure);
   const arrRows     = rows.filter(r => r.has_rf_arrival);
   const transitRows = rows.filter(r => r.has_rf_transit && r.has_edi_transit);
 
-  const rfTransitVals  = transitRows.map(r => Number(r.rf_transit_hours)).filter(v => v > 0);
-  const ediTransitVals = transitRows.map(r => Number(r.edi_transit_hours)).filter(v => v > 0);
-  const deltaPredesVals = depRows.map(r => Number(r.delta_predes_hours)).filter(v => !isNaN(v));
-  const deltaResdesVals = arrRows.map(r => Number(r.delta_resdes_hours)).filter(v => !isNaN(v));
+  const rfTransitVals   = transitRows.map(r => Number(r.rf_transit_hours)).filter(v => v > 0);
+  const ediTransitVals  = transitRows.map(r => Number(r.edi_transit_hours)).filter(v => v > 0);
+  const deltaPredesVals = rows.filter(r => r.delta_predes_hours !== null).map(r => Number(r.delta_predes_hours));
+  const deltaResdesVals = rows.filter(r => r.delta_resdes_hours !== null).map(r => Number(r.delta_resdes_hours));
 
   // By route
   const routeMap = new Map<string, {
@@ -209,6 +286,26 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
     }))
     .sort((a, b) => b.count - a.count);
 
+  // By origin centre — Δ PREDES (RF-PREDES minus EDI PREDES)
+  const byOriginCentre = buildCentreStats(
+    rows,
+    r => r.rf_origin_centre,
+    r => r.rf_origin_impc || r.edi_origin_impc,
+    r => r.rf_origin_country,
+    r => r.delta_predes_hours,
+    r => r.delta_predes_hours !== null,
+  );
+
+  // By destination centre — Δ RESDES (RF-RESDES minus EDI RESDES)
+  const byDestCentre = buildCentreStats(
+    rows,
+    r => r.rf_dest_centre,
+    r => r.rf_dest_impc || r.edi_dest_impc,
+    r => r.rf_dest_country,
+    r => r.delta_resdes_hours,
+    r => r.delta_resdes_hours !== null,
+  );
+
   return {
     totalPairs:      rows.length,
     departurePairs:  depRows.length,
@@ -232,26 +329,31 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
     avgDeltaPredesH: mean(deltaPredesVals),
     avgDeltaResdesH: mean(deltaResdesVals),
     byRoute,
+    byOriginCentre,
+    byDestCentre,
     rfTransitCdf:    buildCDF(rfTransitVals),
     ediTransitCdf:   buildCDF(ediTransitVals),
   };
 }
 
 /* ── Hook ───────────────────────────────────────────────────────────────────── */
-export function useBenchmarkData() {
+export function useBenchmarkData(filters: BenchmarkFilters = {}) {
   const [rows, setRows]       = useState<BenchmarkRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
+
+  const filterKey = JSON.stringify(filters);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchBenchmarkRows()
+    fetchBenchmarkRows(filters)
       .then(data => { if (!cancelled) { setRows(data); setLoading(false); } })
       .catch(err  => { if (!cancelled) { setError(err.message ?? 'Error loading benchmark data'); setLoading(false); } });
     return () => { cancelled = true; };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
 
   const stats = useMemo(() => rows.length ? computeStats(rows) : null, [rows]);
   return { rows, stats, loading, error };

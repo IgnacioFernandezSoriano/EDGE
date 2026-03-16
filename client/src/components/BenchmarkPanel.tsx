@@ -6,29 +6,28 @@
  *   2. RF-RESDES vs RESDES  (destination delivery)
  *   3. Transit RFID (DEP→ARR) vs Transit EDI (PREDES→RESDES)
  *
- * Plus EDI chain completeness (PREDES→CARDIT→RESDIT74→RESDIT21→RESDES)
- * shown as gap analysis — no RFID equivalent for intermediate events.
+ * Plus EDI chain completeness (PREDES→CARDIT→RESDIT74→RESDIT21→RESDES).
+ * Filtered by global date / origin country / destination country.
  */
 
 import React, { useState, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ReferenceLine, ScatterChart, Scatter,
-  LineChart, Line, LabelList,
+  ResponsiveContainer, ReferenceLine,
+  LineChart, Line,
 } from 'recharts';
-import { useBenchmarkData, BenchmarkRow, RouteStats } from '@/hooks/useBenchmarkData';
+import { useBenchmarkData, BenchmarkRow, RouteStats, CentreStats, BenchmarkFilters } from '@/hooks/useBenchmarkData';
 
 /* ── Palette ────────────────────────────────────────────────────────────────── */
 const C = {
-  rfid:   '#4F46E5', // indigo  — RFID
-  edi:    '#64748b', // slate   — EDI
-  ok:     '#22c55e', // green
-  warn:   '#f59e0b', // amber
-  danger: '#ef4444', // red
-  bg:     '#f8fafc',
+  rfid:   '#4F46E5',
+  edi:    '#64748b',
+  ok:     '#22c55e',
+  warn:   '#f59e0b',
+  danger: '#ef4444',
 };
 
-/* ── Small helpers ──────────────────────────────────────────────────────────── */
+/* ── Helpers ────────────────────────────────────────────────────────────────── */
 function fmt(t: string | null): string {
   if (!t) return '—';
   try {
@@ -41,8 +40,7 @@ function fmt(t: string | null): string {
 function fmtH(h: number | null): string {
   if (h === null) return '—';
   const sign = h < 0 ? '−' : '+';
-  const abs  = Math.abs(h);
-  return `${sign}${abs.toFixed(1)}h`;
+  return `${sign}${Math.abs(h).toFixed(1)}h`;
 }
 function fmtHAbs(h: number | null): string {
   if (h === null) return '—';
@@ -54,9 +52,15 @@ function pct(n: number, total: number): string {
 }
 function deltaColor(h: number | null): string {
   if (h === null) return 'text-slate-400';
-  if (Math.abs(h) <= 2) return 'text-emerald-600';
+  if (Math.abs(h) <= 2)  return 'text-emerald-600';
   if (Math.abs(h) <= 12) return 'text-amber-600';
   return 'text-rose-600';
+}
+function deltaBg(h: number | null): string {
+  if (h === null) return 'bg-slate-50';
+  if (Math.abs(h) <= 2)  return 'bg-emerald-50';
+  if (Math.abs(h) <= 12) return 'bg-amber-50';
+  return 'bg-rose-50';
 }
 
 /* ── KPI Card ───────────────────────────────────────────────────────────────── */
@@ -112,6 +116,41 @@ function ChainBar({ label, present, total }: { label: string; present: number; t
       </div>
       <div className="w-20 text-right text-xs text-slate-500">{present.toLocaleString()} / {total.toLocaleString()}</div>
       <div className={`w-10 text-right text-xs font-semibold ${p >= 90 ? 'text-emerald-600' : p >= 60 ? 'text-amber-600' : 'text-rose-600'}`}>{p}%</div>
+    </div>
+  );
+}
+
+/* ── Centre delta table ─────────────────────────────────────────────────────── */
+function CentreTable({ data, label }: { data: CentreStats[]; label: string }) {
+  if (!data.length) return <p className="text-xs text-slate-400 italic py-2">No data.</p>;
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full text-xs">
+        <thead className="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th className="px-3 py-2 text-left font-semibold text-slate-600">Centre</th>
+            <th className="px-3 py-2 text-left font-semibold text-slate-500">IMPC</th>
+            <th className="px-3 py-2 text-left font-semibold text-slate-500">Country</th>
+            <th className="px-3 py-2 text-center font-semibold text-slate-600">N</th>
+            <th className="px-3 py-2 text-center font-semibold text-indigo-600">Mean {label}</th>
+            <th className="px-3 py-2 text-center font-semibold text-indigo-600">Median {label}</th>
+            <th className="px-3 py-2 text-center font-semibold text-indigo-600">Mode {label}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {data.map(r => (
+            <tr key={r.centre + r.impc} className={`hover:bg-slate-50 ${deltaBg(r.mean)}`}>
+              <td className="px-3 py-2 font-semibold text-slate-700">{r.centre}</td>
+              <td className="px-3 py-2 font-mono text-slate-500">{r.impc}</td>
+              <td className="px-3 py-2 text-slate-500">{r.country}</td>
+              <td className="px-3 py-2 text-center text-slate-600">{r.n}</td>
+              <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.mean)}`}>{fmtH(r.mean)}</td>
+              <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.median)}`}>{fmtH(r.median)}</td>
+              <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.mode)}`}>{fmtH(r.mode)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -232,8 +271,12 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
 }
 
 /* ── Main component ─────────────────────────────────────────────────────────── */
-export function BenchmarkPanel() {
-  const { rows, stats, loading, error } = useBenchmarkData();
+interface BenchmarkPanelProps {
+  filters?: BenchmarkFilters;
+}
+
+export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
+  const { rows, stats, loading, error } = useBenchmarkData(filters);
   const [detailView, setDetailView] = useState<DetailView>('departure');
 
   if (loading) {
@@ -253,31 +296,11 @@ export function BenchmarkPanel() {
 
   /* ── Route chart data ── */
   const routeChartData = stats.byRoute.slice(0, 12).map(r => ({
-    route: r.route,
-    rfidAvg:  r.avgRfH  ?? 0,
-    ediAvg:   r.avgEdiH ?? 0,
-    count:    r.count,
+    route:   r.route,
+    rfidAvg: r.avgRfH  ?? 0,
+    ediAvg:  r.avgEdiH ?? 0,
+    count:   r.count,
   })).filter(r => r.rfidAvg > 0 || r.ediAvg > 0);
-
-  /* ── Delta PREDES scatter ── */
-  const deltaPredesData = rows
-    .filter(r => r.has_rf_departure && r.delta_predes_hours !== null)
-    .map(r => ({
-      x: new Date(r.edi_predes_time!).getTime(),
-      y: r.delta_predes_hours!,
-      s9id: r.s9id,
-    }))
-    .slice(0, 500);
-
-  /* ── Delta RESDES scatter ── */
-  const deltaResdesData = rows
-    .filter(r => r.has_rf_arrival && r.delta_resdes_hours !== null)
-    .map(r => ({
-      x: new Date(r.edi_resdes_time!).getTime(),
-      y: r.delta_resdes_hours!,
-      s9id: r.s9id,
-    }))
-    .slice(0, 500);
 
   return (
     <div className="space-y-2">
@@ -297,67 +320,39 @@ export function BenchmarkPanel() {
       {/* ── 2. RF-PREDES vs EDI PREDES ── */}
       <Section
         title="RF-PREDES vs EDI PREDES"
-        subtitle={`Departure preparation: first RFID reading (ORIGIN) vs EDI PREDES timestamp — ${stats.departurePairs} pairs`}
+        subtitle={`Departure preparation: first RFID reading (ORIGIN) vs EDI PREDES — ${stats.departurePairs} pairs with both events`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="Departure pairs"    value={stats.departurePairs} color="indigo" />
-          <KPI label="Avg Δ PREDES"       value={fmtH(stats.avgDeltaPredesH)} sub="RF minus EDI (+ = RFID later)" color={stats.avgDeltaPredesH !== null && Math.abs(stats.avgDeltaPredesH) <= 4 ? 'green' : 'amber'} />
-          <KPI label="EDI PREDES cover"   value={pct(stats.hasEdiPredes, stats.totalPairs)} sub={`${stats.hasEdiPredes} / ${stats.totalPairs}`} color="slate" />
-          <KPI label="RF-PREDES cover"    value={pct(stats.hasRfPredes, stats.totalPairs)}  sub={`${stats.hasRfPredes} / ${stats.totalPairs}`} color="green" />
+          <KPI label="Pairs with both"   value={stats.hasRfPredes}    color="indigo" />
+          <KPI label="Avg Δ PREDES"      value={fmtH(stats.avgDeltaPredesH)} sub="RF minus EDI (+ = RFID later)" color={stats.avgDeltaPredesH !== null && Math.abs(stats.avgDeltaPredesH) <= 4 ? 'green' : 'amber'} />
+          <KPI label="EDI PREDES cover"  value={pct(stats.hasEdiPredes, stats.totalPairs)} sub={`${stats.hasEdiPredes} / ${stats.totalPairs}`} color="slate" />
+          <KPI label="RF-PREDES cover"   value={pct(stats.hasRfPredes, stats.totalPairs)}  sub={`${stats.hasRfPredes} / ${stats.totalPairs}`} color="green" />
         </div>
 
-        {deltaPredesData.length > 0 && (
-          <div className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
-            <p className="text-xs font-semibold text-slate-600 mb-3">
-              Δ PREDES over time — RF-PREDES minus EDI PREDES (hours). Positive = RFID reads later than EDI declares.
-            </p>
-            <ResponsiveContainer width="100%" height={200}>
-              <ScatterChart margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="x" type="number" domain={['auto', 'auto']} tick={false}
-                  label={{ value: 'Time →', position: 'insideBottom', offset: -2, style: { fontSize: 10, fill: '#94a3b8' } }} />
-                <YAxis dataKey="y" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                  label={{ value: 'Δ (h)', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
-                <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 2" />
-                <Tooltip formatter={(v: any) => [`${v}h`, 'Δ PREDES']} labelFormatter={() => ''} />
-                <Scatter data={deltaPredesData} fill={C.rfid} opacity={0.5} r={3} />
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        <p className="text-[11px] text-slate-500 mb-2 italic">
+          Δ = RF-PREDES minus EDI PREDES (hours). Negative = RFID reads <strong>before</strong> EDI declares; positive = RFID reads <strong>after</strong>.
+          Colour: green ≤ ±2h · amber ≤ ±12h · red &gt; ±12h.
+        </p>
+        <CentreTable data={stats.byOriginCentre} label="Δ" />
       </Section>
 
       {/* ── 3. RF-RESDES vs EDI RESDES ── */}
       <Section
         title="RF-RESDES vs EDI RESDES"
-        subtitle={`Delivery confirmation: last RFID reading (DESTINATION) vs EDI RESDES timestamp — ${stats.arrivalPairs} pairs`}
+        subtitle={`Delivery confirmation: last RFID reading (DESTINATION) vs EDI RESDES — ${stats.arrivalPairs} pairs with both events`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="Arrival pairs"     value={stats.arrivalPairs}   color="indigo" />
+          <KPI label="Pairs with both"   value={stats.hasRfResdes}    color="indigo" />
           <KPI label="Avg Δ RESDES"      value={fmtH(stats.avgDeltaResdesH)} sub="RF minus EDI (+ = RFID later)" color={stats.avgDeltaResdesH !== null && Math.abs(stats.avgDeltaResdesH) <= 4 ? 'green' : 'amber'} />
           <KPI label="EDI RESDES cover"  value={pct(stats.hasEdiResdes, stats.totalPairs)} sub={`${stats.hasEdiResdes} / ${stats.totalPairs}`} color="slate" />
           <KPI label="RF-RESDES cover"   value={pct(stats.hasRfResdes, stats.totalPairs)}  sub={`${stats.hasRfResdes} / ${stats.totalPairs}`} color="green" />
         </div>
 
-        {deltaResdesData.length > 0 && (
-          <div className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
-            <p className="text-xs font-semibold text-slate-600 mb-3">
-              Δ RESDES over time — RF-RESDES minus EDI RESDES (hours). Positive = RFID reads later than EDI declares.
-            </p>
-            <ResponsiveContainer width="100%" height={200}>
-              <ScatterChart margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="x" type="number" domain={['auto', 'auto']} tick={false}
-                  label={{ value: 'Time →', position: 'insideBottom', offset: -2, style: { fontSize: 10, fill: '#94a3b8' } }} />
-                <YAxis dataKey="y" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                  label={{ value: 'Δ (h)', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
-                <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 2" />
-                <Tooltip formatter={(v: any) => [`${v}h`, 'Δ RESDES']} labelFormatter={() => ''} />
-                <Scatter data={deltaResdesData} fill="#10b981" opacity={0.5} r={3} />
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        <p className="text-[11px] text-slate-500 mb-2 italic">
+          Δ = RF-RESDES minus EDI RESDES (hours). Negative = RFID reads <strong>before</strong> EDI declares; positive = RFID reads <strong>after</strong>.
+          Colour: green ≤ ±2h · amber ≤ ±12h · red &gt; ±12h.
+        </p>
+        <CentreTable data={stats.byDestCentre} label="Δ" />
       </Section>
 
       {/* ── 4. Transit time comparison ── */}
@@ -366,10 +361,10 @@ export function BenchmarkPanel() {
         subtitle={`RFID: DEPARTURE → ARRIVAL · EDI: PREDES → RESDES — ${stats.transitPairs} pairs with full origin+destination match`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="Transit pairs"      value={stats.transitPairs}    color="indigo" />
-          <KPI label="Avg RFID transit"   value={fmtHAbs(stats.avgRfTransitH)}  color="indigo" />
-          <KPI label="Avg EDI transit"    value={fmtHAbs(stats.avgEdiTransitH)} color="slate" />
-          <KPI label="Median RFID"        value={fmtHAbs(stats.medRfTransitH)}  color="indigo" />
+          <KPI label="Transit pairs"     value={stats.transitPairs}    color="indigo" />
+          <KPI label="Avg RFID transit"  value={fmtHAbs(stats.avgRfTransitH)}  color="indigo" />
+          <KPI label="Avg EDI transit"   value={fmtHAbs(stats.avgEdiTransitH)} color="slate" />
+          <KPI label="Median RFID"       value={fmtHAbs(stats.medRfTransitH)}  color="indigo" />
         </div>
 
         {routeChartData.length > 0 && (
@@ -382,12 +377,8 @@ export function BenchmarkPanel() {
                 <YAxis type="category" dataKey="route" tick={{ fontSize: 10 }} width={140} />
                 <Tooltip formatter={(v: number) => [`${v.toFixed(1)}h (${(v / 24).toFixed(1)}d)`, '']} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Bar dataKey="rfidAvg" name="RFID (DEP→ARR)" fill={C.rfid} radius={[0, 3, 3, 0]} barSize={11}>
-                  <LabelList dataKey="rfidAvg" position="right" formatter={(v: number) => `${v.toFixed(0)}h`} style={{ fontSize: 9, fill: C.rfid }} />
-                </Bar>
-                <Bar dataKey="ediAvg"  name="EDI (PREDES→RESDES)" fill={C.edi} radius={[0, 3, 3, 0]} barSize={11}>
-                  <LabelList dataKey="ediAvg"  position="right" formatter={(v: number) => `${v.toFixed(0)}h`} style={{ fontSize: 9, fill: C.edi }} />
-                </Bar>
+                <Bar dataKey="rfidAvg" name="RFID (DEP→ARR)"       fill={C.rfid} radius={[0, 3, 3, 0]} barSize={11} />
+                <Bar dataKey="ediAvg"  name="EDI (PREDES→RESDES)"  fill={C.edi}  radius={[0, 3, 3, 0]} barSize={11} />
               </BarChart>
             </ResponsiveContainer>
           </div>

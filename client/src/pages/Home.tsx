@@ -781,7 +781,12 @@ export default function Home() {
             title="RFID vs EDI Benchmark"
             subtitle="Direct comparison between RFID physical readings and EDI declared events — only receptacles with a pair in both RFID and datos EDI via ID Relation"
           >
-            <BenchmarkPanel />
+            <BenchmarkPanel filters={{
+              dateFrom: dateRange.from || undefined,
+              dateTo: dateRange.to || undefined,
+              originCountry: originCountry || undefined,
+              destCountry: destCountry || undefined,
+            }} />
           </Section>
         )}
         {/* ════════════════════ DEPARTURE (legacy — hidden) ════════════════════ */}
