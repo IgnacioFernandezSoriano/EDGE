@@ -44,6 +44,7 @@ export interface ReaderInfo {
 export interface RfidJourney {
   s9id: string;
   tag_id: string;
+  // Full journey (ORIGIN → DESTINATION)
   origin_country: string;
   origin_centre: string;
   origin_impc: string;
@@ -54,8 +55,20 @@ export interface RfidJourney {
   dest_impc: string | null;
   dest_time: string | null;
   dest_readings: number;
-  transit_hours: number | null;
+  // International transit (DEPARTURE → ARRIVAL)
+  departure_country: string | null;
+  departure_centre: string | null;
+  departure_impc: string | null;
+  departure_time: string | null;
+  arrival_country: string | null;
+  arrival_centre: string | null;
+  arrival_impc: string | null;
+  arrival_time: string | null;
+  // Times
+  transit_hours: number | null;           // DEPARTURE → ARRIVAL (international)
+  full_journey_hours: number | null;      // ORIGIN → DESTINATION (full)
   has_destination: boolean;
+  has_international: boolean;             // has DEPARTURE + ARRIVAL pair
   is_both_rfid: boolean;
   centres_visited: string[];
 }
@@ -135,12 +148,13 @@ function parseLocation(location: string | null): { country: string; centre: stri
 
 /**
  * Groups individual RFID readings by tag_id and builds journey objects.
- * The RFID table stores one ORIGIN row and one DESTINATION row per tag_id.
- * Country and centre are extracted from the `location` field.
- * When s9id equals tag_id (no real S9ID mapping), tag_id is shown as identity.
+ * ETL v3: each tag has ORIGIN, DESTINATION, and optionally DEPARTURE/ARRIVAL
+ * for international transits. Country and centre come from the `country` and
+ * `center_name` fields (set by the ETL from rfid_readers_master), with
+ * fallback to parsing the `location` field.
  */
 function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
-  // Group by tag_id (each tag has exactly one ORIGIN and one DESTINATION row)
+  // Group by tag_id
   const byTag = new Map<string, RfidReading[]>();
   for (const r of readings) {
     const key = r.tag_id || r.s9id;
@@ -152,71 +166,99 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
   const journeys: RfidJourney[] = [];
 
   for (const [tagKey, rows] of Array.from(byTag.entries())) {
-    const originRow = rows.find(r => r.event_type === 'ORIGIN') ?? null;
-    const destRow   = rows.find(r => r.event_type === 'DESTINATION') ?? null;
-    const interRows = rows.filter(r => r.event_type === 'INTERMEDIATE');
+    // Sort by event_time_local ascending
+    const sorted = [...rows].sort((a, b) => {
+      const ta = a.event_time_local || a.record_time || '';
+      const tb = b.event_time_local || b.record_time || '';
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
 
-    // Need at least an ORIGIN row
+    const originRow  = sorted.find(r => r.event_type === 'ORIGIN') ?? null;
+    const destRow    = sorted.slice().reverse().find(r => r.event_type === 'DESTINATION') ?? null;
+    // DEPARTURE = last reading before crossing border (may be same as ORIGIN if only 1 reading in origin country)
+    const depRow     = sorted.slice().reverse().find(r => r.event_type === 'DEPARTURE') ?? null;
+    // ARRIVAL = first reading after crossing border
+    const arrRow     = sorted.find(r => r.event_type === 'ARRIVAL') ?? null;
+
+    // Need at least an ORIGIN row to build a journey
     if (!originRow) continue;
 
-    // Extract country and centre from location field
-    const originLoc = parseLocation(originRow.location);
-    const originImpc    = originRow.impc_code || '';
-    const originCountry = originLoc.country;
-    const originCentre  = originLoc.centre || originImpc;
-    const originTime    = originRow.event_time_local || originRow.record_time || '';
-    const originReadings = 1;
+    // Helper: extract country and centre from a reading
+    function getCentre(r: RfidReading): { country: string; centre: string; impc: string } {
+      const country = r.country || parseLocation(r.location).country;
+      const centre  = r.center_name || parseLocation(r.location).centre || r.impc_code || '';
+      const impc    = r.impc_code || '';
+      return { country, centre, impc };
+    }
+
+    const originInfo = getCentre(originRow);
+    const originTime = originRow.event_time_local || originRow.record_time || '';
 
     const hasDest = destRow !== null;
-    const destLoc     = hasDest ? parseLocation(destRow!.location) : null;
-    const destImpc    = hasDest ? (destRow!.impc_code || null) : null;
-    const destCountry = hasDest ? (destLoc!.country || null) : null;
-    const destCentre  = hasDest ? (destLoc!.centre || destImpc) : null;
-    const destTime    = hasDest ? (destRow!.event_time_local || destRow!.record_time || null) : null;
-    const destReadings = hasDest ? 1 : 0;
+    const destInfo = hasDest ? getCentre(destRow!) : null;
+    const destTime = hasDest ? (destRow!.event_time_local || destRow!.record_time || null) : null;
 
-    // s9id: use real s9id only if it differs from tag_id (i.e. a real S9ID exists)
+    const hasIntl = depRow !== null && arrRow !== null;
+    const depInfo  = depRow  ? getCentre(depRow)  : null;
+    const arrInfo  = arrRow  ? getCentre(arrRow)  : null;
+    const depTime  = depRow  ? (depRow.event_time_local  || depRow.record_time  || null) : null;
+    const arrTime  = arrRow  ? (arrRow.event_time_local  || arrRow.record_time  || null) : null;
+
+    // s9id: use real s9id only if it differs from tag_id
     const tag_id = originRow.tag_id || tagKey;
     const s9id   = (originRow.s9id && originRow.s9id !== tag_id) ? originRow.s9id : tag_id;
 
-    // Calculate transit hours
+    // International transit time: DEPARTURE → ARRIVAL
     let transitHours: number | null = null;
-    if (hasDest && originTime && destTime) {
-      const diffMs = new Date(destTime).getTime() - new Date(originTime).getTime();
-      if (diffMs > 0) {
-        transitHours = Math.round((diffMs / 3600000) * 10) / 10;
-      }
+    if (hasIntl && depTime && arrTime) {
+      const diffMs = new Date(arrTime).getTime() - new Date(depTime).getTime();
+      if (diffMs > 0) transitHours = Math.round((diffMs / 3600000) * 10) / 10;
     }
 
-    // Build centres visited list
-    const centresVisited: string[] = [];
-    if (originCentre) centresVisited.push(originCentre);
-    for (const ir of interRows) {
-      const loc = parseLocation(ir.location);
-      const c = loc.centre || ir.impc_code || '';
-      if (c && !centresVisited.includes(c)) centresVisited.push(c);
+    // Full journey time: ORIGIN → DESTINATION
+    let fullJourneyHours: number | null = null;
+    if (hasDest && originTime && destTime) {
+      const diffMs = new Date(destTime).getTime() - new Date(originTime).getTime();
+      if (diffMs > 0) fullJourneyHours = Math.round((diffMs / 3600000) * 10) / 10;
     }
-    if (hasDest && destCentre && !centresVisited.includes(destCentre as string)) {
-      centresVisited.push(destCentre as string);
+
+    // Build centres visited list (all unique impc_codes in order)
+    const centresVisited: string[] = [];
+    for (const r of sorted) {
+      const c = r.center_name || parseLocation(r.location).centre || r.impc_code || '';
+      if (c && !centresVisited.includes(c)) centresVisited.push(c);
     }
 
     journeys.push({
       s9id,
       tag_id,
-      origin_country: originCountry,
-      origin_centre:  originCentre,
-      origin_impc:    originImpc,
-      origin_time:    originTime,
-      origin_readings: originReadings,
-      dest_country:   destCountry,
-      dest_centre:    destCentre,
-      dest_impc:      destImpc,
-      dest_time:      destTime,
-      dest_readings:  destReadings,
-      transit_hours:  transitHours,
-      has_destination: hasDest,
-      is_both_rfid:   originRow !== null && destRow !== null,
-      centres_visited: centresVisited,
+      // Full journey
+      origin_country:   originInfo.country,
+      origin_centre:    originInfo.centre,
+      origin_impc:      originInfo.impc,
+      origin_time:      originTime,
+      origin_readings:  1,
+      dest_country:     destInfo?.country ?? null,
+      dest_centre:      destInfo?.centre ?? null,
+      dest_impc:        destInfo?.impc ?? null,
+      dest_time:        destTime,
+      dest_readings:    hasDest ? 1 : 0,
+      // International transit
+      departure_country: depInfo?.country ?? null,
+      departure_centre:  depInfo?.centre ?? null,
+      departure_impc:    depInfo?.impc ?? null,
+      departure_time:    depTime,
+      arrival_country:   arrInfo?.country ?? null,
+      arrival_centre:    arrInfo?.centre ?? null,
+      arrival_impc:      arrInfo?.impc ?? null,
+      arrival_time:      arrTime,
+      // Times
+      transit_hours:      transitHours,
+      full_journey_hours: fullJourneyHours,
+      has_destination:    hasDest,
+      has_international:  hasIntl,
+      is_both_rfid:       originRow !== null && destRow !== null,
+      centres_visited:    centresVisited,
     });
   }
 
@@ -225,8 +267,10 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
 
 /* ─── Compute stats from journeys ─── */
 function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
-  const endToEnd = journeys.filter(j => j.has_destination);
+  // endToEnd: journeys with DEPARTURE + ARRIVAL (international transit measured)
+  const endToEnd = journeys.filter(j => j.has_international);
   const bothRfid  = journeys.filter(j => j.is_both_rfid);
+  // Transit values: use DEPARTURE→ARRIVAL time (international transit)
   const transitValues = endToEnd
     .map(j => j.transit_hours!)
     .filter(h => h !== null && h > 0) as number[];
@@ -250,10 +294,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .map(([country, v]) => ({ country, count: v.count, endToEnd: v.endToEnd, pct: Math.round(v.endToEnd / v.count * 100) }))
     .sort((a, b) => b.count - a.count);
 
-  // By dest country
+  // By dest country — use arrival_country for international journeys
   const destCountryMap = new Map<string, number>();
   for (const j of endToEnd) {
-    const c = j.dest_country || 'Unknown';
+    const c = j.arrival_country || j.dest_country || 'Unknown';
     destCountryMap.set(c, (destCountryMap.get(c) || 0) + 1);
   }
   const byDestCountry = Array.from(destCountryMap.entries())
@@ -273,23 +317,25 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count, endToEnd: v.endToEnd }))
     .sort((a, b) => b.count - a.count);
 
-  // By dest centre
+  // By dest centre — use arrival_centre for international journeys
   const destCentreMap = new Map<string, { country: string; count: number }>();
   for (const j of endToEnd) {
-    const key = j.dest_centre || 'Unknown';
-    if (!destCentreMap.has(key)) destCentreMap.set(key, { country: j.dest_country || '', count: 0 });
+    const key = j.arrival_centre || j.dest_centre || 'Unknown';
+    const country = j.arrival_country || j.dest_country || '';
+    if (!destCentreMap.has(key)) destCentreMap.set(key, { country, count: 0 });
     destCentreMap.get(key)!.count++;
   }
   const byDestCentre = Array.from(destCentreMap.entries())
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count }))
     .sort((a, b) => b.count - a.count);
 
-  // Departure by origin centre
+  // Departure by centre — use departure_centre (last centre before border crossing)
   const depCentreMap = new Map<string, { country: string; hours: number[] }>();
   for (const j of endToEnd) {
     if (j.transit_hours === null || j.transit_hours < 0) continue;
-    const key = j.origin_centre || 'Unknown';
-    if (!depCentreMap.has(key)) depCentreMap.set(key, { country: j.origin_country, hours: [] });
+    const key = j.departure_centre || j.origin_centre || 'Unknown';
+    const country = j.departure_country || j.origin_country;
+    if (!depCentreMap.has(key)) depCentreMap.set(key, { country, hours: [] });
     depCentreMap.get(key)!.hours.push(j.transit_hours);
   }
   const departureByCentre = Array.from(depCentreMap.entries())
@@ -301,12 +347,13 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     }))
     .sort((a, b) => b.n - a.n);
 
-  // Arrival by dest centre
+  // Arrival by centre — use arrival_centre (first centre after border crossing)
   const arrCentreMap = new Map<string, { country: string; hours: number[] }>();
   for (const j of endToEnd) {
     if (j.transit_hours === null || j.transit_hours < 0) continue;
-    const key = j.dest_centre || 'Unknown';
-    if (!arrCentreMap.has(key)) arrCentreMap.set(key, { country: j.dest_country || '', hours: [] });
+    const key = j.arrival_centre || j.dest_centre || 'Unknown';
+    const country = j.arrival_country || j.dest_country || '';
+    if (!arrCentreMap.has(key)) arrCentreMap.set(key, { country, hours: [] });
     arrCentreMap.get(key)!.hours.push(j.transit_hours);
   }
   const arrivalByCentre = Array.from(arrCentreMap.entries())
@@ -318,11 +365,13 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     }))
     .sort((a, b) => b.n - a.n);
 
-  // By route
+  // By route — use departure/arrival countries for international transit
   const routeMap = new Map<string, { origin: string; dest: string; count: number; hours: number[] }>();
   for (const j of endToEnd) {
-    const key = `${j.origin_country} → ${j.dest_country}`;
-    if (!routeMap.has(key)) routeMap.set(key, { origin: j.origin_country, dest: j.dest_country || '', count: 0, hours: [] });
+    const originC = j.departure_country || j.origin_country;
+    const destC   = j.arrival_country   || j.dest_country || '';
+    const key = `${originC} → ${destC}`;
+    if (!routeMap.has(key)) routeMap.set(key, { origin: originC, dest: destC, count: 0, hours: [] });
     const v = routeMap.get(key)!;
     v.count++;
     if (j.transit_hours !== null && j.transit_hours > 0) v.hours.push(j.transit_hours);
@@ -341,7 +390,7 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
 
   const totalReadings = journeys.reduce((sum, j) => sum + j.origin_readings + j.dest_readings, 0);
   const withOriginReading = journeys.filter(j => j.origin_impc && j.origin_readings > 0).length;
-  const withDestReading = journeys.filter(j => j.has_destination).length;
+  const withDestReading = journeys.filter(j => j.has_destination || j.has_international).length;
 
   return {
     totalReadings,
