@@ -195,12 +195,24 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
     const originInfo = getCentre(originRow);
     const originTime = originRow.event_time_local || originRow.record_time || '';
 
-    // hasDest is true only when DESTINATION is at a DIFFERENT centre than ORIGIN
-    // (if same impc_code, the tag is PENDING — only one centre visited)
-    const destRowRaw = destRow;
+    // hasDest is true when a DESTINATION row exists AND it is at a DIFFERENT
+    // centre than ORIGIN.  We compare impc_code when both are non-empty;
+    // when either is empty we fall back to centre name comparison.
+    // This avoids the bug where null !== null evaluates to false and hides
+    // a real DESTINATION (which was the root cause of the blank-destination issue).
+    const destRowRaw  = destRow;
     const destInfoRaw = destRowRaw ? getCentre(destRowRaw) : null;
-    const hasDest = destRowRaw !== null && destInfoRaw !== null &&
-      destInfoRaw.impc !== originInfo.impc;
+    const isSameCentre = (() => {
+      if (!destInfoRaw) return true; // no destination row → treat as same
+      const oImpc = originInfo.impc || '';
+      const dImpc = destInfoRaw.impc || '';
+      if (oImpc && dImpc) return oImpc === dImpc;   // both non-empty: compare IMPC
+      // Fallback: compare centre names (non-empty strings only)
+      const oCentre = originInfo.centre || '';
+      const dCentre = destInfoRaw.centre || '';
+      return oCentre !== '' && oCentre === dCentre;
+    })();
+    const hasDest  = destRowRaw !== null && destInfoRaw !== null && !isSameCentre;
     const destInfo = hasDest ? destInfoRaw : null;
     const destTime = hasDest ? (destRowRaw!.event_time_local || destRowRaw!.record_time || null) : null;
 
