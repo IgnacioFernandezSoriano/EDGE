@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { fetchRfidReadings } from '@/lib/supabase';
+import { fetchRfidReadings, fetchRfidEventCounts } from '@/lib/supabase';
 import type { RfidReading } from '@/lib/supabase';
 
 // ── Re-exported types (kept for backward compatibility with EpcisDataTable) ──
@@ -476,6 +476,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   const [loading, setLoading] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rfidCounts, setRfidCounts] = useState<{ departures: number; arrivals: number; endToEnd: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -565,6 +566,20 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     // Re-fetch when date filters change
   }, [filters.dateFrom, filters.dateTo]);
 
+  // Fetch direct RFID event counts (departures, arrivals, end-to-end) from the RFID table
+  useEffect(() => {
+    let cancelled = false;
+    fetchRfidEventCounts(
+      filters.dateFrom,
+      filters.dateTo,
+      filters.originCountry !== 'ALL' ? filters.originCountry : undefined,
+      filters.destCountry !== 'ALL' ? filters.destCountry : undefined,
+    ).then(counts => {
+      if (!cancelled) setRfidCounts(counts);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [filters.dateFrom, filters.dateTo, filters.originCountry, filters.destCountry]);
+
   // Build journeys from all readings
   const allJourneys = useMemo(() => readingsToJourneys(allReadings), [allReadings]);
 
@@ -600,6 +615,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     backgroundLoading,
     error,
     stats,
+    rfidCounts,
     journeys: filteredJourneys,
     allOriginCountries,
     allDestCountries,

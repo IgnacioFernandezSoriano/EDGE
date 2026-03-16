@@ -1130,7 +1130,7 @@ export default function Home() {
         {activeTab === 'RFID' && (
           <Section
             title="RFID Analysis"
-            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · ${epcis.stats.withOriginReading.toLocaleString()} departures · ${epcis.stats.withDestReading.toLocaleString()} arrivals · ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
+            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · ${(epcis.rfidCounts?.departures ?? '…').toLocaleString()} departures · ${(epcis.rfidCounts?.arrivals ?? '…').toLocaleString()} arrivals · ${(epcis.rfidCounts?.endToEnd ?? '…').toLocaleString()} end-to-end${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
           >
             {epcis.loading && (
               <div className="flex items-center justify-center py-16">
@@ -1168,22 +1168,22 @@ export default function Home() {
                     />
                     <KpiCard
                       title="RFID Departures"
-                      value={epcis.stats.withOriginReading.toLocaleString()}
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.departures.toLocaleString() : '…'}
                       subtitle="tag IDs with ORIGIN or DEPARTURE"
                       badge={{ label: 'departure', color: 'blue' }}
                       tooltip="Unique tag IDs in the RFID table with a known origin reading: tags with event_type = ORIGIN (first reading at dispatch centre) or DEPARTURE (last reading before crossing a border). Includes complete and partial journeys."
                     />
                     <KpiCard
                       title="RFID Arrivals"
-                      value={epcis.stats.withDestReading.toLocaleString()}
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.arrivals.toLocaleString() : '…'}
                       subtitle="tag IDs with DESTINATION or ARRIVAL"
                       badge={{ label: 'arrival', color: 'green' }}
                       tooltip="Unique tag IDs in the RFID table with a known destination reading: tags with event_type = DESTINATION (last reading at delivery centre) or ARRIVAL (first reading after crossing a border). Includes complete and partial journeys."
                     />
                     <KpiCard
                       title="End-to-End Pairs"
-                      value={epcis.stats.endToEndPairs.toLocaleString()}
-                      subtitle="tag IDs with ORIGIN and DESTINATION"
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.endToEnd.toLocaleString() : '…'}
+                      subtitle="s9ids with ORIGIN/DEPARTURE and DESTINATION/ARRIVAL"
                       badge={{ label: 'e2e', color: 'amber' }}
                       tooltip="Unique tag IDs with readings at both ends of the journey: ORIGIN or DEPARTURE at the sending side, and DESTINATION or ARRIVAL at the receiving side. These are the receptacles for which a full transit can be measured."
                     />

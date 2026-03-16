@@ -287,3 +287,84 @@ export async function fetchRfidReadings(
 
   return allData;
 }
+
+/**
+ * Fetches direct counts from the RFID table for the 3 main KPIs:
+ * - departures:  row count with event_type IN (ORIGIN, DEPARTURE)
+ * - arrivals:    row count with event_type IN (DESTINATION, ARRIVAL)
+ * - endToEnd:    count of unique s9ids that have BOTH a departure-type AND an arrival-type row
+ * Supports optional date and country filtering.
+ */
+export async function fetchRfidEventCounts(
+  dateFrom?: string,
+  dateTo?: string,
+  originCountry?: string,
+  destCountry?: string
+): Promise<{ departures: number; arrivals: number; endToEnd: number }> {
+  const headers = await getAuthHeaders();
+  const base = `${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`;
+
+  // Build base date filter params (shared)
+  function applyDateFilters(url: URL) {
+    if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
+    if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
+  }
+
+  // Count rows for given event types + optional country filter
+  async function countRows(eventTypes: string[], country?: string): Promise<number> {
+    const url = new URL(base);
+    url.searchParams.set('select', 'id');
+    url.searchParams.set('event_type', `in.(${eventTypes.join(',')})`);
+    applyDateFilters(url);
+    if (country) url.searchParams.set('country', `eq.${country}`);
+    const res = await fetch(url.toString(), {
+      headers: { ...headers, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' },
+    });
+    if (!res.ok) return 0;
+    const rangeHeader = res.headers.get('content-range') || '';
+    const match = rangeHeader.match(/\/(\d+)$/);
+    return match ? parseInt(match[1], 10) : 0;
+  }
+
+  // Fetch s9ids for a given set of event types (paginated, only s9id field)
+  async function fetchS9ids(eventTypes: string[], country?: string): Promise<Set<string>> {
+    const url = new URL(base);
+    url.searchParams.set('select', 's9id');
+    url.searchParams.set('event_type', `in.(${eventTypes.join(',')})`);
+    url.searchParams.set('s9id', 'not.is.null');
+    applyDateFilters(url);
+    if (country) url.searchParams.set('country', `eq.${country}`);
+
+    const s9ids = new Set<string>();
+    let offset = 0;
+    const pageSize = 10000;
+    while (true) {
+      const pageUrl = new URL(url.toString());
+      pageUrl.searchParams.set('offset', String(offset));
+      pageUrl.searchParams.set('limit', String(pageSize));
+      const res = await fetch(pageUrl.toString(), { headers });
+      if (!res.ok) break;
+      const data: { s9id: string }[] = await res.json();
+      for (const row of data) if (row.s9id) s9ids.add(row.s9id);
+      if (data.length < pageSize) break;
+      offset += pageSize;
+    }
+    return s9ids;
+  }
+
+  // Run all fetches in parallel
+  const [departures, arrivals, depS9ids, arrS9ids] = await Promise.all([
+    countRows(['ORIGIN', 'DEPARTURE'], originCountry),
+    countRows(['DESTINATION', 'ARRIVAL'], destCountry),
+    fetchS9ids(['ORIGIN', 'DEPARTURE'], originCountry),
+    fetchS9ids(['DESTINATION', 'ARRIVAL'], destCountry),
+  ]);
+
+  // End-to-end = s9ids present in BOTH sets
+  let endToEnd = 0;
+  for (const s9id of depS9ids) {
+    if (arrS9ids.has(s9id)) endToEnd++;
+  }
+
+  return { departures, arrivals, endToEnd };
+}
