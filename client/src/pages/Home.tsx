@@ -23,6 +23,7 @@ import { EpcisDataTable } from '@/components/EpcisDataTable';
 import { GlobalFilters } from '@/components/GlobalFilters';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { OverviewAnalysis, DepartureAnalysis, ArrivalAnalysis, TransitAnalysis } from '@/components/AnalysisPanel';
+import { BenchmarkPanel } from '@/components/BenchmarkPanel';
 
 const EDGE_LOGO = 'https://d2xsxph8kpxj0f.cloudfront.net/108732851/5NdCdX6TpQ4zqErLoimWrK/edge-logo_ae84570f.png';
 
