@@ -226,21 +226,13 @@ export async function fetchAuditExcludedS9ids(): Promise<Set<string>> {
  *   UNKNOWN     — could not be classified
  */
 export interface RfidReading {
-  document_id: string;
-  event_time_local: string | null;
-  event_time_offset: string | null;
-  record_time: string | null;
-  location: string | null;
-  read_point_id: string | null;
   tag_id: string | null;
-  impc_code: string | null;
-  s9id: string;
-  // ETL-enriched columns
   event_type: 'ORIGIN' | 'DESTINATION' | 'INTERMEDIATE' | 'UNKNOWN' | null;
-  impc_code_corrected: string | null;
-  country_corrected: string | null;
-  center_name_corrected: string | null;
-  etl_processed_at: string | null;
+  location: string | null;
+  impc_code: string | null;
+  s9id: string | null;
+  event_time_local: string | null;
+  record_time: string | null;
 }
 
 /**
@@ -253,14 +245,17 @@ export async function fetchRfidReadings(
 ): Promise<RfidReading[]> {
   const headers = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
-  url.searchParams.set('select', '*');
+  // Only fetch fields needed by readingsToJourneys — reduces payload ~60%
+  url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time');
+  // Only fetch ORIGIN and DESTINATION rows — intermediates are not used
+  url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION)');
   url.searchParams.set('order', 'event_time_local.asc');
   if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
   if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
 
   let allData: RfidReading[] = [];
   let offset = 0;
-  const pageSize = 1000;
+  const pageSize = 5000; // Increased from 1000 to reduce number of requests
 
   while (true) {
     const pageUrl = new URL(url.toString());

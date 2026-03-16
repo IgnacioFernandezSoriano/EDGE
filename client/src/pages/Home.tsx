@@ -54,7 +54,7 @@ const COVERAGE_LABEL: Record<string, string> = {
   EDI_ONLY:    'EDI only (no RFID)',
 };
 
-const TABS = ['RFID', 'Departure', 'Arrival', 'Transit', 'Data'];
+const TABS = ['RFID', 'Tracking', 'Departure', 'Arrival', 'Transit', 'Data'];
 
 /* ─── Tooltip ─── */
 function ChartTooltip({ active, payload, label }: any) {
@@ -686,19 +686,24 @@ export default function Home() {
 
             {/* Nav tabs — desktop */}
             <nav className="hidden md:flex items-end gap-4">
-              {/* RFID standalone tab */}
+              {/* RFID tab group */}
               <div className="flex flex-col items-center gap-1">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 px-1">RFID</span>
-                <button
-                  onClick={() => setActiveTab('RFID')}
-                  className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-150 ${
-                    activeTab === 'RFID'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  RFID
-                </button>
+                <div className="flex items-center gap-1">
+                  {['RFID', 'Tracking'].map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-150 ${
+                        activeTab === tab
+                          ? 'bg-indigo-600 text-white shadow-md'
+                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
               </div>
               {/* Divider */}
               <div className="w-px h-10 bg-slate-200 self-center" />
@@ -1110,15 +1115,21 @@ export default function Home() {
         {activeTab === 'RFID' && (
           <Section
             title="RFID Analysis"
-            subtitle={`RFID analysis from tracking_events — ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles · ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end`}
+            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles · ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
           >
-            {loading && (
+            {epcis.loading && (
               <div className="flex items-center justify-center py-16">
                 <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
-                <span className="ml-3 text-sm text-slate-500">Loading RFID data…</span>
+                <span className="ml-3 text-sm text-slate-500">Loading last 30 days…</span>
               </div>
             )}
-            {!loading && (
+            {epcis.backgroundLoading && !epcis.loading && (
+              <div className="flex items-center gap-2 px-4 py-2 mb-4 bg-indigo-50 border border-indigo-100 rounded-lg text-xs text-indigo-600">
+                <div className="w-3 h-3 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #c7d2fe', borderTopColor: '#4F46E5' }} />
+                <span>Loading historical data in background — statistics will update when complete</span>
+              </div>
+            )}
+            {!epcis.loading && (
               <>
                 {/* ── OVERVIEW ── */}
                 <div className="mb-2">
@@ -1523,15 +1534,31 @@ export default function Home() {
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-1 h-6 rounded-full bg-indigo-500" />
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-800">RFID Journey Data</h3>
+                      <h3 className="text-sm font-semibold text-slate-800">Tracking</h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {epcis.stats.uniqueReceptacles.toLocaleString()} receptacles from tracking_events — one row per unique s9id
+                        {epcis.stats.uniqueReceptacles.toLocaleString()} receptacles — one row per unique tag_id
                       </p>
                     </div>
                   </div>
                   <EpcisDataTable journeys={epcis.journeys} dateLabel={dateLabel} />
                 </div>
               </>)}
+          </Section>
+        )}
+        {/* ════════════════════ TRACKING ════════════════════ */}
+        {activeTab === 'Tracking' && (
+          <Section
+            title="Tracking"
+            subtitle={`${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles · ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end · Search by receptacle ID or tag_id`}
+          >
+            {epcis.loading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
+                <span className="ml-3 text-sm text-slate-500">Loading RFID data…</span>
+              </div>
+            ) : (
+              <EpcisDataTable journeys={epcis.journeys} dateLabel={dateLabel} />
+            )}
           </Section>
         )}
         {/* ════════════════════ DATA TABLE ════════════════════ */}
