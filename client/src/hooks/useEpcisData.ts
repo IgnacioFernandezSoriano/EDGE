@@ -226,8 +226,10 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
     const arrTime  = arrRow  ? (arrRow.event_time_local  || arrRow.record_time  || null) : null;
 
     // s9id: use real s9id only if it differs from tag_id
-    const tag_id = originRow.tag_id || tagKey;
-    const s9id   = (originRow.s9id && originRow.s9id !== tag_id) ? originRow.s9id : tag_id;
+    // Use anchorRow as fallback when originRow is null (partial journey without ORIGIN)
+    const refRow = originRow ?? anchorRow;
+    const tag_id = refRow.tag_id || tagKey;
+    const s9id   = (refRow.s9id && refRow.s9id !== tag_id) ? refRow.s9id : tag_id;
 
     // transit_hours: ORIGIN → DESTINATION total time (shown in table column)
     let transitHours: number | null = null;
