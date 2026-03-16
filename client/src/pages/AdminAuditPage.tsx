@@ -884,6 +884,8 @@ function MasterReviewSection({ user }: { user: { email?: string } }) {
   const [selectedEntry, setSelectedEntry] = useState<MasterPendingEntry | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('PENDIENTE');
   const [filterAction, setFilterAction] = useState<string>('ALL');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const filtered = useMemo(() => {
     return entries.filter(e => {
@@ -892,6 +894,40 @@ function MasterReviewSection({ user }: { user: { email?: string } }) {
       return true;
     });
   }, [entries, filterStatus, filterAction]);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(e => selectedIds.has(e.id));
+  const someSelected = selectedIds.size > 0;
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map(e => e.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkAction = async (status: 'APROBADO' | 'RECHAZADO') => {
+    if (selectedIds.size === 0) return;
+    setBulkLoading(true);
+    let ok = 0; let fail = 0;
+    for (const id of Array.from(selectedIds)) {
+      const { error: err } = await updateStatus(id, status, {}, user.email || 'admin');
+      if (err) fail++; else ok++;
+    }
+    setBulkLoading(false);
+    setSelectedIds(new Set());
+    if (fail === 0) toast.success(`${ok} propuesta${ok !== 1 ? 's' : ''} ${status === 'APROBADO' ? 'aprobadas' : 'rechazadas'} correctamente`);
+    else toast.error(`${ok} correctas, ${fail} con error`);
+    refetch();
+  };
 
   const handleUpdate = async (id: string, status: 'APROBADO' | 'RECHAZADO', updates: any, reviewer: string) => {
     const { error: err } = await updateStatus(id, status, updates, reviewer);
@@ -938,6 +974,30 @@ function MasterReviewSection({ user }: { user: { email?: string } }) {
         </button>
       </div>
 
+      {someSelected && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <span className="text-sm font-medium text-indigo-700">{selectedIds.size} seleccionada{selectedIds.size !== 1 ? 's' : ''}</span>
+          <div className="flex gap-2 ml-auto">
+            <button
+              onClick={() => handleBulkAction('APROBADO')}
+              disabled={bulkLoading}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+              {bulkLoading ? 'Procesando…' : '✓ Aprobar seleccionadas'}
+            </button>
+            <button
+              onClick={() => handleBulkAction('RECHAZADO')}
+              disabled={bulkLoading}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors">
+              ✗ Rechazar seleccionadas
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5">
+              Limpiar
+            </button>
+          </div>
+        </div>
+      )}
       <p className="text-xs text-slate-400">{filtered.length} propuestas</p>
 
       {filtered.length === 0 ? (
@@ -949,6 +1009,15 @@ function MasterReviewSection({ user }: { user: { email?: string } }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                    title="Seleccionar todos los filtrados"
+                  />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">IMPC</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Acción</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">País propuesto</th>
@@ -960,7 +1029,16 @@ function MasterReviewSection({ user }: { user: { email?: string } }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(entry => (
-                <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
+                <tr key={entry.id}
+                  className={`hover:bg-slate-50 transition-colors ${selectedIds.has(entry.id) ? 'bg-indigo-50/60' : ''}`}>
+                  <td className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(entry.id)}
+                      onChange={() => toggleSelect(entry.id)}
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <span className="font-mono text-sm font-semibold text-slate-700">{entry.impc_code_normalized}</span>
                   </td>
