@@ -258,7 +258,7 @@ export async function fetchRfidReadings(
   dateFrom?: string,
   dateTo?: string
 ): Promise<RfidReading[]> {
-  const headers = await getAuthHeaders();
+  const baseHeaders = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
   // Only fetch fields needed by readingsToJourneys — reduces payload ~60%
   url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary');
@@ -268,21 +268,42 @@ export async function fetchRfidReadings(
   if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
   if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
 
+  // Supabase PostgREST has a server-side max-rows limit (typically 1000).
+  // We must paginate using the Range header, stepping by the actual page size
+  // returned. The loop stops when the server returns fewer rows than requested
+  // OR when content-range confirms we've reached the total.
+  const PAGE_SIZE = 1000; // matches Supabase max-rows setting
   let allData: RfidReading[] = [];
   let offset = 0;
-  const pageSize = 5000; // Increased from 1000 to reduce number of requests
+  let total: number | null = null;
 
   while (true) {
-    const pageUrl = new URL(url.toString());
-    pageUrl.searchParams.set('offset', String(offset));
-    pageUrl.searchParams.set('limit', String(pageSize));
+    const rangeEnd = offset + PAGE_SIZE - 1;
+    const headers = {
+      ...baseHeaders,
+      'Range-Unit': 'items',
+      'Range': `${offset}-${rangeEnd}`,
+      'Prefer': 'count=exact',
+    };
 
-    const res = await fetch(pageUrl.toString(), { headers });
+    const res = await fetch(url.toString(), { headers });
     if (!res.ok) throw new Error(`Supabase RFID error: ${res.status} ${await res.text()}`);
+
+    // Parse total from content-range header: "0-999/170948"
+    if (total === null) {
+      const cr = res.headers.get('content-range') ?? '';
+      const match = cr.match(/\/(\d+)$/);
+      if (match) total = parseInt(match[1], 10);
+    }
+
     const data: RfidReading[] = await res.json();
     allData = allData.concat(data);
-    if (data.length < pageSize) break;
-    offset += pageSize;
+    offset += data.length;
+
+    // Stop if we've received all rows or got an empty/partial page
+    if (data.length === 0) break;
+    if (total !== null && allData.length >= total) break;
+    if (data.length < PAGE_SIZE) break;
   }
 
   return allData;
