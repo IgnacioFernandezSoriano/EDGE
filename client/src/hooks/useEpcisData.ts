@@ -433,7 +433,7 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const kpiRfPredes       = journeys.filter(j => j.departure_time !== null).length;   // DEPARTURE events
   const kpiRfResdes       = journeys.filter(j => j.arrival_time !== null).length;     // ARRIVAL events
   const kpiRfidArrivals   = journeys.filter(j => j.dest_time !== null).length;        // DESTINATION events
-  const kpiRfE2e          = journeys.filter(j => j.is_both_rfid).length;             // both origin-side + dest-side
+  const kpiRfE2e          = journeys.filter(j => j.has_international).length;        // DEPARTURE + ARRIVAL (international transit)
 
   return {
     totalReadings,

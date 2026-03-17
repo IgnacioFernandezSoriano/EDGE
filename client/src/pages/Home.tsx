@@ -1227,13 +1227,27 @@ export default function Home() {
             {epcis.loading && (
               <div className="flex items-center justify-center py-16">
                 <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
-                <span className="ml-3 text-sm text-slate-500">Loading last 30 days…</span>
+                <span className="ml-3 text-sm text-slate-500">Loading data…</span>
               </div>
             )}
-            {epcis.backgroundLoading && !epcis.loading && (
-              <div className="flex items-center gap-2 px-4 py-2 mb-4 bg-indigo-50 border border-indigo-100 rounded-lg text-xs text-indigo-600">
-                <div className="w-3 h-3 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #c7d2fe', borderTopColor: '#4F46E5' }} />
-                <span>Loading historical data in background — statistics will update when complete</span>
+            {/* Data scope banner — always visible, shows whether data is partial or complete */}
+            {!epcis.loading && (
+              <div className={`flex items-center gap-3 px-4 py-2.5 mb-4 rounded-lg border text-xs font-medium ${
+                epcis.backgroundLoading
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              }`}>
+                {epcis.backgroundLoading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
+                    <span>⚠ Showing last 30 days only — loading full history in background, numbers will update when complete</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-emerald-600 text-sm">✓</span>
+                    <span>Showing complete dataset — all {epcis.stats.kpiTotalTags.toLocaleString()} receptacles loaded</span>
+                  </>
+                )}
               </div>
             )}
             {!epcis.loading && (
@@ -1241,13 +1255,7 @@ export default function Home() {
                 {/* ── OVERVIEW ── */}
                 <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
-                  {/* Progressive loading banner for KPI counts */}
-                  {epcis.backgroundLoading && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 mb-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700">
-                      <div className="w-3 h-3 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
-                      <span>Showing last 30 days — loading full history…</span>
-                    </div>
-                  )}
+
                   <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-5">
                     <KpiCard
                       title="Matched Tags"

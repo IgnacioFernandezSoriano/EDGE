@@ -108,9 +108,9 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
 
   const filtered = useMemo(() => {
     let data = journeys;
-    if (filterE2E === 'E2E') data = data.filter(j => j.has_destination);
-    if (filterE2E === 'ORIGIN_ONLY') data = data.filter(j => !j.has_destination && (!!j.origin_time || !!j.departure_time));
-    if (filterE2E === 'DEST_ONLY') data = data.filter(j => j.has_destination && !j.origin_time && !j.departure_time);
+    if (filterE2E === 'E2E') data = data.filter(j => j.has_international);  // DEPARTURE + ARRIVAL (international transit)
+    if (filterE2E === 'ORIGIN_ONLY') data = data.filter(j => (!!j.origin_time || !!j.departure_time) && !j.arrival_time && !j.dest_time);  // origin-side only, no destination data
+    if (filterE2E === 'DEST_ONLY') data = data.filter(j => !!j.arrival_time || !!j.dest_time);  // any ARRIVAL or DESTINATION event
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       data = data.filter(j =>
@@ -144,9 +144,9 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
     return <span className="text-indigo-500 ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>;
   }
 
-  const e2eCount = journeys.filter(j => j.has_destination).length;
-  const originOnlyCount = journeys.filter(j => !j.has_destination && (!!j.origin_time || !!j.departure_time)).length;
-  const destOnlyCount = journeys.filter(j => j.has_destination && !j.origin_time && !j.departure_time).length;
+  const e2eCount = journeys.filter(j => j.has_international).length;  // DEPARTURE + ARRIVAL
+  const originOnlyCount = journeys.filter(j => (!!j.origin_time || !!j.departure_time) && !j.arrival_time && !j.dest_time).length;  // origin only
+  const destOnlyCount = journeys.filter(j => !!j.arrival_time || !!j.dest_time).length;  // any destination-side event
 
   return (
     <div className="space-y-3">
@@ -154,14 +154,35 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
       <div className="flex flex-wrap items-center gap-2 justify-between">
         <div className="flex flex-wrap gap-2">
           {([
-            { key: 'ALL',         label: 'All',          count: journeys.length },
-            { key: 'E2E',         label: 'End-to-End',   count: e2eCount },
-            { key: 'ORIGIN_ONLY', label: 'Origin Only',  count: originOnlyCount },
-            { key: 'DEST_ONLY',   label: 'Destination Only', count: destOnlyCount },
+            {
+              key: 'ALL',
+              label: 'All',
+              count: journeys.length,
+              tooltip: 'All receptacles in the RFID table matching the current date and country filters, regardless of which events have been recorded.',
+            },
+            {
+              key: 'E2E',
+              label: 'End-to-End',
+              count: e2eCount,
+              tooltip: 'Receptacles with both a DEPARTURE event (RFID Outbound — last read before crossing the international border) AND an ARRIVAL event (RFID Inbound — first read after crossing the border). These have a measurable international transit time.',
+            },
+            {
+              key: 'ORIGIN_ONLY',
+              label: 'Origin Only',
+              count: originOnlyCount,
+              tooltip: 'Receptacles with an ORIGIN or DEPARTURE event at the sending country, but no ARRIVAL or DESTINATION event recorded yet. The receptacle has been dispatched but no destination-side RFID reading exists.',
+            },
+            {
+              key: 'DEST_ONLY',
+              label: 'Destination Only',
+              count: destOnlyCount,
+              tooltip: 'Receptacles with an ARRIVAL or DESTINATION event at the receiving country. Includes both End-to-End receptacles (which also have origin data) and those where only destination-side RFID readings exist.',
+            },
           ] as const).map(f => (
             <button
               key={f.key}
               onClick={() => setFilterE2E(f.key)}
+              title={f.tooltip}
               className={`px-3 py-1.5 text-xs rounded-md border font-medium transition-all duration-150 ${
                 filterE2E === f.key
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
