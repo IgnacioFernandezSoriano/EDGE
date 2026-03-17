@@ -1245,28 +1245,28 @@ export default function Home() {
                       value={epcis.stats.withOriginReading.toLocaleString()}
                       subtitle="receptacles with RFID reading at origin centre"
                       badge={{ label: 'departures', color: 'blue' }}
-                      tooltip="Receptacles with rfid_origin_impc set in tracking_events (BOTH + ORIGIN_ONLY cases)."
+                      tooltip="Receptacles with rfid_origin_impc set from RFID table (BOTH + ORIGIN_ONLY cases)."
                     />
                     <KpiCard
                       title="Origin Countries"
                       value={epcis.stats.uniqueOrigins.toLocaleString()}
                       subtitle="distinct origin countries"
                       badge={{ label: 'countries', color: 'blue' }}
-                      tooltip="Number of distinct rfid_origin_country values in tracking_events."
+                      tooltip="Number of distinct rfid_origin_country values from RFID table."
                     />
                     <KpiCard
                       title="Origin Centres"
                       value={epcis.stats.byOriginCentre.length.toLocaleString()}
                       subtitle="distinct origin postal centres"
                       badge={{ label: 'centres', color: 'blue' }}
-                      tooltip="Number of distinct rfid_origin_centre values in tracking_events."
+                      tooltip="Number of distinct rfid_origin_centre values from RFID table."
                     />
                     <KpiCard
                       title="Avg RFID Transit"
                       value={epcis.stats.avgTransitHours != null ? `${epcis.stats.avgTransitHours}h` : '—'}
                       subtitle="avg rfid_transit_hours (e2e pairs)"
                       badge={{ label: 'transit', color: 'amber' }}
-                      tooltip="Median rfid_transit_hours from tracking_events for end-to-end pairs."
+                      tooltip="Median rfid_transit_hours from RFID table for end-to-end pairs."
                     />
                   </div>
 
@@ -1276,8 +1276,8 @@ export default function Home() {
                     subtitle="All RFID receptacles by origin country"
                     tooltip="Number of receptacles with an RFID origin reading, grouped by origin country."
                   >
-                    <ResponsiveContainer width="100%" height={Math.max(220, epcis.safeStats.byOriginCountry.length * 34)}>
-                      <BarChart data={epcis.safeStats.byOriginCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                    <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byOriginCountry.length * 34)}>
+                      <BarChart data={epcis.stats.byOriginCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                         <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
@@ -1323,28 +1323,28 @@ export default function Home() {
                       value={epcis.stats.withDestReading.toLocaleString()}
                       subtitle="receptacles with RFID reading at destination centre"
                       badge={{ label: 'arrivals', color: 'green' }}
-                      tooltip="Receptacles with rfid_dest_impc set in tracking_events (BOTH + DEST_ONLY cases)."
+                      tooltip="Receptacles with rfid_dest_impc set from RFID table (BOTH + DEST_ONLY cases)."
                     />
                     <KpiCard
                       title="Destination Countries"
                       value={epcis.stats.uniqueDestinations.toLocaleString()}
                       subtitle="distinct destination countries"
                       badge={{ label: 'countries', color: 'green' }}
-                      tooltip="Number of distinct rfid_dest_country values in tracking_events."
+                      tooltip="Number of distinct rfid_dest_country values from RFID table."
                     />
                     <KpiCard
                       title="Destination Centres"
                       value={epcis.stats.byDestCentre.length.toLocaleString()}
                       subtitle="distinct destination postal centres"
                       badge={{ label: 'centres', color: 'green' }}
-                      tooltip="Number of distinct rfid_dest_centre values in tracking_events."
+                      tooltip="Number of distinct rfid_dest_centre values from RFID table."
                     />
                     <KpiCard
                       title="End-to-End Coverage"
                       value={`${epcis.stats.endToEndPct}%`}
                       subtitle={`${epcis.stats.endToEndPairs.toLocaleString()} of ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles`}
                       badge={{ label: 'e2e', color: 'amber' }}
-                      tooltip="Percentage of RFID receptacles with rfid_dest_impc ≠ rfid_origin_impc in tracking_events."
+                      tooltip="Percentage of RFID receptacles with rfid_dest_impc ≠ rfid_origin_impc from RFID table."
                     />
                   </div>
 
@@ -1354,8 +1354,8 @@ export default function Home() {
                     subtitle="End-to-end RFID pairs by destination country"
                     tooltip="Number of receptacles with RFID readings at both origin and destination, grouped by destination country."
                   >
-                    <ResponsiveContainer width="100%" height={Math.max(220, epcis.safeStats.byDestCountry.length * 34)}>
-                      <BarChart data={epcis.safeStats.byDestCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                    <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byDestCountry.length * 34)}>
+                      <BarChart data={epcis.stats.byDestCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                         <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
@@ -1400,36 +1400,36 @@ export default function Home() {
                       value={epcis.stats.endToEndPairs.toLocaleString()}
                       subtitle="Full origin→dest RFID"
                       badge={{ label: 'end-to-end', color: 'blue' }}
-                      tooltip="Receptacles with rfid_dest_impc ≠ rfid_origin_impc in tracking_events."
+                      tooltip="Receptacles with rfid_dest_impc ≠ rfid_origin_impc from RFID table."
                     />
                     <KpiCard
                       title="Avg RFID Transit"
                       value={epcis.stats.avgTransitHours != null ? `${epcis.stats.avgTransitHours}h / ${(epcis.stats.avgTransitHours / 24).toFixed(1)}d` : '—'}
                       subtitle="rfid_origin_time → rfid_dest_time"
                       badge={{ label: 'avg', color: 'blue' }}
-                      tooltip="Median rfid_transit_hours from tracking_events for end-to-end pairs."
+                      tooltip="Median rfid_transit_hours from RFID table for end-to-end pairs."
                     />
                     <KpiCard
                       title="IQR Range"
                       value={epcis.stats.p25TransitHours != null ? `${epcis.stats.p25TransitHours}h – ${epcis.stats.p75TransitHours}h` : '—'}
                       subtitle={epcis.stats.p25TransitHours != null ? `${(epcis.stats.p25TransitHours!/24).toFixed(1)}d – ${(epcis.stats.p75TransitHours!/24).toFixed(1)}d` : 'no data'}
                       badge={{ label: 'IQR', color: 'slate' }}
-                      tooltip="Interquartile Range of rfid_transit_hours in tracking_events."
+                      tooltip="Interquartile Range of rfid_transit_hours from RFID table."
                     />
                     <KpiCard
                       title="Mean RFID Transit"
                       value={epcis.stats.meanTransitHours != null ? `${epcis.stats.meanTransitHours}h / ${(epcis.stats.meanTransitHours / 24).toFixed(1)}d` : '—'}
                       subtitle="average transit time"
                       badge={{ label: 'avg', color: 'amber' }}
-                      tooltip="Mean rfid_transit_hours from tracking_events for end-to-end pairs."
+                      tooltip="Mean rfid_transit_hours from RFID table for end-to-end pairs."
                     />
                   </div>
 
-                  {epcis.safeStats.byRoute.length > 0 ? (
+                  {epcis.stats.byRoute.length > 0 ? (
                     <ChartCard
                       title="RFID Transit by Route"
-                      subtitle={`${epcis.safeStats.byRoute.length} routes · avg rfid_transit_hours from tracking_events`}
-                      tooltip="Each row is a unique rfid_origin_country → rfid_dest_country pair from tracking_events."
+                      subtitle={`${epcis.stats.byRoute.length} routes · avg rfid_transit_hours from RFID table`}
+                      tooltip="Each row is a unique rfid_origin_country → rfid_dest_country pair from RFID table."
                     >
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
@@ -1441,7 +1441,7 @@ export default function Home() {
                             </tr>
                           </thead>
                           <tbody>
-                            {epcis.safeStats.byRoute.map((r, i) => (
+                            {epcis.stats.byRoute.map((r, i) => (
                               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                                 <td className="py-2 pr-4 font-medium text-slate-800">{r.route}</td>
                                 <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.count}</td>
