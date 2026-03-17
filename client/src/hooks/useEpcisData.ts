@@ -312,8 +312,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const allTimes = [...times, ...destTimes].sort();
   const dateRange = allTimes.length > 0 ? { min: allTimes[0], max: allTimes[allTimes.length - 1] } : null;
 
-  // By origin country — only journeys with actual RFID reading at origin
-  const journeysWithOrigin = journeys.filter(j => j.origin_readings > 0 && j.origin_impc);
+  // By origin country — journeys with an ORIGIN event (origin_readings > 0).
+  // Note: impc_code is null for most RFID tags (only G.1UPU tags have it),
+  // so we must NOT filter by origin_impc — that would exclude all J5GJ tags.
+  const journeysWithOrigin = journeys.filter(j => j.origin_readings > 0 || j.origin_country);
   const originCountryMap = new Map<string, { count: number; endToEnd: number }>();
   for (const j of journeysWithOrigin) {
     const c = j.origin_country || 'Unknown';
