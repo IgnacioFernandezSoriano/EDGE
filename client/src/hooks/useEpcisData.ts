@@ -520,78 +520,18 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       return () => { cancelled = true; };
     }
 
-    // If a country filter is active (no date filter), load ALL data at once.
-    // Progressive loading would show incomplete results because data from different
-    // time periods may belong to the same country (e.g. G.1UPU India→Japan tags
-    // are older and would be missed if only the last 30 days are loaded first).
-    if (filters.originCountry || filters.destCountry) {
-      fetchRfidReadings(undefined, undefined)
-        .then(data => {
-          if (!cancelled) {
-            setAllReadings(data);
-            setLoading(false);
-          }
-        })
-        .catch(err => {
-          if (!cancelled) {
-            setError(err.message ?? 'Error al cargar datos RFID');
-            setLoading(false);
-          }
-        });
-      return () => { cancelled = true; };
-    }
-
-    // Progressive loading: fetch last 30 days first, then load the rest in background
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(today.getDate() - 30);
-    const recentFrom = thirtyDaysAgo.toISOString().split('T')[0]; // YYYY-MM-DD
-
-    // Step 1: Load last 30 days immediately
-    fetchRfidReadings(recentFrom, undefined)
-      .then(recentData => {
-        if (cancelled) return;
-
-        // If no recent data, skip the progressive approach and load everything directly
-        if (recentData.length === 0) {
-          setBackgroundLoading(true);
-          fetchRfidReadings(undefined, undefined)
-            .then(allData => {
-              if (!cancelled) {
-                setAllReadings(allData);
-                setLoading(false);
-                setBackgroundLoading(false);
-              }
-            })
-            .catch(err => {
-              if (!cancelled) {
-                setError(err.message ?? 'Error al cargar datos RFID');
-                setLoading(false);
-                setBackgroundLoading(false);
-              }
-            });
-          return;
+    // No date or country filters: load the complete dataset at once.
+    // Progressive loading is intentionally avoided here because:
+    //   1. This is an analysis dashboard — partial numbers are misleading.
+    //   2. Older data (e.g. G.1UPU India→Japan) would be missed in a 30-day window.
+    // The spinner shows "Loading complete dataset…" until all pages are fetched.
+    fetchRfidReadings(undefined, undefined)
+      .then(data => {
+        if (!cancelled) {
+          setAllReadings(data);
+          setLoading(false);
+          setBackgroundLoading(false);
         }
-
-        setAllReadings(recentData);
-        setLoading(false); // UI is now usable with recent data
-
-        // Step 2: Load older data in background
-        const dayBefore = new Date(thirtyDaysAgo);
-        dayBefore.setDate(dayBefore.getDate() - 1);
-        const olderTo = dayBefore.toISOString().split('T')[0];
-
-        setBackgroundLoading(true);
-        fetchRfidReadings(undefined, olderTo)
-          .then(olderData => {
-            if (!cancelled) {
-              setAllReadings(prev => [...olderData, ...prev]); // prepend older data
-              setBackgroundLoading(false);
-            }
-          })
-          .catch(() => {
-            if (!cancelled) setBackgroundLoading(false);
-          });
       })
       .catch(err => {
         if (!cancelled) {

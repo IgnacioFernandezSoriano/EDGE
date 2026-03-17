@@ -1227,7 +1227,7 @@ export default function Home() {
             {epcis.loading && (
               <div className="flex items-center justify-center py-16">
                 <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
-                <span className="ml-3 text-sm text-slate-500">Loading data…</span>
+                <span className="ml-3 text-sm text-slate-500">Loading complete dataset…</span>
               </div>
             )}
             {/* Data scope banner — always visible, shows whether data is partial or complete */}
