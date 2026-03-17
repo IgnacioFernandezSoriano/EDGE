@@ -1222,7 +1222,7 @@ export default function Home() {
 
           <Section
             title="RFID Analysis"
-            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · RFID Outbound: ${(epcis.rfidCounts?.rfPredes ?? '…').toLocaleString()} · RFID Inbound: ${(epcis.rfidCounts?.rfResdes ?? '…').toLocaleString()} · E2E: ${(epcis.rfidCounts?.rfE2e ?? '…').toLocaleString()}${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
+            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · RFID Outbound: ${epcis.stats.kpiRfPredes.toLocaleString()} · RFID Inbound: ${epcis.stats.kpiRfResdes.toLocaleString()} · E2E: ${epcis.stats.kpiRfE2e.toLocaleString()}${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
           >
             {epcis.loading && (
               <div className="flex items-center justify-center py-16">
@@ -1242,7 +1242,7 @@ export default function Home() {
                 <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
                   {/* Progressive loading banner for KPI counts */}
-                  {epcis.rfidCountsLoading && (
+                  {epcis.backgroundLoading && (
                     <div className="flex items-center gap-2 px-3 py-1.5 mb-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700">
                       <div className="w-3 h-3 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
                       <span>Showing last 30 days — loading full history…</span>
@@ -1260,43 +1260,43 @@ export default function Home() {
                     />
                     <KpiCard
                       title="Total ID Receptacles"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.totalTags.toLocaleString() : '…'}
-                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs in RFID table'}
+                      value={epcis.stats.kpiTotalTags.toLocaleString()}
+                      subtitle="unique tag IDs in RFID table"
                       badge={{ label: 'rfid', color: 'blue' }}
                       tooltip="Total unique tag IDs in the RFID table for the selected date and country filters. Shows last 30 days immediately, then updates with full history."
                     />
                     <KpiCard
                       title="RFID Departures"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfidDepartures.toLocaleString() : '…'}
-                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs with ORIGIN event'}
+                      value={epcis.stats.kpiRfidDepartures.toLocaleString()}
+                      subtitle="unique tag IDs with ORIGIN event"
                       badge={{ label: 'origin', color: 'blue' }}
                       tooltip="Unique tag IDs with event_type = ORIGIN: first reading at the dispatch centre (intra-country). Represents receptacles identified at the sending centre before international dispatch."
                     />
                     <KpiCard
                       title="RFID Outbound"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfPredes.toLocaleString() : '…'}
-                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs with DEPARTURE event'}
+                      value={epcis.stats.kpiRfPredes.toLocaleString()}
+                      subtitle="unique tag IDs with DEPARTURE event"
                       badge={{ label: 'departure', color: 'indigo' }}
                       tooltip="Unique tag IDs with event_type = DEPARTURE: last RFID reading before crossing an international border. RFID Outbound is the physical equivalent of the EDI PREDES message."
                     />
                     <KpiCard
                       title="RF E2E"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfE2e.toLocaleString() : '…'}
-                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'tag IDs with RFID Outbound and RFID Inbound'}
+                      value={epcis.stats.kpiRfE2e.toLocaleString()}
+                      subtitle="tag IDs with RFID Outbound and RFID Inbound"
                       badge={{ label: 'e2e', color: 'amber' }}
                       tooltip="Unique tag IDs with both a DEPARTURE event (RFID Outbound) and an ARRIVAL event (RFID Inbound). These are the receptacles for which a complete international RFID transit can be measured and compared against EDI."
                     />
                     <KpiCard
                       title="RFID Inbound"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfResdes.toLocaleString() : '…'}
-                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs with ARRIVAL event'}
+                      value={epcis.stats.kpiRfResdes.toLocaleString()}
+                      subtitle="unique tag IDs with ARRIVAL event"
                       badge={{ label: 'arrival', color: 'green' }}
                       tooltip="Unique tag IDs with event_type = ARRIVAL: first RFID reading after crossing an international border. RFID Inbound is the physical equivalent of the EDI RESDES message."
                     />
                     <KpiCard
                       title="RFID Arrivals"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfidArrivals.toLocaleString() : '…'}
-                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs with DESTINATION event'}
+                      value={epcis.stats.kpiRfidArrivals.toLocaleString()}
+                      subtitle="unique tag IDs with DESTINATION event"
                       badge={{ label: 'dest', color: 'teal' }}
                       tooltip="Unique tag IDs with event_type = DESTINATION: last reading at the delivery centre (intra-country). Represents receptacles identified at the receiving centre after international arrival."
                     />

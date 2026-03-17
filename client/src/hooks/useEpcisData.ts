@@ -426,6 +426,15 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   // RFID Arrivals: tags with DESTINATION or ARRIVAL (known at destination, complete or partial journey)
   const withDestReading = journeys.filter(j => j.dest_time !== null || j.arrival_time !== null).length;
 
+  // Overview KPI counts — computed from filteredJourneys (respects all active filters)
+  // These replace the rfid_kpi_counts RPC call which does not apply country filters correctly.
+  const kpiTotalTags      = journeys.length;
+  const kpiRfidDepartures = journeys.filter(j => j.origin_time !== '' && j.origin_time !== null).length;
+  const kpiRfPredes       = journeys.filter(j => j.departure_time !== null).length;   // DEPARTURE events
+  const kpiRfResdes       = journeys.filter(j => j.arrival_time !== null).length;     // ARRIVAL events
+  const kpiRfidArrivals   = journeys.filter(j => j.dest_time !== null).length;        // DESTINATION events
+  const kpiRfE2e          = journeys.filter(j => j.is_both_rfid).length;             // both origin-side + dest-side
+
   return {
     totalReadings,
     uniqueReceptacles: journeys.length,
@@ -435,6 +444,13 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     uniqueDestinations: destCountryMap.size,
     endToEndPairs: bothRfid.length,
     endToEndPct: journeys.length > 0 ? Math.round(bothRfid.length / journeys.length * 100) : 0,
+    // Overview KPI block (filter-aware)
+    kpiTotalTags,
+    kpiRfidDepartures,
+    kpiRfPredes,
+    kpiRfResdes,
+    kpiRfidArrivals,
+    kpiRfE2e,
     avgTransitHours: transitValues.length > 0 ? Math.round((mean(transitValues) ?? 0) * 10) / 10 : null,
     meanTransitHours: transitValues.length > 0 ? Math.round((mean(transitValues) ?? 0) * 10) / 10 : null,
     p25TransitHours: transitValues.length > 0 ? Math.round((percentile(transitValues, 25) ?? 0) * 10) / 10 : null,
