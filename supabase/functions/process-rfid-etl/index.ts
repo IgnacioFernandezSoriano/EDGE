@@ -1,35 +1,43 @@
 /**
  * process-rfid-etl — Supabase Edge Function
  * ==========================================
- * ETL del Informe RFID — Proyecto EDGE
+ * ETL del Informe RFID — Proyecto EDGE (v3)
  *
- * Proceso completo:
- * -----------------
- *   1. EXTRACCIÓN     — Parsea el CSV y lo carga en staging_rfid_events
- *   2. TRANSFORMACIÓN — Para cada lectura:
- *        a) Determina el IMPC del lector desde rfid_readers_master
- *        b) Clasifica como ORIGIN/DESTINATION comparando IMPC con s9id
- *        c) Descarta lecturas INTERMEDIATE (lector no es ni origen ni destino)
- *        d) Agrupa por (tag_id, impc_code, event_type):
- *             - ORIGIN     → se queda con la lectura MÁS RECIENTE (última salida)
- *             - DESTINATION → se queda con la lectura MÁS ANTIGUA (primera entrada)
- *   3. LOGGING        — Registra incongruencias en log_rfid_inconsistencies
- *   4. CARGA          — Upsert en tabla RFID con los registros consolidados
- *   5. SINCRONIZACIÓN — Mantiene postal_centers alineada con rfid_readers_master
- *   6. LIMPIEZA       — Vacía staging_rfid_events
+ * Criterio de clasificación (v3):
+ * ─────────────────────────────────
+ * 1. EXTRACCIÓN  — Parsea CSV o lee staging_rfid_events / RFID directamente.
+ * 2. TRANSFORMACIÓN — Para cada tag_id:
+ *      a) Resuelve el centro (impc_code, country, center_name) desde rfid_readers_master.
+ *         Si el lector no está en el maestro → aviso READER_NOT_IN_MASTER, registro descartado.
+ *      b) Ordena todas las lecturas por event_time_local ASC.
+ *      c) Agrupa lecturas consecutivas del mismo impc_code en bloques de centro.
+ *         - Primera lectura del bloque → ARRIVAL_AT_CENTRE (entrada al centro)
+ *         - Última lectura del bloque  → DEPARTURE_FROM_CENTRE (salida del centro)
+ *         - Lecturas intermedias       → INTERMEDIATE
+ *      d) Clasifica eventos de nivel superior:
+ *         - Primera lectura del viaje → ORIGIN
+ *         - Última lectura del viaje  → DESTINATION
+ *         - Última lectura antes de cambio de país → DEPARTURE (frontera)
+ *         - Primera lectura después de cambio de país → ARRIVAL (frontera)
+ *      e) Prioridad de event_type: DEPARTURE/ARRIVAL > ORIGIN/DESTINATION > DEPARTURE_FROM_CENTRE/ARRIVAL_AT_CENTRE > INTERMEDIATE
+ *      f) status: COMPLETE si lecturas en >1 país, PENDING si solo 1 país.
+ * 3. LOGGING     — Registra avisos en log_rfid_inconsistencies.
+ * 4. CARGA       — Upsert en tabla RFID con los registros clasificados.
+ * 5. SINCRONIZACIÓN — Mantiene postal_centers alineada con rfid_readers_master.
+ * 6. LIMPIEZA    — Vacía staging_rfid_events.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ─── Configuración ────────────────────────────────────────────────────────────
-
 const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BATCH_SIZE           = 500;
+const ETL_VERSION          = "v3";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
-
 interface StagingRow {
+  id?:               string | null;
   document_id:       string | null;
   event_time_local:  string | null;
   event_time_offset: string | null;
@@ -39,7 +47,7 @@ interface StagingRow {
   tag_id:            string | null;
   impc_code:         string | null;
   s9id:              string | null;
-  source:            string;
+  source?:           string;
 }
 
 interface ReaderMaster {
@@ -49,23 +57,38 @@ interface ReaderMaster {
   center_name:   string | null;
 }
 
+interface EnrichedReading {
+  document_id:        string;
+  event_time_local:   string | null;
+  event_time_offset:  string | null;
+  record_time:        string | null;
+  location:           string | null;
+  read_point_id:      string | null;
+  tag_id:             string;
+  impc_code:          string;
+  s9id:               string | null;
+  country:            string;
+  center_name:        string | null;
+  sort_time:          number;
+}
+
 interface RfidRecord {
-  document_id:           string;
-  event_time_local:      string | null;
-  event_time_offset:     string | null;
-  record_time:           string | null;
-  location:              string | null;
-  read_point_id:         string | null;
-  tag_id:                string;
-  impc_code:             string | null;
-  s9id:                  string;
-  event_type:            string;
-  impc_code_corrected:   string;
-  country_corrected:     string | null;
-  center_name_corrected: string | null;
-  etl_processed_at:      string;
-  // Para agrupación interna (no se guarda en BD)
-  _sort_time?:           number;
+  document_id:              string;
+  event_time_local:         string | null;
+  event_time_offset:        string | null;
+  record_time:              string | null;
+  location:                 string | null;
+  read_point_id:            string | null;
+  tag_id:                   string;
+  impc_code:                string;
+  s9id:                     string | null;
+  event_type:               string;
+  status:                   string;
+  country:                  string;
+  center_name:              string | null;
+  is_international_boundary: boolean;
+  etl_version:              string;
+  etl_processed_at:         string;
 }
 
 interface IssueRow {
@@ -79,57 +102,35 @@ interface IssueRow {
   severity:         string;
 }
 
-// ─── Lógica de Clasificación ──────────────────────────────────────────────────
+// ─── Prioridad de event_type ──────────────────────────────────────────────────
+const EVENT_PRIORITY: Record<string, number> = {
+  "DEPARTURE": 5,
+  "ARRIVAL":   5,
+  "ORIGIN":    4,
+  "DESTINATION": 4,
+  "DEPARTURE_FROM_CENTRE": 3,
+  "ARRIVAL_AT_CENTRE":     3,
+  "INTERMEDIATE":          1,
+};
 
-/**
- * Determina si un centro es un AMU (Air Mail Unit) o aeropuerto.
- * Regla: el center_name o la location contienen "AMU" o "Airport" (case-insensitive).
- * Estos centros, cuando aparecen como INTERMEDIATE, se reclasifican como DESTINATION
- * porque representan la primera entrada física del objeto al país destino.
- */
-function isAmuOrAirport(centerName: string | null, location: string | null): boolean {
-  const haystack = `${centerName ?? ""} ${location ?? ""}`.toUpperCase();
-  return haystack.includes("AMU") || haystack.includes("AIRPORT");
-}
-
-/**
- * Clasifica una lectura según el s9id estándar UPU (6 letras IMPC origen + 6 letras IMPC destino).
- * Si el s9id no sigue ese formato, devuelve "UNKNOWN" para procesamiento por orden temporal.
- */
-function classifyEvent(
-  readerImpc: string,
-  s9id: string
-): "ORIGIN" | "DESTINATION" | "INTERMEDIATE" | "UNKNOWN" {
-  if (!s9id || s9id.length < 12 || !readerImpc) return "UNKNOWN";
-
-  // Verificar que las primeras 12 posiciones son letras (s9id estándar UPU)
-  const prefix12 = s9id.slice(0, 12);
-  if (!/^[A-Za-z]{12}/.test(prefix12)) return "UNKNOWN";
-
-  const originImpc = s9id.slice(0, 6).toUpperCase();
-  const destImpc   = s9id.slice(6, 12).toUpperCase();
-  const rImpc      = readerImpc.toUpperCase();
-
-  if (rImpc === originImpc)  return "ORIGIN";
-  if (rImpc === destImpc)    return "DESTINATION";
-  return "INTERMEDIATE";
+function pickBestEventType(types: string[]): string {
+  if (!types.length) return "INTERMEDIATE";
+  return types.reduce((best, t) =>
+    (EVENT_PRIORITY[t] ?? 0) > (EVENT_PRIORITY[best] ?? 0) ? t : best
+  );
 }
 
 // ─── Parseo de CSV ────────────────────────────────────────────────────────────
-
 function parseCsv(text: string): Record<string, string>[] {
   const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   if (lines.length < 2) return [];
-
   const firstLine = lines[0];
   const sep = firstLine.includes(";") ? ";" : ",";
   const headers = firstLine.split(sep).map(h => h.trim().replace(/^"|"$/g, ""));
   const rows: Record<string, string>[] = [];
-
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-
     const values: string[] = [];
     let current = "";
     let inQuotes = false;
@@ -144,39 +145,45 @@ function parseCsv(text: string): Record<string, string>[] {
       }
     }
     values.push(current.trim());
-
     const row: Record<string, string> = {};
     headers.forEach((h, idx) => { row[h] = values[idx] ?? ""; });
     rows.push(row);
   }
-
   return rows;
 }
 
 // ─── Helpers de Supabase ──────────────────────────────────────────────────────
-
 async function selectAll(
   db: ReturnType<typeof createClient>,
   table: string,
-  opts: { select?: string } = {}
+  params: Record<string, string>
 ): Promise<any[]> {
-  const allRows: any[] = [];
+  const PAGE = 10000;
   let from = 0;
-  const pageSize = 1000;
-
+  const all: any[] = [];
   while (true) {
-    const { data, error } = await db
-      .from(table)
-      .select(opts.select ?? "*")
-      .range(from, from + pageSize - 1);
-    if (error) throw new Error(`selectAll(${table}): ${error.message}`);
+    let q = db.from(table).select(params.select ?? "*").range(from, from + PAGE - 1);
+    if (params.filter_null_event_type === "true") q = q.is("event_type", null);
+    const { data, error } = await q;
+    if (error) throw new Error(`selectAll ${table}: ${error.message}`);
     if (!data || data.length === 0) break;
-    allRows.push(...data);
-    if (data.length < pageSize) break;
-    from += pageSize;
+    all.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
   }
+  return all;
+}
 
-  return allRows;
+async function insertBatch(
+  db: ReturnType<typeof createClient>,
+  table: string,
+  rows: any[]
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const { error } = await db.from(table).insert(batch);
+    if (error) throw new Error(`insertBatch ${table}: ${error.message}`);
+  }
 }
 
 async function upsertBatch(
@@ -188,650 +195,341 @@ async function upsertBatch(
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
     const { error } = await db.from(table).upsert(batch, { onConflict });
-    if (error) throw new Error(`upsert(${table}) batch ${i / BATCH_SIZE + 1}: ${error.message}`);
+    if (error) throw new Error(`upsertBatch ${table}: ${error.message}`);
   }
 }
 
-async function insertBatch(
-  db: ReturnType<typeof createClient>,
-  table: string,
-  rows: any[]
-): Promise<void> {
-  if (!rows.length) return;
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const { error } = await db.from(table).insert(batch);
-    if (error) throw new Error(`insert(${table}) batch ${i / BATCH_SIZE + 1}: ${error.message}`);
-  }
-}
-
-// ─── Fases del ETL ────────────────────────────────────────────────────────────
-
+// ─── Fase 1: Extracción ───────────────────────────────────────────────────────
 async function fase1Extraccion(
   db: ReturnType<typeof createClient>,
   mode: string,
-  csvRows: Record<string, string>[] | null
-): Promise<number> {
+  csvText?: string
+): Promise<StagingRow[]> {
   console.log("━━━ FASE 1: EXTRACCIÓN ━━━");
 
-  if (mode === "csv" && csvRows) {
-    const staging: StagingRow[] = csvRows.map(row => ({
-      document_id:       row["document_id"]       || null,
-      event_time_local:  row["event_time_local"]   || null,
-      event_time_offset: row["event_time_offset"]  || null,
-      record_time:       row["record_time"]        || null,
-      location:          row["location"]           || null,
-      read_point_id:     row["read_point_id"]      || null,
-      tag_id:            row["tag_id"]             || null,
-      impc_code:         row["impc_code"]          || null,
-      s9id:              row["s9id"]               || null,
+  if (mode === "csv" && csvText) {
+    const parsed = parseCsv(csvText);
+    const staging: StagingRow[] = parsed.map(r => ({
+      document_id:       r["document_id"]       || crypto.randomUUID(),
+      event_time_local:  r["event_time_local"]   || null,
+      event_time_offset: r["event_time_offset"]  || null,
+      record_time:       r["record_time"]        || null,
+      location:          r["location"]           || null,
+      read_point_id:     r["read_point_id"]      || null,
+      tag_id:            r["tag_id"]             || null,
+      impc_code:         r["impc_code"]          || null,
+      s9id:              r["s9id"]               || null,
       source:            "CSV",
     }));
-    await insertBatch(db, "staging_rfid_events", staging);
-    console.log(`  ${staging.length} registros cargados desde CSV en staging.`);
-    return staging.length;
+    console.log(`  ${staging.length} registros cargados desde CSV.`);
+    return staging;
   }
 
   if (mode === "backfill") {
-    // Backfill: procesar registros RFID que no tienen event_type
-    const { data, error } = await db
-      .from("RFID")
-      .select("id,document_id,event_time_local,event_time_offset,record_time,location,read_point_id,tag_id,impc_code,s9id")
-      .is("event_type", null);
-    if (error) throw new Error(`backfill select: ${error.message}`);
-    if (!data || data.length === 0) {
-      console.log("  No hay registros pendientes en RFID.");
-      return 0;
-    }
-    const staging: StagingRow[] = data.map(r => ({
-      document_id:       r.document_id       ?? null,
-      event_time_local:  r.event_time_local   ?? null,
-      event_time_offset: r.event_time_offset  ?? null,
-      record_time:       r.record_time        ?? null,
-      location:          r.location           ?? null,
-      read_point_id:     r.read_point_id      ?? null,
-      tag_id:            r.tag_id             ?? null,
-      impc_code:         r.impc_code          ?? null,
-      s9id:              r.s9id               ?? null,
-      source:            "BACKFILL",
-    }));
-    await insertBatch(db, "staging_rfid_events", staging);
-    console.log(`  ${staging.length} registros cargados en staging desde RFID.`);
-    return staging.length;
+    // Leer TODOS los registros de RFID para reclasificar con el nuevo criterio
+    console.log("  Modo backfill: leyendo todos los registros de RFID...");
+    const data = await selectAll(db, "RFID", {
+      select: "id,document_id,event_time_local,event_time_offset,record_time,location,read_point_id,tag_id,impc_code,s9id"
+    });
+    const staging: StagingRow[] = data.map(r => ({ ...r, source: "BACKFILL" }));
+    console.log(`  ${staging.length} registros cargados desde RFID.`);
+    return staging;
   }
 
-  if (mode === "from-table") {
-    // Lee directamente de india_rfid en lotes paginados de 10.000 filas
-    console.log("  Modo from-table: leyendo india_rfid en lotes de 10.000...");
-    const PAGE = 10000;
-    let from = 0;
-    let total = 0;
-    while (true) {
-      const { data, error } = await db
-        .from("india_rfid")
-        .select("document_id,event_time_local,event_time_offset,record_time,location,read_point_id,tag_id,impc_code,s9id")
-        .range(from, from + PAGE - 1);
-      if (error) throw new Error(`from-table select: ${error.message}`);
-      if (!data || data.length === 0) break;
-      const staging: StagingRow[] = data.map(r => ({
-        document_id:       r.document_id       ?? null,
-        event_time_local:  r.event_time_local   ?? null,
-        event_time_offset: r.event_time_offset  ?? null,
-        record_time:       r.record_time        ?? null,
-        location:          r.location           ?? null,
-        read_point_id:     r.read_point_id      ?? null,
-        tag_id:            r.tag_id             ?? null,
-        impc_code:         r.impc_code          ?? null,
-        s9id:              r.s9id               ?? null,
-        source:            "FROM_TABLE",
-      }));
-      await insertBatch(db, "staging_rfid_events", staging);
-      total += staging.length;
-      console.log(`    Lote offset ${from}: ${staging.length} filas cargadas (total: ${total})`);
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    console.log(`  from-table completo: ${total} registros en staging.`);
-    return total;
-  }
-
-  const existing = await selectAll(db, "staging_rfid_events", { select: "id" });
-  console.log(`  Modo incremental: ${existing.length} registros en staging.`);
-  return existing.length;
+  // Modo incremental: leer staging_rfid_events
+  const data = await selectAll(db, "staging_rfid_events", { select: "*" });
+  console.log(`  ${data.length} registros en staging_rfid_events.`);
+  return data as StagingRow[];
 }
 
-// Helper: construye un RfidRecord a partir de un Candidate con el event_type indicado
-function buildRecord(
-  c: { row: any; readPointId: string; s9id: string; tagId: string; docId: string;
-        readerImpc: string; country: string | null; centerName: string | null;
-        location: string | null; sortTime: number },
-  eventType: string,
-  now: string
-): RfidRecord {
-  return {
-    document_id:           c.docId || crypto.randomUUID(),
-    event_time_local:      c.row.event_time_local   ?? null,
-    event_time_offset:     c.row.event_time_offset  ?? null,
-    record_time:           c.row.record_time        ?? null,
-    location:              c.location,
-    read_point_id:         c.readPointId,
-    tag_id:                c.tagId,
-    impc_code:             c.row.impc_code          ?? null,
-    s9id:                  c.s9id,
-    event_type:            eventType,
-    impc_code_corrected:   c.readerImpc,
-    country_corrected:     c.country,
-    center_name_corrected: c.centerName,
-    etl_processed_at:      now,
-    _sort_time:            c.sortTime,
-  };
-}
-
+// ─── Fase 2: Transformación ───────────────────────────────────────────────────
 async function fase2Transformacion(
-  db: ReturnType<typeof createClient>,
-  etlRunId: string,
-  readersMaster: Map<string, ReaderMaster>
-): Promise<{ consolidated: RfidRecord[]; issues: IssueRow[]; intermediateCount: number }> {
+  staging: StagingRow[],
+  readersMaster: Map<string, ReaderMaster>,
+  etlRunId: string
+): Promise<{ records: RfidRecord[]; issues: IssueRow[] }> {
   console.log("━━━ FASE 2: TRANSFORMACIÓN ━━━");
-
-  const staging = await selectAll(db, "staging_rfid_events", { select: "*" });
-  console.log(`  ${staging.length} registros en staging.`);
-
   const issues: IssueRow[] = [];
   const now = new Date().toISOString();
 
-  // Paso 2a: Resolver IMPC y calcular tiempo para cada lectura del staging
-  // Resultado: array de candidatos con su IMPC corregido y sort_time
-  interface Candidate {
-    row:        any;
-    readPointId: string;
-    s9id:       string;
-    tagId:      string;
-    docId:      string;
-    readerImpc: string;
-    country:    string | null;
-    centerName: string | null;
-    location:   string | null;
-    sortTime:   number;
-    isAmu:      boolean;
-  }
-
-  const candidates: Candidate[] = [];
-  let unknownCount = 0;
-
+  // Paso 2a: Enriquecer cada lectura con datos del maestro
+  const enriched: EnrichedReading[] = [];
   for (const row of staging) {
-    const readPointId = (row.read_point_id ?? "").trim();
-    const s9id        = (row.s9id         ?? "").trim();
-    const tagId       = (row.tag_id       ?? "").trim();
-    const docId       = (row.document_id  ?? "").trim();
+    const readPointId = row.read_point_id?.trim() ?? "";
+    const tagId       = row.tag_id?.trim() ?? "";
+    const docId       = row.document_id ?? crypto.randomUUID();
 
-    // Validar campos obligatorios (s9id es opcional — fallback a tag_id)
-    const missing: string[] = [];
-    if (!readPointId) missing.push("read_point_id");
-    if (!tagId)       missing.push("tag_id");
-
-    if (missing.length) {
+    if (!readPointId || !tagId) {
       issues.push({
-        etl_run_id:       etlRunId,
-        source_record_id: String(row.id ?? docId),
-        read_point_id:    readPointId || null,
-        s9id:             s9id || null,
-        tag_id:           tagId || null,
-        issue_type:       "MISSING_FIELD",
-        issue_detail:     `Campos obligatorios nulos: ${missing.join(", ")}`,
-        severity:         "ALTO",
+        etl_run_id: etlRunId, source_record_id: String(row.id ?? docId),
+        read_point_id: row.read_point_id, s9id: row.s9id, tag_id: row.tag_id,
+        issue_type: "MISSING_FIELD",
+        issue_detail: `Campos obligatorios nulos: ${!readPointId ? "read_point_id" : ""} ${!tagId ? "tag_id" : ""}`.trim(),
+        severity: "ALTO"
       });
-      unknownCount++;
       continue;
     }
 
-    // Fallback: si s9id está vacío, usar tag_id como identificador del viaje
-    const effectiveS9id = s9id || tagId;
-
-    // Resolver IMPC desde el maestro de lectores
-    const masterEntry = readersMaster.get(readPointId);
-    let readerImpc:  string;
-    let country:     string | null;
-    let centerName:  string | null;
-
-    if (!masterEntry) {
+    const master = readersMaster.get(readPointId);
+    if (!master) {
       issues.push({
-        etl_run_id:       etlRunId,
-        source_record_id: String(row.id ?? docId),
-        read_point_id:    readPointId,
-        s9id,
-        tag_id:           tagId,
-        issue_type:       "READER_NOT_IN_MASTER",
-        issue_detail:     `Lector '${readPointId}' no encontrado en rfid_readers_master. Se usará impc_code original.`,
-        severity:         "MEDIO",
+        etl_run_id: etlRunId, source_record_id: String(row.id ?? docId),
+        read_point_id: readPointId, s9id: row.s9id, tag_id: tagId,
+        issue_type: "READER_NOT_IN_MASTER",
+        issue_detail: `Lector '${readPointId}' no encontrado en rfid_readers_master. Registro pendiente de resolución manual.`,
+        severity: "ALTO"
       });
-      readerImpc = (row.impc_code ?? "").trim();
-      country    = null;
-      centerName = null;
-    } else {
-      readerImpc = masterEntry.impc_code;
-      country    = masterEntry.country;
-      centerName = masterEntry.center_name;
+      continue; // Descartar — no procesar con fallback
     }
 
-    // Calcular tiempo para ordenación
     let sortTime = 0;
     try {
       sortTime = new Date(row.event_time_local ?? row.record_time ?? "").getTime();
       if (isNaN(sortTime)) sortTime = 0;
     } catch { sortTime = 0; }
 
-    candidates.push({
-      row, readPointId, s9id: effectiveS9id, tagId, docId,
-      readerImpc, country, centerName,
-      location: row.location ?? null,
-      sortTime,
-      isAmu: isAmuOrAirport(centerName, row.location ?? null),
+    enriched.push({
+      document_id:       docId,
+      event_time_local:  row.event_time_local  ?? null,
+      event_time_offset: row.event_time_offset ?? null,
+      record_time:       row.record_time       ?? null,
+      location:          row.location          ?? null,
+      read_point_id:     readPointId,
+      tag_id:            tagId,
+      impc_code:         master.impc_code,
+      s9id:              row.s9id              ?? null,
+      country:           master.country        ?? "",
+      center_name:       master.center_name    ?? null,
+      sort_time:         sortTime,
     });
   }
 
-  // Paso 2b: Clasificar cada candidato
-  //
-  // Regla 1 — S9id estándar UPU (primeros 12 caracteres son letras):
-  //   ORIGIN / DESTINATION según posición en el s9id.
-  //   INTERMEDIATE: si el centro es AMU/Airport → reclasificar como DESTINATION.
-  //                 si no → descartar.
-  //
-  // Regla 2 — S9id no estándar (sin IMPC en el identificador):
-  //   Agrupar por tag_id, ordenar por timestamp.
-  //   Primero = ORIGIN, último = DESTINATION, medio = INTERMEDIATE.
-  //   INTERMEDIATE AMU/Airport → reclasificar como DESTINATION (entrada al país).
-  //
-  // La regla AMU/Airport aplica en ambos casos.
+  // Paso 2b: Agrupar por tag_id
+  const byTag = new Map<string, EnrichedReading[]>();
+  for (const r of enriched) {
+    if (!byTag.has(r.tag_id)) byTag.set(r.tag_id, []);
+    byTag.get(r.tag_id)!.push(r);
+  }
 
-  const classified: RfidRecord[] = [];
-  let intermediateCount = 0;
+  const records: RfidRecord[] = [];
 
-  // Separar s9ids estándar de no estándar
-  const standardCandidates  = candidates.filter(c => /^[A-Za-z]{12}/.test(c.s9id));
-  const nonStandardCandidates = candidates.filter(c => !/^[A-Za-z]{12}/.test(c.s9id));
+  for (const [tagId, readings] of byTag) {
+    // Ordenar por tiempo
+    readings.sort((a, b) => a.sort_time - b.sort_time);
 
-  // ── Regla 1: S9ids estándar ──
-  for (const c of standardCandidates) {
-    const eventType = classifyEvent(c.readerImpc, c.s9id);
-
-    if (eventType === "INTERMEDIATE") {
-      if (c.isAmu) {
-        // AMU/Airport intermedio → reclasificar como DESTINATION
-        classified.push(buildRecord(c, "DESTINATION", now));
-        issues.push({
-          etl_run_id:       etlRunId,
-          source_record_id: String(c.row.id ?? c.docId),
-          read_point_id:    c.readPointId,
-          s9id:             c.s9id,
-          tag_id:           c.tagId,
-          issue_type:       "AMU_RECLASSIFIED_AS_DESTINATION",
-          issue_detail:     `Centro AMU/Airport '${c.readerImpc}' (${c.centerName}) reclasificado de INTERMEDIATE a DESTINATION.`,
-          severity:         "INFO",
-        });
+    // Paso 2c: Agrupar en bloques de centro consecutivos
+    const centreBlocks: EnrichedReading[][] = [];
+    let currentBlock: EnrichedReading[] = [readings[0]];
+    for (let i = 1; i < readings.length; i++) {
+      if (readings[i].impc_code === currentBlock[currentBlock.length - 1].impc_code) {
+        currentBlock.push(readings[i]);
       } else {
-        intermediateCount++;
-        issues.push({
-          etl_run_id:       etlRunId,
-          source_record_id: String(c.row.id ?? c.docId),
-          read_point_id:    c.readPointId,
-          s9id:             c.s9id,
-          tag_id:           c.tagId,
-          issue_type:       "INTERMEDIATE_DISCARDED",
-          issue_detail:     `Lector ${c.readerImpc} no es ni origen (${c.s9id.slice(0,6)}) ni destino (${c.s9id.slice(6,12)}) del s9id. Lectura descartada.`,
-          severity:         "INFO",
-        });
+        centreBlocks.push(currentBlock);
+        currentBlock = [readings[i]];
       }
-      continue;
     }
+    centreBlocks.push(currentBlock);
 
-    if (eventType === "UNKNOWN") {
-      unknownCount++;
-      issues.push({
-        etl_run_id:       etlRunId,
-        source_record_id: String(c.row.id ?? c.docId),
-        read_point_id:    c.readPointId,
-        s9id:             c.s9id,
-        tag_id:           c.tagId,
-        issue_type:       "UNKNOWN_EVENT_TYPE",
-        issue_detail:     `No se pudo clasificar la lectura (s9id: '${c.s9id}', impc: '${c.readerImpc}').`,
-        severity:         "MEDIO",
-      });
-      continue;
-    }
+    // Paso 2d: Asignar event_types por bloque
+    // Cada lectura puede acumular múltiples tipos; al final se elige el de mayor prioridad
+    const eventTypes = new Map<string, string[]>(); // document_id → [types]
+    const intlBoundary = new Set<string>();          // document_ids con frontera internacional
 
-    classified.push(buildRecord(c, eventType, now));
-  }
-
-  // ── Regla 2: S9ids no estándar — clasificación por orden temporal ──
-  // Agrupar por (tag_id, s9id) y ordenar por sortTime
-  const nonStdGroups = new Map<string, Candidate[]>();
-  for (const c of nonStandardCandidates) {
-    const key = `${c.tagId}|${c.s9id}`;
-    if (!nonStdGroups.has(key)) nonStdGroups.set(key, []);
-    nonStdGroups.get(key)!.push(c);
-  }
-
-  for (const [, group] of nonStdGroups) {
-    group.sort((a, b) => a.sortTime - b.sortTime);
-
-    if (group.length === 1) {
-      // Solo una lectura: no se puede determinar rol, se descarta
-      const c = group[0];
-      unknownCount++;
-      issues.push({
-        etl_run_id:       etlRunId,
-        source_record_id: String(c.row.id ?? c.docId),
-        read_point_id:    c.readPointId,
-        s9id:             c.s9id,
-        tag_id:           c.tagId,
-        issue_type:       "SINGLE_READ_NO_ROUTE",
-        issue_detail:     `S9id no estándar con una sola lectura — no se puede determinar ORIGIN/DESTINATION.`,
-        severity:         "BAJO",
-      });
-      continue;
-    }
-
-    // Primera lectura = ORIGIN
-    classified.push(buildRecord(group[0], "ORIGIN", now));
-
-    // Lecturas intermedias: descartar salvo AMU/Airport → DESTINATION
-    // Si hay un AMU/Airport, se convierte en el DESTINATION real y se ignoran las posteriores
-    let destinationAssigned = false;
-    for (let i = 1; i < group.length - 1; i++) {
-      const c = group[i];
-      if (!destinationAssigned && c.isAmu) {
-        classified.push(buildRecord(c, "DESTINATION", now));
-        destinationAssigned = true;
-        issues.push({
-          etl_run_id:       etlRunId,
-          source_record_id: String(c.row.id ?? c.docId),
-          read_point_id:    c.readPointId,
-          s9id:             c.s9id,
-          tag_id:           c.tagId,
-          issue_type:       "AMU_RECLASSIFIED_AS_DESTINATION",
-          issue_detail:     `Centro AMU/Airport '${c.readerImpc}' (${c.centerName}) reclasificado de INTERMEDIATE a DESTINATION (s9id no estándar).`,
-          severity:         "INFO",
-        });
-      } else {
-        intermediateCount++;
-        issues.push({
-          etl_run_id:       etlRunId,
-          source_record_id: String(c.row.id ?? c.docId),
-          read_point_id:    c.readPointId,
-          s9id:             c.s9id,
-          tag_id:           c.tagId,
-          issue_type:       "INTERMEDIATE_DISCARDED",
-          issue_detail:     `Lectura intermedia descartada (s9id no estándar, lector: ${c.readerImpc}).`,
-          severity:         "INFO",
-        });
+    for (const block of centreBlocks) {
+      const first = block[0];
+      const last  = block[block.length - 1];
+      if (!eventTypes.has(first.document_id)) eventTypes.set(first.document_id, []);
+      if (!eventTypes.has(last.document_id))  eventTypes.set(last.document_id, []);
+      eventTypes.get(first.document_id)!.push("ARRIVAL_AT_CENTRE");
+      eventTypes.get(last.document_id)!.push("DEPARTURE_FROM_CENTRE");
+      for (let i = 1; i < block.length - 1; i++) {
+        const mid = block[i];
+        if (!eventTypes.has(mid.document_id)) eventTypes.set(mid.document_id, []);
+        eventTypes.get(mid.document_id)!.push("INTERMEDIATE");
       }
     }
 
-    // Última lectura = DESTINATION (si no se asignó ya por AMU)
-    if (!destinationAssigned) {
-      classified.push(buildRecord(group[group.length - 1], "DESTINATION", now));
-    } else {
-      // Si ya hay DESTINATION por AMU, la última lectura es INTERMEDIATE
-      intermediateCount++;
-      const last = group[group.length - 1];
-      issues.push({
-        etl_run_id:       etlRunId,
-        source_record_id: String(last.row.id ?? last.docId),
-        read_point_id:    last.readPointId,
-        s9id:             last.s9id,
-        tag_id:           last.tagId,
-        issue_type:       "INTERMEDIATE_DISCARDED",
-        issue_detail:     `Lectura posterior al AMU/Airport descartada — DESTINATION ya asignado (lector: ${last.readerImpc}).`,
-        severity:         "INFO",
+    // Paso 2e: Eventos de viaje completo
+    const allReadings = centreBlocks.flat();
+    const firstReading = allReadings[0];
+    const lastReading  = allReadings[allReadings.length - 1];
+    eventTypes.get(firstReading.document_id)!.push("ORIGIN");
+    eventTypes.get(lastReading.document_id)!.push("DESTINATION");
+
+    // Paso 2f: Detectar cambios de país → DEPARTURE / ARRIVAL
+    for (let i = 0; i < centreBlocks.length - 1; i++) {
+      const currentCountry = centreBlocks[i][0].country;
+      const nextCountry    = centreBlocks[i + 1][0].country;
+      if (currentCountry !== nextCountry) {
+        const departureReading = centreBlocks[i][centreBlocks[i].length - 1];
+        const arrivalReading   = centreBlocks[i + 1][0];
+        eventTypes.get(departureReading.document_id)!.push("DEPARTURE");
+        eventTypes.get(arrivalReading.document_id)!.push("ARRIVAL");
+        intlBoundary.add(departureReading.document_id);
+        intlBoundary.add(arrivalReading.document_id);
+      }
+    }
+
+    // Paso 2g: Determinar status del tag
+    const countries = new Set(readings.map(r => r.country));
+    const status = countries.size > 1 ? "COMPLETE" : "PENDING";
+
+    // Paso 2h: Construir registros finales
+    for (const reading of allReadings) {
+      const types = eventTypes.get(reading.document_id) ?? ["INTERMEDIATE"];
+      records.push({
+        document_id:              reading.document_id,
+        event_time_local:         reading.event_time_local,
+        event_time_offset:        (reading as any).event_time_offset ?? null,
+        record_time:              reading.record_time,
+        location:                 reading.location,
+        read_point_id:            reading.read_point_id,
+        tag_id:                   tagId,
+        impc_code:                reading.impc_code,
+        s9id:                     reading.s9id,
+        event_type:               pickBestEventType(types),
+        status,
+        country:                  reading.country,
+        center_name:              reading.center_name,
+        is_international_boundary: intlBoundary.has(reading.document_id),
+        etl_version:              ETL_VERSION,
+        etl_processed_at:         now,
       });
     }
   }
 
-  console.log(`  Clasificados: ${classified.length} válidos, ${intermediateCount} intermedias descartadas, ${unknownCount} desconocidos.`);
+  // Resumen
+  const typeCounts: Record<string, number> = {};
+  for (const r of records) typeCounts[r.event_type] = (typeCounts[r.event_type] ?? 0) + 1;
+  console.log(`  Registros procesados: ${records.length.toLocaleString()}`);
+  console.log(`  Distribución event_type: ${JSON.stringify(typeCounts)}`);
+  console.log(`  Avisos: ${issues.length}`);
 
-  // Paso 2c: Agrupar por (tag_id, impc_code_corrected, event_type)
-  //   - ORIGIN      → conservar la lectura MÁS RECIENTE (última salida del centro)
-  //   - DESTINATION → conservar la lectura MÁS ANTIGUA  (primera entrada al centro)
-  const groupMap = new Map<string, RfidRecord>();
-
-  for (const rec of classified) {
-    const key = `${rec.tag_id}|${rec.impc_code_corrected}|${rec.event_type}`;
-    const existing = groupMap.get(key);
-
-    if (!existing) {
-      groupMap.set(key, rec);
-    } else {
-      if (rec.event_type === "ORIGIN") {
-        if ((rec._sort_time ?? 0) > (existing._sort_time ?? 0)) groupMap.set(key, rec);
-      } else {
-        if ((rec._sort_time ?? 0) < (existing._sort_time ?? 0)) groupMap.set(key, rec);
-      }
-    }
-  }
-
-  const consolidated = Array.from(groupMap.values()).map(r => {
-    const { _sort_time, ...rest } = r;
-    return rest as RfidRecord;
-  });
-
-  console.log(`  Consolidados: ${classified.length} lecturas → ${consolidated.length} registros únicos.`);
-
-  return { consolidated, issues, intermediateCount };
+  return { records, issues };
 }
 
+// ─── Fase 3: Logging ──────────────────────────────────────────────────────────
 async function fase3Logging(
   db: ReturnType<typeof createClient>,
   issues: IssueRow[]
 ): Promise<void> {
   console.log("━━━ FASE 3: LOGGING ━━━");
-  if (!issues.length) {
-    console.log("  Sin incongruencias.");
-    return;
-  }
+  if (!issues.length) { console.log("  Sin avisos."); return; }
   await insertBatch(db, "log_rfid_inconsistencies", issues);
-  console.log(`  ${issues.length} incongruencias registradas.`);
+  const byType: Record<string, number> = {};
+  for (const i of issues) byType[i.issue_type] = (byType[i.issue_type] ?? 0) + 1;
+  console.log(`  ${issues.length} avisos registrados: ${JSON.stringify(byType)}`);
 }
 
+// ─── Fase 4: Carga ────────────────────────────────────────────────────────────
 async function fase4Carga(
   db: ReturnType<typeof createClient>,
   records: RfidRecord[]
-): Promise<number> {
+): Promise<void> {
   console.log("━━━ FASE 4: CARGA ━━━");
-  if (!records.length) {
-    console.log("  Sin registros para cargar.");
-    return 0;
-  }
-  // Deduplicar por document_id para evitar conflictos en el upsert
-  const dedupMap = new Map<string, RfidRecord>();
-  for (const r of records) {
-    if (!dedupMap.has(r.document_id)) dedupMap.set(r.document_id, r);
-  }
-  const deduped = Array.from(dedupMap.values());
-  if (deduped.length < records.length) {
-    console.log(`  Deduplicados ${records.length - deduped.length} registros con document_id repetido.`);
-  }
-
-  // Mapear a las columnas reales de la tabla RFID (sin columnas _corrected)
-  const rows = deduped.map(r => ({
-    document_id:       r.document_id,
-    event_time_local:  r.event_time_local,
-    event_time_offset: r.event_time_offset,
-    record_time:       r.record_time,
-    location:          r.location,
-    read_point_id:     r.read_point_id,
-    tag_id:            r.tag_id,
-    impc_code:         r.impc_code_corrected,  // usar el IMPC corregido por el maestro
-    s9id:              r.s9id,
-    event_type:        r.event_type,
-    etl_processed_at:  r.etl_processed_at,
-  }));
-  await upsertBatch(db, "RFID", rows, "document_id");
-  console.log(`  ${rows.length} registros cargados en tabla RFID.`);
-  return rows.length;
+  if (!records.length) { console.log("  Sin registros para cargar."); return; }
+  await upsertBatch(db, "RFID", records, "document_id");
+  console.log(`  ${records.length.toLocaleString()} registros cargados en RFID.`);
 }
 
+// ─── Fase 5: Sincronización ───────────────────────────────────────────────────
 async function fase5Sincronizacion(
   db: ReturnType<typeof createClient>,
   readersMaster: Map<string, ReaderMaster>
 ): Promise<void> {
-  console.log("━━━ FASE 5: SINCRONIZACIÓN postal_centers ━━━");
-
+  console.log("━━━ FASE 5: SINCRONIZACIÓN ━━━");
   const existing = await selectAll(db, "postal_centers", { select: "impc_code" });
   const existingSet = new Set(existing.map((r: any) => r.impc_code));
-
-  // Construir mapa deduplicado por impc_code (varios lectores pueden tener el mismo IMPC)
-  const toInsertMap = new Map<string, any>();
-  for (const [, reader] of readersMaster) {
-    if (!toInsertMap.has(reader.impc_code)) {
-      toInsertMap.set(reader.impc_code, {
-        impc_code:   reader.impc_code,
-        country:     reader.country ?? "",
-        center_name: reader.center_name ?? reader.impc_code,
-      });
+  const newEntries: any[] = [];
+  const seen = new Set<string>();
+  for (const reader of readersMaster.values()) {
+    if (!existingSet.has(reader.impc_code) && !seen.has(reader.impc_code)) {
+      newEntries.push({ impc_code: reader.impc_code, country: reader.country, center_name: reader.center_name });
+      seen.add(reader.impc_code);
     }
   }
-  const toInsert = Array.from(toInsertMap.values());
-
-  if (toInsert.length) {
-    // Usar upsert para evitar errores de clave duplicada en ejecuciones sucesivas
-    await upsertBatch(db, "postal_centers", toInsert, "impc_code");
-    console.log(`  ${toInsert.length} centros sincronizados en postal_centers.`);
+  if (newEntries.length) {
+    await insertBatch(db, "postal_centers", newEntries);
+    console.log(`  ${newEntries.length} nuevos centros añadidos a postal_centers.`);
   } else {
-    console.log("  postal_centers ya está sincronizada.");
+    console.log(`  postal_centers ya sincronizada (${existingSet.size} centros).`);
   }
 }
 
+// ─── Fase 6: Limpieza ─────────────────────────────────────────────────────────
 async function fase6Limpieza(
   db: ReturnType<typeof createClient>
 ): Promise<void> {
   console.log("━━━ FASE 6: LIMPIEZA ━━━");
-  const { error } = await db.from("staging_rfid_events").delete().neq("id", 0);
-  if (error) {
-    // Intentar con gt
-    const { error: e2 } = await db.from("staging_rfid_events").delete().gt("id", 0);
-    if (e2) console.warn(`  Advertencia al limpiar staging: ${e2.message}`);
-    else console.log("  staging_rfid_events vaciado.");
-  } else {
-    console.log("  staging_rfid_events vaciado.");
-  }
+  const { error } = await db.from("staging_rfid_events").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  if (error) console.warn(`  Advertencia al vaciar staging: ${error.message}`);
+  else console.log("  Staging vaciado.");
 }
 
-// ─── Orquestador ─────────────────────────────────────────────────────────────
-
-async function runEtl(
-  mode: string,
-  csvRows: Record<string, string>[] | null
-): Promise<Record<string, any>> {
-  const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-  const etlRunId  = crypto.randomUUID();
+// ─── Handler principal ────────────────────────────────────────────────────────
+Deno.serve(async (req) => {
+  const etlRunId = crypto.randomUUID();
   const startTime = Date.now();
-
   console.log("=".repeat(60));
-  console.log(`ETL RFID — run_id: ${etlRunId} — modo: ${mode}`);
+  console.log(`INICIO ETL RFID ${ETL_VERSION} | Run: ${etlRunId}`);
   console.log("=".repeat(60));
-
-  // Cargar maestro de lectores
-  const masterRows = await selectAll(db, "rfid_readers_master", { select: "*" });
-  const readersMaster = new Map<string, ReaderMaster>(
-    masterRows.map((r: any) => [r.read_point_id, r as ReaderMaster])
-  );
-  console.log(`  Maestro de lectores: ${readersMaster.size} entradas.`);
-
-  let result: Record<string, any> = { etl_run_id: etlRunId, mode };
-
-  if (mode === "sync-only") {
-    await fase5Sincronizacion(db, readersMaster);
-    result.sync = "ok";
-  } else {
-    const nStaged = await fase1Extraccion(db, mode, csvRows);
-    if (nStaged === 0) {
-      result = { ...result, staged: 0, consolidated: 0, loaded: 0, issues: 0, intermediate_discarded: 0, duration_ms: Date.now() - startTime };
-    } else {
-      const { consolidated, issues, intermediateCount } = await fase2Transformacion(db, etlRunId, readersMaster);
-      await fase3Logging(db, issues);
-      const nLoaded = await fase4Carga(db, consolidated);
-      await fase5Sincronizacion(db, readersMaster);
-      await fase6Limpieza(db);
-
-      result = {
-        ...result,
-        staged:               nStaged,
-        consolidated:         consolidated.length,
-        intermediate_discarded: intermediateCount,
-        loaded:               nLoaded,
-        issues:               issues.length,
-        duration_ms:          Date.now() - startTime,
-      };
-    }
-  }
-
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log("=".repeat(60));
-  console.log(`  ETL RFID COMPLETADO — ${elapsed}s`);
-  console.log("=".repeat(60));
-
-  return result;
-}
-
-// ─── Handler HTTP ─────────────────────────────────────────────────────────────
-
-Deno.serve(async (req: Request) => {
-  const corsHeaders = {
-    "Access-Control-Allow-Origin":  "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type, apikey, x-client-info, x-supabase-api-version",
-  };
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
-    });
-  }
 
   try {
-    let mode = "backfill";
-    let csvRows: Record<string, string>[] | null = null;
+    const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+    // Cargar maestro de lectores
+    const masterRows = await selectAll(db, "rfid_readers_master", { select: "*" });
+    const readersMaster = new Map<string, ReaderMaster>(
+      masterRows.map((r: any) => [r.read_point_id, r as ReaderMaster])
+    );
+    console.log(`Maestro de lectores: ${readersMaster.size} entradas.`);
+
+    // Determinar modo y CSV
+    let mode = "incremental";
+    let csvText: string | undefined;
     const contentType = req.headers.get("content-type") ?? "";
-
     if (contentType.includes("multipart/form-data")) {
-      const formData = await req.formData();
-      const file = formData.get("file") as File | null;
-      if (!file) {
-        return new Response(JSON.stringify({ error: "No se recibió ningún archivo CSV" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        });
-      }
-      const text = await file.text();
-      csvRows = parseCsv(text);
-      mode = "csv";
-      console.log(`  CSV recibido: ${csvRows.length} filas, archivo: ${file.name}`);
-    } else {
+      const form = await req.formData();
+      const file = form.get("file") as File | null;
+      const modeParam = form.get("mode") as string | null;
+      if (file) csvText = await file.text();
+      if (modeParam) mode = modeParam;
+      if (csvText) mode = "csv";
+    } else if (contentType.includes("application/json")) {
       const body = await req.json().catch(() => ({}));
-      mode = body.mode ?? "backfill";
+      mode = body.mode ?? "incremental";
+    }
+    console.log(`Modo: ${mode}`);
+
+    // Ejecutar fases
+    const staging = await fase1Extraccion(db, mode, csvText);
+    if (!staging.length) {
+      return new Response(JSON.stringify({ ok: true, message: "Sin datos que procesar." }), {
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
-    const result = await runEtl(mode, csvRows);
+    const { records, issues } = await fase2Transformacion(staging, readersMaster, etlRunId);
+    await fase3Logging(db, issues);
+    await fase4Carga(db, records);
+    await fase5Sincronizacion(db, readersMaster);
+    if (mode !== "backfill") await fase6Limpieza(db);
 
-    return new Response(JSON.stringify({ success: true, ...result }), {
-      status: 200,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log("=".repeat(60));
+    console.log(`ETL RFID ${ETL_VERSION} COMPLETADO en ${elapsed}s`);
+    console.log("=".repeat(60));
+
+    return new Response(JSON.stringify({
+      ok: true, etl_version: ETL_VERSION, etl_run_id: etlRunId,
+      records_processed: records.length, issues: issues.length,
+      elapsed_seconds: parseFloat(elapsed)
+    }), { headers: { "Content-Type": "application/json" } });
+
+  } catch (err) {
+    console.error(`ERROR CRÍTICO: ${err}`);
+    return new Response(JSON.stringify({ ok: false, error: String(err) }), {
+      status: 500, headers: { "Content-Type": "application/json" }
     });
-  } catch (err: any) {
-    console.error("ERROR en process-rfid-etl:", err);
-    return new Response(
-      JSON.stringify({ success: false, error: err.message ?? String(err) }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
-    );
   }
 });

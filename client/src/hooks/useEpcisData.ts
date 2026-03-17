@@ -476,7 +476,8 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   const [loading, setLoading] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rfidCounts, setRfidCounts] = useState<{ departures: number; arrivals: number; endToEnd: number } | null>(null);
+  const [rfidCounts, setRfidCounts] = useState<{ totalTags: number; rfidDepartures: number; rfPredes: number; rfResdes: number; rfidArrivals: number; rfE2e: number } | null>(null);
+  const [rfidCountsLoading, setRfidCountsLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -566,32 +567,70 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     // Re-fetch when date filters change
   }, [filters.dateFrom, filters.dateTo]);
 
-  // Fetch direct RFID event counts (departures, arrivals, end-to-end) from the RFID table
+  // Fetch direct RFID event counts with progressive loading:
+  // Step 1 — show last 30 days immediately
+  // Step 2 — update with full historical range in background (when no explicit date filter)
   useEffect(() => {
     let cancelled = false;
-    fetchRfidEventCounts(
-      filters.dateFrom,
-      filters.dateTo,
-      filters.originCountry !== 'ALL' ? filters.originCountry : undefined,
-      filters.destCountry !== 'ALL' ? filters.destCountry : undefined,
-    ).then(counts => {
-      if (!cancelled) setRfidCounts(counts);
-    }).catch(() => {});
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const originArg = filters.originCountry !== 'ALL' ? filters.originCountry : undefined;
+    const destArg   = filters.destCountry   !== 'ALL' ? filters.destCountry   : undefined;
+
+    // If explicit date filters are set, just fetch that range directly (no progressive loading)
+    if (filters.dateFrom || filters.dateTo) {
+      setRfidCountsLoading(false);
+      fetchRfidEventCounts(filters.dateFrom, filters.dateTo, originArg, destArg)
+        .then(counts => { if (!cancelled) setRfidCounts(counts); })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }
+
+    // No explicit date filter — progressive: 30 days first, then full history
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    const recentFrom = thirtyDaysAgo.toISOString().split('T')[0];
+
+    // Step 1: last 30 days immediately
+    fetchRfidEventCounts(recentFrom, todayStr, originArg, destArg)
+      .then(recentCounts => {
+        if (cancelled) return;
+        setRfidCounts(recentCounts);
+        // Step 2: full history in background
+        setRfidCountsLoading(true);
+        // Use a wide range covering all data (from 2024-01-01 to avoid full-table scan timeout)
+        fetchRfidEventCounts('2024-01-01', todayStr, originArg, destArg)
+          .then(fullCounts => {
+            if (!cancelled) {
+              setRfidCounts(fullCounts);
+              setRfidCountsLoading(false);
+            }
+          })
+          .catch(() => { if (!cancelled) setRfidCountsLoading(false); });
+      })
+      .catch(() => { if (!cancelled) setRfidCountsLoading(false); });
+
     return () => { cancelled = true; };
   }, [filters.dateFrom, filters.dateTo, filters.originCountry, filters.destCountry]);
 
   // Build journeys from all readings
   const allJourneys = useMemo(() => readingsToJourneys(allReadings), [allReadings]);
 
-  // Available countries (from all journeys)
-  const allOriginCountries = useMemo(() =>
-    Array.from(new Set(allJourneys.map(j => j.origin_country).filter(Boolean))).sort(),
-    [allJourneys]
-  );
-  const allDestCountries = useMemo(() =>
-    Array.from(new Set(allJourneys.filter(j => j.has_destination).map(j => j.dest_country!).filter(Boolean))).sort(),
-    [allJourneys]
-  );
+  // Available origin countries — narrowed by active destCountry filter (so dropdowns are consistent)
+  const allOriginCountries = useMemo(() => {
+    const pool = (filters.destCountry && filters.destCountry !== 'ALL')
+      ? allJourneys.filter(j => j.dest_country === filters.destCountry)
+      : allJourneys;
+    return Array.from(new Set(pool.map(j => j.origin_country).filter(Boolean))).sort();
+  }, [allJourneys, filters.destCountry]);
+
+  // Available destination countries — narrowed by active originCountry filter (so dropdowns are consistent)
+  const allDestCountries = useMemo(() => {
+    const pool = (filters.originCountry && filters.originCountry !== 'ALL')
+      ? allJourneys.filter(j => j.origin_country === filters.originCountry)
+      : allJourneys;
+    return Array.from(new Set(pool.filter(j => j.has_destination).map(j => j.dest_country!).filter(Boolean))).sort();
+  }, [allJourneys, filters.originCountry]);
 
   // Apply country filters in the browser
   const filteredJourneys = useMemo(() => {
@@ -613,6 +652,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   return {
     loading,
     backgroundLoading,
+    rfidCountsLoading,
     error,
     stats,
     rfidCounts,

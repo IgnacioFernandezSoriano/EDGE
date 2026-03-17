@@ -2,15 +2,16 @@
  * BenchmarkPanel — RFID vs EDI Benchmark Report
  *
  * Three direct comparisons:
- *   1. RF-PREDES vs PREDES  (origin departure preparation)
- *   2. RF-RESDES vs RESDES  (destination delivery)
+ *   1. RFID Outbound vs PREDES  (origin departure preparation)
+ *   2. RFID Inbound vs RESDES   (destination delivery)
  *   3. Transit RFID (DEP→ARR) vs Transit EDI (PREDES→RESDES)
  *
- * Plus EDI chain completeness (PREDES→CARDIT→RESDIT74→RESDIT21→RESDES).
+ * Plus EDI chain completeness (PREDES→RESDIT74→RESDIT21→RESDES).
  * Filtered by global date / origin country / destination country.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Download } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
@@ -52,15 +53,11 @@ function pct(n: number, total: number): string {
 }
 function deltaColor(h: number | null): string {
   if (h === null) return 'text-slate-400';
-  if (Math.abs(h) <= 2)  return 'text-emerald-600';
-  if (Math.abs(h) <= 12) return 'text-amber-600';
-  return 'text-rose-600';
+  return h >= 0 ? 'text-emerald-600' : 'text-rose-600';
 }
 function deltaBg(h: number | null): string {
-  if (h === null) return 'bg-slate-50';
-  if (Math.abs(h) <= 2)  return 'bg-emerald-50';
-  if (Math.abs(h) <= 12) return 'bg-amber-50';
-  return 'bg-rose-50';
+  if (h === null) return '';
+  return h >= 0 ? 'bg-emerald-50' : 'bg-rose-50';
 }
 
 /* ── KPI Card ───────────────────────────────────────────────────────────────── */
@@ -105,17 +102,22 @@ function GapBadge({ pct }: { pct: number }) {
 }
 
 /* ── EDI Chain completeness bar ─────────────────────────────────────────────── */
-function ChainBar({ label, present, total }: { label: string; present: number; total: number }) {
+function ChainBar({ label, present, total, rfid = false }: { label: string; present: number; total: number; rfid?: boolean }) {
   const p = total ? Math.round((present / total) * 100) : 0;
-  const barColor = p >= 90 ? 'bg-emerald-500' : p >= 60 ? 'bg-amber-400' : 'bg-rose-400';
+  const barColor = rfid
+    ? 'bg-indigo-500'
+    : p >= 90 ? 'bg-emerald-500' : p >= 60 ? 'bg-amber-400' : 'bg-rose-400';
+  const pctColor = rfid
+    ? 'text-indigo-600'
+    : p >= 90 ? 'text-emerald-600' : p >= 60 ? 'text-amber-600' : 'text-rose-600';
   return (
     <div className="flex items-center gap-3 py-1.5">
-      <div className="w-24 text-xs font-mono font-semibold text-slate-600 shrink-0">{label}</div>
+      <div className={`w-28 text-xs font-mono font-semibold shrink-0 ${rfid ? 'text-indigo-600' : 'text-slate-600'}`}>{label}</div>
       <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
         <div className={`h-full rounded-full ${barColor}`} style={{ width: `${p}%` }} />
       </div>
       <div className="w-20 text-right text-xs text-slate-500">{present.toLocaleString()} / {total.toLocaleString()}</div>
-      <div className={`w-10 text-right text-xs font-semibold ${p >= 90 ? 'text-emerald-600' : p >= 60 ? 'text-amber-600' : 'text-rose-600'}`}>{p}%</div>
+      <div className={`w-10 text-right text-xs font-semibold ${pctColor}`}>{p}%</div>
     </div>
   );
 }
@@ -132,9 +134,8 @@ function CentreTable({ data, label }: { data: CentreStats[]; label: string }) {
             <th className="px-3 py-2 text-left font-semibold text-slate-500">IMPC</th>
             <th className="px-3 py-2 text-left font-semibold text-slate-500">Country</th>
             <th className="px-3 py-2 text-center font-semibold text-slate-600">N</th>
-            <th className="px-3 py-2 text-center font-semibold text-indigo-600">Mean {label}</th>
+            <th className="px-3 py-2 text-center font-semibold text-indigo-600">Avg {label}</th>
             <th className="px-3 py-2 text-center font-semibold text-indigo-600">Median {label}</th>
-            <th className="px-3 py-2 text-center font-semibold text-indigo-600">Mode {label}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -146,7 +147,6 @@ function CentreTable({ data, label }: { data: CentreStats[]; label: string }) {
               <td className="px-3 py-2 text-center text-slate-600">{r.n}</td>
               <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.mean)}`}>{fmtH(r.mean)}</td>
               <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.median)}`}>{fmtH(r.median)}</td>
-              <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.mode)}`}>{fmtH(r.mode)}</td>
             </tr>
           ))}
         </tbody>
@@ -155,12 +155,70 @@ function CentreTable({ data, label }: { data: CentreStats[]; label: string }) {
   );
 }
 
-/* ── Detail table ───────────────────────────────────────────────────────────── */
+/* ── CSV export helper ───────────────────────────────────────────────────────────────────────── */
+function escapeCell(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportBenchmarkCsv(rows: BenchmarkRow[], view: DetailView) {
+  const cols: { key: keyof BenchmarkRow | 'route' | 'transit_delta'; label: string }[] = [
+    { key: 's9id',               label: 'Receptacle (s9id)' },
+    { key: 'edi_origin_impc',    label: 'Origin IMPC' },
+    { key: 'rf_origin_country',  label: 'Origin Country' },
+    { key: 'rf_origin_centre',   label: 'Origin Centre' },
+    { key: 'edi_dest_impc',      label: 'Dest IMPC' },
+    { key: 'rf_dest_country',    label: 'Dest Country' },
+    { key: 'rf_dest_centre',     label: 'Dest Centre' },
+    ...(view !== 'arrival' ? [
+      { key: 'edi_predes_time'    as keyof BenchmarkRow, label: 'EDI PREDES' },
+      { key: 'rf_predes_time'    as keyof BenchmarkRow, label: 'RFID Outbound' },
+      { key: 'delta_predes_hours' as keyof BenchmarkRow, label: 'Δ Outbound (h)' },
+    ] : []),
+    ...(view !== 'departure' ? [
+      { key: 'edi_resdes_time'    as keyof BenchmarkRow, label: 'EDI RESDES' },
+      { key: 'rf_resdes_time'    as keyof BenchmarkRow, label: 'RFID Inbound' },
+      { key: 'delta_resdes_hours' as keyof BenchmarkRow, label: 'Δ Inbound (h)' },
+    ] : []),
+    ...(view === 'transit' ? [
+      { key: 'rf_transit_hours'  as keyof BenchmarkRow, label: 'RFID Transit (h)' },
+      { key: 'edi_transit_hours' as keyof BenchmarkRow, label: 'EDI Transit (h)' },
+    ] : []),
+    { key: 'edi_resdit74_time',  label: 'RESDIT74' },
+    { key: 'edi_resdit21_time',  label: 'RESDIT21' },
+  ];
+
+  const header = cols.map(c => c.label).join(',');
+  const lines = rows.map(r => {
+    const route = `${r.edi_origin_impc ?? r.rf_origin_impc ?? '?'}→${r.edi_dest_impc ?? r.rf_dest_impc ?? '?'}`;
+    return cols.map(c => {
+      if (c.key === 'route') return escapeCell(route);
+      if (c.key === 'transit_delta') {
+        const d = r.rf_transit_hours !== null && r.edi_transit_hours !== null
+          ? Math.round((r.rf_transit_hours - r.edi_transit_hours) * 10) / 10 : null;
+        return escapeCell(d);
+      }
+      return escapeCell((r as any)[c.key]);
+    }).join(',');
+  });
+  const csv = [header, ...lines].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `benchmark_${view}_records.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ── Detail table ────────────────────────────────────────────────────────────────────────────────── */
 type DetailView = 'departure' | 'arrival' | 'transit';
 
 function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView }) {
   const [page, setPage] = useState(0);
-  const PAGE = 20;
+  const PAGE = 25;
+
+  // Reset page when view or rows change
+  useEffect(() => { setPage(0); }, [view, rows]);
 
   const filtered = useMemo(() => {
     if (view === 'departure') return rows.filter(r => r.has_rf_departure);
@@ -184,15 +242,15 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
               {view !== 'arrival' && (
                 <>
                   <th className="px-3 py-2 text-left font-semibold text-slate-600">EDI PREDES</th>
-                  <th className="px-3 py-2 text-left font-semibold text-indigo-600">RF-PREDES</th>
-                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Δ PREDES</th>
+                  <th className="px-3 py-2 text-left font-semibold text-indigo-600">RFID Outbound</th>
+                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Δ Outbound</th>
                 </>
               )}
               {view !== 'departure' && (
                 <>
                   <th className="px-3 py-2 text-left font-semibold text-slate-600">EDI RESDES</th>
-                  <th className="px-3 py-2 text-left font-semibold text-indigo-600">RF-RESDES</th>
-                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Δ RESDES</th>
+                  <th className="px-3 py-2 text-left font-semibold text-indigo-600">RFID Inbound</th>
+                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Δ Inbound</th>
                 </>
               )}
               {view === 'transit' && (
@@ -213,7 +271,6 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
                 : null;
               const route = `${r.edi_origin_impc ?? r.rf_origin_impc ?? '?'} → ${r.edi_dest_impc ?? r.rf_dest_impc ?? '?'}`;
               const missing = [
-                !r.edi_cardit_time   ? 'CARDIT'   : null,
                 !r.edi_resdit74_time ? 'RESDIT74' : null,
                 !r.edi_resdit21_time ? 'RESDIT21' : null,
                 !r.edi_resdes_time   ? 'RESDES'   : null,
@@ -254,18 +311,48 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
           </tbody>
         </table>
       </div>
-      {pages > 1 && (
-        <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
-          <span>{total.toLocaleString()} records</span>
-          <div className="flex gap-1">
-            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-              className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">‹</button>
-            <span className="px-2 py-1">{page + 1} / {pages}</span>
-            <button onClick={() => setPage(p => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}
-              className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50">›</button>
-          </div>
+      {/* Pagination + CSV */}
+      <div className="flex items-center justify-between mt-3">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-slate-600">
+            Page <span className="font-bold text-slate-800">{page + 1}</span> of <span className="font-bold text-slate-800">{pages}</span>
+            <span className="ml-2 text-slate-400">·</span>
+            <span className="ml-2 text-slate-500">{total.toLocaleString()} records</span>
+          </span>
+          <button
+            onClick={() => exportBenchmarkCsv(filtered, view)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 transition-all shadow-sm"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download CSV
+          </button>
         </div>
-      )}
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setPage(0)} disabled={page === 0} title="First page"
+            className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 text-base font-semibold shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 active:scale-95">«</button>
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} title="Previous page"
+            className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 text-base font-semibold shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 active:scale-95">‹</button>
+          {Array.from({ length: Math.min(5, pages) }, (_, i) => {
+            let p: number;
+            if (pages <= 5) p = i;
+            else if (page < 3) p = i;
+            else if (page > pages - 4) p = pages - 5 + i;
+            else p = page - 2 + i;
+            return (
+              <button key={p} onClick={() => setPage(p)}
+                className={`h-9 min-w-[2.25rem] px-2 flex items-center justify-center rounded-lg border text-sm font-semibold shadow-sm transition-all active:scale-95 ${
+                  p === page
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-200'
+                    : 'bg-white border-slate-300 text-slate-700 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700'
+                }`}>{p + 1}</button>
+            );
+          })}
+          <button onClick={() => setPage(p => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1} title="Next page"
+            className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 text-base font-semibold shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 active:scale-95">›</button>
+          <button onClick={() => setPage(pages - 1)} disabled={page >= pages - 1} title="Last page"
+            className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 text-base font-semibold shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 active:scale-95">»</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -305,52 +392,40 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
   return (
     <div className="space-y-2">
 
-      {/* ── 1. Coverage KPIs ── */}
-      <Section title="Coverage Overview" subtitle={`${stats.totalPairs.toLocaleString()} receptacles with RFID ↔ EDI pair via ID Relation`}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-          <KPI label="Total Pairs"       value={stats.totalPairs}     color="slate" />
-          <KPI label="Departure Pairs"   value={stats.departurePairs} sub="RFID DEP + EDI" color="indigo" />
-          <KPI label="Arrival Pairs"     value={stats.arrivalPairs}   sub="RFID ARR + EDI" color="indigo" />
-          <KPI label="Transit Pairs"     value={stats.transitPairs}   sub="DEP+ARR + PREDES+RESDES" color="indigo" />
-          <KPI label="RF-PREDES cover"   value={pct(stats.hasRfPredes, stats.totalPairs)}  sub={`${stats.hasRfPredes} receptacles`} color="green" />
-          <KPI label="RF-RESDES cover"   value={pct(stats.hasRfResdes, stats.totalPairs)}  sub={`${stats.hasRfResdes} receptacles`} color="green" />
-        </div>
-      </Section>
-
-      {/* ── 2. RF-PREDES vs EDI PREDES ── */}
+      {/* ── 1. RFID Outbound vs EDI PREDES ── */}
       <Section
-        title="RF-PREDES vs EDI PREDES"
-        subtitle={`Departure preparation: first RFID reading (ORIGIN) vs EDI PREDES — ${stats.departurePairs} pairs with both events`}
+        title="RFID Outbound vs EDI PREDES"
+        subtitle={`Departure preparation: RFID Outbound (DEPARTURE event) vs EDI PREDES — ${stats.departurePairs} pairs with both events`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="Pairs with both"   value={stats.hasRfPredes}    color="indigo" />
-          <KPI label="Avg Δ PREDES"      value={fmtH(stats.avgDeltaPredesH)} sub="RF minus EDI (+ = RFID later)" color={stats.avgDeltaPredesH !== null && Math.abs(stats.avgDeltaPredesH) <= 4 ? 'green' : 'amber'} />
-          <KPI label="EDI PREDES cover"  value={pct(stats.hasEdiPredes, stats.totalPairs)} sub={`${stats.hasEdiPredes} / ${stats.totalPairs}`} color="slate" />
-          <KPI label="RF-PREDES cover"   value={pct(stats.hasRfPredes, stats.totalPairs)}  sub={`${stats.hasRfPredes} / ${stats.totalPairs}`} color="green" />
+          <KPI label="Pairs with both"        value={stats.hasRfPredes}    color="indigo" />
+          <KPI label="Avg Δ Outbound"         value={fmtH(stats.avgDeltaPredesH)} sub="RFID Outbound minus EDI (+ = RFID later)" color={stats.avgDeltaPredesH !== null && stats.avgDeltaPredesH >= 0 ? 'green' : 'rose'} />
+          <KPI label="EDI PREDES cover"       value={pct(stats.hasEdiPredes, stats.totalPairs)} sub={`${stats.hasEdiPredes} / ${stats.totalPairs}`} color="slate" />
+          <KPI label="RFID Outbound cover"    value={pct(stats.hasRfPredes, stats.totalPairs)}  sub={`${stats.hasRfPredes} / ${stats.totalPairs}`} color="green" />
         </div>
 
         <p className="text-[11px] text-slate-500 mb-2 italic">
-          Δ = RF-PREDES minus EDI PREDES (hours). Negative = RFID reads <strong>before</strong> EDI declares; positive = RFID reads <strong>after</strong>.
-          Colour: green ≤ ±2h · amber ≤ ±12h · red &gt; ±12h.
+          Δ = RFID Outbound minus EDI PREDES (hours). Negative = RFID reads <strong>before</strong> EDI declares; positive = RFID reads <strong>after</strong>.
+          Colour: green = positive · red = negative.
         </p>
         <CentreTable data={stats.byOriginCentre} label="Δ" />
       </Section>
 
-      {/* ── 3. RF-RESDES vs EDI RESDES ── */}
+      {/* ── 2. RFID Inbound vs EDI RESDES ── */}
       <Section
-        title="RF-RESDES vs EDI RESDES"
-        subtitle={`Delivery confirmation: last RFID reading (DESTINATION) vs EDI RESDES — ${stats.arrivalPairs} pairs with both events`}
+        title="RFID Inbound vs EDI RESDES"
+        subtitle={`Delivery confirmation: RFID Inbound (ARRIVAL event) vs EDI RESDES — ${stats.arrivalPairs} pairs with both events`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="Pairs with both"   value={stats.hasRfResdes}    color="indigo" />
-          <KPI label="Avg Δ RESDES"      value={fmtH(stats.avgDeltaResdesH)} sub="RF minus EDI (+ = RFID later)" color={stats.avgDeltaResdesH !== null && Math.abs(stats.avgDeltaResdesH) <= 4 ? 'green' : 'amber'} />
-          <KPI label="EDI RESDES cover"  value={pct(stats.hasEdiResdes, stats.totalPairs)} sub={`${stats.hasEdiResdes} / ${stats.totalPairs}`} color="slate" />
-          <KPI label="RF-RESDES cover"   value={pct(stats.hasRfResdes, stats.totalPairs)}  sub={`${stats.hasRfResdes} / ${stats.totalPairs}`} color="green" />
+          <KPI label="Pairs with both"       value={stats.hasRfResdes}    color="indigo" />
+          <KPI label="Avg Δ Inbound"         value={fmtH(stats.avgDeltaResdesH)} sub="RFID Inbound minus EDI (+ = RFID later)" color={stats.avgDeltaResdesH !== null && stats.avgDeltaResdesH >= 0 ? 'green' : 'rose'} />
+          <KPI label="EDI RESDES cover"      value={pct(stats.hasEdiResdes, stats.totalPairs)} sub={`${stats.hasEdiResdes} / ${stats.totalPairs}`} color="slate" />
+          <KPI label="RFID Inbound cover"    value={pct(stats.hasRfResdes, stats.totalPairs)}  sub={`${stats.hasRfResdes} / ${stats.totalPairs}`} color="green" />
         </div>
 
         <p className="text-[11px] text-slate-500 mb-2 italic">
-          Δ = RF-RESDES minus EDI RESDES (hours). Negative = RFID reads <strong>before</strong> EDI declares; positive = RFID reads <strong>after</strong>.
-          Colour: green ≤ ±2h · amber ≤ ±12h · red &gt; ±12h.
+          Δ = RFID Inbound minus EDI RESDES (hours). Negative = RFID reads <strong>before</strong> EDI declares; positive = RFID reads <strong>after</strong>.
+          Colour: green = positive · red = negative.
         </p>
         <CentreTable data={stats.byDestCentre} label="Δ" />
       </Section>
@@ -358,7 +433,7 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
       {/* ── 4. Transit time comparison ── */}
       <Section
         title="Transit Time: RFID vs EDI"
-        subtitle={`RFID: DEPARTURE → ARRIVAL · EDI: PREDES → RESDES — ${stats.transitPairs} pairs with full origin+destination match`}
+        subtitle={`RFID Outbound → RFID Inbound vs EDI PREDES → RESDES — ${stats.transitPairs} international pairs`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <KPI label="Transit pairs"     value={stats.transitPairs}    color="indigo" />
@@ -377,7 +452,7 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
                 <YAxis type="category" dataKey="route" tick={{ fontSize: 10 }} width={140} />
                 <Tooltip formatter={(v: number) => [`${v.toFixed(1)}h (${(v / 24).toFixed(1)}d)`, '']} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Bar dataKey="rfidAvg" name="RFID (DEP→ARR)"       fill={C.rfid} radius={[0, 3, 3, 0]} barSize={11} />
+                <Bar dataKey="rfidAvg" name="RFID (Outbound→Inbound)" fill={C.rfid} radius={[0, 3, 3, 0]} barSize={11} />
                 <Bar dataKey="ediAvg"  name="EDI (PREDES→RESDES)"  fill={C.edi}  radius={[0, 3, 3, 0]} barSize={11} />
               </BarChart>
             </ResponsiveContainer>
@@ -399,7 +474,7 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
                   label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: '#94a3b8' } }} />
                 <Tooltip formatter={(v: any, name: string) => [`${v}%`, name]} labelFormatter={l => `≤ ${l}h`} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Line data={stats.rfTransitCdf}  type="monotone" dataKey="pct" name="RFID" stroke={C.rfid} strokeWidth={2} dot={false} />
+                <Line data={stats.rfTransitCdf}  type="monotone" dataKey="pct" name="RFID (Outbound→Inbound)" stroke={C.rfid} strokeWidth={2} dot={false} />
                 <Line data={stats.ediTransitCdf} type="monotone" dataKey="pct" name="EDI"  stroke={C.edi}  strokeWidth={2} dot={false} strokeDasharray="5 3" />
               </LineChart>
             </ResponsiveContainer>
@@ -410,17 +485,18 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
       {/* ── 5. EDI Chain completeness (gap analysis) ── */}
       <Section
         title="EDI Chain Completeness"
-        subtitle={`Events received per receptacle across the full EDI chain: PREDES → CARDIT → RESDIT74 → RESDIT21 → RESDES — ${stats.totalPairs} total pairs`}
+        subtitle={`Events received per receptacle across the full chain: PREDES → RFID Outbound → RESDIT74 → RESDIT21 → RFID Inbound → RESDES — ${stats.totalPairs} total pairs`}
       >
         <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
           <p className="text-[11px] text-slate-400 mb-3 italic">
-            RFID has no equivalent for CARDIT, RESDIT74 or RESDIT21. Where these are missing, RFID readings provide the only physical evidence of the receptacle's location.
+            RFID has no equivalent for RESDIT74 or RESDIT21. Where these are missing, RFID readings provide the only physical evidence of the receptacle's location.
           </p>
-          <ChainBar label="PREDES"   present={stats.hasEdiPredes}   total={stats.totalPairs} />
-          <ChainBar label="CARDIT"   present={stats.hasEdiCardit}   total={stats.totalPairs} />
-          <ChainBar label="RESDIT74" present={stats.hasEdiResdit74} total={stats.totalPairs} />
-          <ChainBar label="RESDIT21" present={stats.hasEdiResdit21} total={stats.totalPairs} />
-          <ChainBar label="RESDES"   present={stats.hasEdiResdes}   total={stats.totalPairs} />
+          <ChainBar label="PREDES"        present={stats.hasEdiPredes}   total={stats.totalPairs} />
+          <ChainBar label="RFID Outbound" present={stats.hasRfPredes}    total={stats.totalPairs} rfid />
+          <ChainBar label="RESDIT74"      present={stats.hasEdiResdit74} total={stats.totalPairs} />
+          <ChainBar label="RESDIT21"      present={stats.hasEdiResdit21} total={stats.totalPairs} />
+          <ChainBar label="RFID Inbound"  present={stats.hasRfResdes}    total={stats.totalPairs} rfid />
+          <ChainBar label="RESDES"        present={stats.hasEdiResdes}   total={stats.totalPairs} />
         </div>
 
         {/* Gap by route */}
@@ -437,7 +513,6 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
                   <th className="px-3 py-2 text-center font-semibold text-slate-600">DEP</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-600">ARR</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-600">Transit</th>
-                  <th className="px-3 py-2 text-center font-semibold text-amber-600">Missing CARDIT</th>
                   <th className="px-3 py-2 text-center font-semibold text-amber-600">Missing RESDIT74</th>
                   <th className="px-3 py-2 text-center font-semibold text-amber-600">Missing RESDIT21</th>
                   <th className="px-3 py-2 text-center font-semibold text-rose-600">Missing RESDES</th>
@@ -451,7 +526,6 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
                     <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.depCount}</td>
                     <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.arrCount}</td>
                     <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.transitCount}</td>
-                    <td className="px-3 py-2 text-center"><GapBadge pct={r.missingCarditPct} /></td>
                     <td className="px-3 py-2 text-center"><GapBadge pct={r.missingResdit74Pct} /></td>
                     <td className="px-3 py-2 text-center"><GapBadge pct={r.missingResdit21Pct} /></td>
                     <td className="px-3 py-2 text-center"><GapBadge pct={r.missingResdesPct} /></td>

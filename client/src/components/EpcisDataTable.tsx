@@ -101,7 +101,7 @@ interface EpcisDataTableProps {
 export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
-  const [filterE2E, setFilterE2E] = useState<'ALL' | 'E2E' | 'ORIGIN_ONLY'>('ALL');
+  const [filterE2E, setFilterE2E] = useState<'ALL' | 'E2E' | 'ORIGIN_ONLY' | 'DEST_ONLY'>('ALL');
   const [sortCol, setSortCol] = useState<SortKey>('origin_time');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const PAGE_SIZE = 20;
@@ -109,7 +109,8 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
   const filtered = useMemo(() => {
     let data = journeys;
     if (filterE2E === 'E2E') data = data.filter(j => j.has_destination);
-    if (filterE2E === 'ORIGIN_ONLY') data = data.filter(j => !j.has_destination);
+    if (filterE2E === 'ORIGIN_ONLY') data = data.filter(j => !j.has_destination && (!!j.origin_time || !!j.departure_time));
+    if (filterE2E === 'DEST_ONLY') data = data.filter(j => j.has_destination && !j.origin_time && !j.departure_time);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       data = data.filter(j =>
@@ -144,7 +145,8 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
   }
 
   const e2eCount = journeys.filter(j => j.has_destination).length;
-  const originOnlyCount = journeys.length - e2eCount;
+  const originOnlyCount = journeys.filter(j => !j.has_destination && (!!j.origin_time || !!j.departure_time)).length;
+  const destOnlyCount = journeys.filter(j => j.has_destination && !j.origin_time && !j.departure_time).length;
 
   return (
     <div className="space-y-3">
@@ -155,6 +157,7 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
             { key: 'ALL',         label: 'All',          count: journeys.length },
             { key: 'E2E',         label: 'End-to-End',   count: e2eCount },
             { key: 'ORIGIN_ONLY', label: 'Origin Only',  count: originOnlyCount },
+            { key: 'DEST_ONLY',   label: 'Destination Only', count: destOnlyCount },
           ] as const).map(f => (
             <button
               key={f.key}

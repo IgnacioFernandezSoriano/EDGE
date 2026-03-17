@@ -8,8 +8,8 @@
  *   PREDES → CARDIT → RESDIT74 → RESDIT21 → RESDES
  *
  * RFID equivalences:
- *   RF-PREDES  = RFID ORIGIN      (first reading ≈ departure preparation)
- *   RF-RESDES  = RFID DESTINATION (last reading  ≈ delivery confirmation)
+ *   RFID Outbound = RFID DEPARTURE event (last reading before international border ≈ PREDES)
+ *   RFID Inbound  = RFID ARRIVAL event   (first reading after international border ≈ RESDES)
  *   RFID transit = DEPARTURE → ARRIVAL
  *   EDI  transit = PREDES    → RESDES
  */
@@ -72,7 +72,6 @@ export interface CentreStats {
   country:    string;
   n:          number;
   mean:       number | null;
-  mode:       number | null;
   median:     number | null;
 }
 
@@ -187,7 +186,31 @@ async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkR
     from += PAGE;
   }
 
-  return allRows;
+  // Keep only international movements (origin country ≠ destination country)
+  const international = allRows.filter(r =>
+    r.rf_origin_country && r.rf_dest_country &&
+    r.rf_origin_country !== r.rf_dest_country
+  );
+
+  // Recalculate rf_transit_hours as RFID Outbound → RFID Inbound
+  // (rf_predes_time → rf_resdes_time) for each row, overriding the
+  // pre-computed value from the view which uses DEPARTURE→ARRIVAL events
+  // and can include cross-journey readings producing inflated values.
+  for (const r of international) {
+    if (r.rf_predes_time && r.rf_resdes_time) {
+      const dep = new Date(r.rf_predes_time).getTime();
+      const arr = new Date(r.rf_resdes_time).getTime();
+      const diffH = (arr - dep) / 3_600_000;
+      // Only accept positive, plausible transit times (0–720h = 30 days)
+      r.rf_transit_hours = diffH > 0 && diffH <= 720 ? Math.round(diffH * 10) / 10 : null;
+    } else {
+      r.rf_transit_hours = null;
+    }
+    // Recalculate has_rf_transit: need both RFID Outbound and Inbound
+    r.has_rf_transit = r.rf_transit_hours !== null;
+  }
+
+  return international;
 }
 
 /* ── Centre-level delta stats ───────────────────────────────────────────────── */
@@ -219,10 +242,12 @@ function buildCentreStats(
       country: v.country,
       n:       v.deltas.length,
       mean:    mean(v.deltas),
-      mode:    mode(v.deltas),
       median:  median(v.deltas),
     }))
-    .sort((a, b) => b.n - a.n);
+    .sort((a, b) => {
+      const cmp = a.country.localeCompare(b.country);
+      return cmp !== 0 ? cmp : a.centre.localeCompare(b.centre);
+    });
 }
 
 /* ── Stats ──────────────────────────────────────────────────────────────────── */
@@ -286,7 +311,7 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
     }))
     .sort((a, b) => b.count - a.count);
 
-  // By origin centre — Δ PREDES (RF-PREDES minus EDI PREDES)
+  // By origin centre — Δ PREDES (RFID Outbound minus EDI PREDES)
   const byOriginCentre = buildCentreStats(
     rows,
     r => r.rf_origin_centre,
@@ -296,7 +321,7 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
     r => r.delta_predes_hours !== null,
   );
 
-  // By destination centre — Δ RESDES (RF-RESDES minus EDI RESDES)
+  // By destination centre — Δ RESDES (RFID Inbound minus EDI RESDES)
   const byDestCentre = buildCentreStats(
     rows,
     r => r.rf_dest_centre,

@@ -24,6 +24,7 @@ import { GlobalFilters } from '@/components/GlobalFilters';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { OverviewAnalysis, DepartureAnalysis, ArrivalAnalysis, TransitAnalysis } from '@/components/AnalysisPanel';
 import { BenchmarkPanel } from '@/components/BenchmarkPanel';
+import { SearchID } from '@/components/SearchID';
 
 const EDGE_LOGO = 'https://d2xsxph8kpxj0f.cloudfront.net/108732851/5NdCdX6TpQ4zqErLoimWrK/edge-logo_ae84570f.png';
 
@@ -55,7 +56,7 @@ const COVERAGE_LABEL: Record<string, string> = {
   EDI_ONLY:    'EDI only (no RFID)',
 };
 
-const TABS = ['RFID', 'Tracking', 'Benchmark'];
+const TABS = ['RFID', 'Benchmark'];
 
 /* ─── Tooltip ─── */
 function ChartTooltip({ active, payload, label }: any) {
@@ -568,7 +569,6 @@ export default function Home() {
     effectiveDateRange,
     originCountry, setOriginCountry,
     destCountry, setDestCountry,
-    allOriginCountries, allDestCountries,
   } = useTrackingData();
   const [activeTab, setActiveTab] = useState('RFID');
   const [tableFilter, setTableFilter] = useState('ALL');
@@ -631,7 +631,7 @@ export default function Home() {
         <div className="text-center space-y-4">
           <div className="w-10 h-10 rounded-full mx-auto animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
           <p className="text-sm text-slate-500 font-medium">Loading tracking data from Supabase…</p>
-          <p className="text-xs text-slate-400">tracking_events · {new Date().toLocaleDateString('en-GB')}</p>
+          <p className="text-xs text-slate-400">RFID · {new Date().toLocaleDateString('en-GB')}</p>
         </div>
       </div>
     );
@@ -654,7 +654,22 @@ export default function Home() {
     );
   }
 
-  if (!stats) return null;
+  // stats from useTrackingData may be null when tracking_events has no rows for the
+  // selected filter combination. This is fine — the active tabs (RFID, Benchmark) use
+  // epcis data exclusively. Legacy tabs that use stats are guarded by activeTab checks.
+  const safeStats = stats ?? {
+    departurePairs: 0, departureAvgHours: 0, departureRfidBeforePct: 0, departureRfidBefore: 0,
+    byOriginCountry: [], departureByCentre: [], departureCdf: [],
+    arrivalPairs: 0, arrivalAvgHours: 0, arrivalRfidBeforePct: 0, arrivalRfidBefore: 0,
+    byDestCountry: [], arrivalByCentre: [], arrivalCdf: [],
+    transitPairs: 0, rfidTransitAvg: 0, ediTransitAvg: 0, transitDiffAvg: 0,
+    rfidPureP25: 0, rfidPureP50: 0, rfidPureP75: 0, rfidPureRoutes: [],
+    rfidDepartureTotal: 0, rfidDepartureByOriginCentre: [], rfidDepartureByOriginCountry: [], rfidDepartureCdf: [],
+    rfidArrivalTotal: 0, rfidArrivalByDestCentre: [], rfidArrivalByDestCountry: [], rfidArrivalCdf: [],
+    byRoute: [],
+    transitRoutes: [], rfidTransitCdf: [], ediTransitCdf: [],
+    coverageBreakdown: [],
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -677,9 +692,9 @@ export default function Home() {
                 <p className="text-[10px] text-slate-400 leading-tight">
                   {effectiveDateRange.from && effectiveDateRange.to
                     ? `${effectiveDateRange.from} – ${effectiveDateRange.to}`
-                    : 'Jan 2026 – Mar 2026'} · <span className="mono-value">{events.length.toLocaleString()}</span>
-                  {events.length !== allEvents.length && (
-                    <span className="text-indigo-500"> / {allEvents.length.toLocaleString()}</span>
+                    : 'Jan 2026 – Mar 2026'} · <span className="mono-value">{epcis.journeys.length.toLocaleString()}</span>
+                  {epcis.journeys.length !== epcis.stats.uniqueReceptacles && (
+                    <span className="text-indigo-500"> / {epcis.stats.uniqueReceptacles.toLocaleString()}</span>
                   )} receptacles
                 </p>
               </div>
@@ -691,7 +706,7 @@ export default function Home() {
               <div className="flex flex-col items-center gap-1">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 px-1">RFID</span>
                 <div className="flex items-center gap-1">
-                  {['RFID', 'Tracking'].map(tab => (
+                  {['RFID'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -753,10 +768,10 @@ export default function Home() {
               onOriginChange={setOriginCountry}
               destCountry={destCountry}
               onDestChange={setDestCountry}
-              allOriginCountries={allOriginCountries}
-              allDestCountries={allDestCountries}
-              filteredCount={events.length}
-              totalCount={allEvents.length}
+              allOriginCountries={epcis.allOriginCountries}
+              allDestCountries={epcis.allDestCountries}
+              filteredCount={epcis.journeys.length}
+              totalCount={epcis.stats.uniqueReceptacles}
             />
           </div>
         </div>
@@ -771,8 +786,8 @@ export default function Home() {
           to={dateRange.to}
           originCountry={originCountry}
           destCountry={destCountry}
-          count={events.length}
-          total={allEvents.length}
+          count={epcis.journeys.length}
+          total={epcis.stats.uniqueReceptacles}
         />
 
         {/* ════════════════════ BENCHMARK ════════════════════ */}
@@ -796,15 +811,15 @@ export default function Home() {
             subtitle="Comparison of the first RFID reading at the origin centre against the PREDES (pre-advice of dispatch) EDI message. Positive values = RFID detected AFTER PREDES."
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <KpiCard title="Analysed Pairs" value={stats.departurePairs.toLocaleString()} subtitle="RFID + PREDES matches" badge={{ label: 'departure', color: 'blue' }}
+              <KpiCard title="Analysed Pairs" value={safeStats.departurePairs.toLocaleString()} subtitle="RFID + PREDES matches" badge={{ label: 'departure', color: 'blue' }}
                 tooltip="Number of receptacles that have both an RFID reading at the origin centre AND a PREDES message. Only these pairs can be used to calculate the departure lag (time difference between administrative dispatch and physical detection)."
               />
-              <KpiCard title="Avg Lag" value={`+${stats.departureAvgHours}h / ${(stats.departureAvgHours / 24).toFixed(1)}d`} subtitle="RFID after PREDES" badge={{ label: 'RFID after PREDES', color: 'amber' }}
+              <KpiCard title="Avg Lag" value={`+${safeStats.departureAvgHours}h / ${(safeStats.departureAvgHours / 24).toFixed(1)}d`} subtitle="RFID after PREDES" badge={{ label: 'RFID after PREDES', color: 'amber' }}
                 tooltip="The median (50th percentile) time between the PREDES message and the first RFID reading at the origin centre. The median is used instead of the mean to reduce the influence of extreme outliers. A positive value is expected and operationally normal."
               />
 
-              <KpiCard title="RFID Before PREDES" value={`${stats.departureRfidBeforePct}%`} subtitle={`${stats.departureRfidBefore} anomalous cases`}
-                badge={{ label: stats.departureRfidBeforePct < 10 ? 'Normal' : 'Review', color: stats.departureRfidBeforePct < 10 ? 'green' : 'red' }}
+              <KpiCard title="RFID Before PREDES" value={`${safeStats.departureRfidBeforePct}%`} subtitle={`${safeStats.departureRfidBefore} anomalous cases`}
+                badge={{ label: safeStats.departureRfidBeforePct < 10 ? 'Normal' : 'Review', color: safeStats.departureRfidBeforePct < 10 ? 'green' : 'red' }}
                 tooltip="Percentage of cases where the RFID reading at origin occurred BEFORE the PREDES message was issued. This is technically anomalous (PREDES should precede physical departure). Causes: EDI transmission delays, timestamp errors, or pre-loading of receptacles before administrative processing."
               />
             </div>
@@ -812,8 +827,8 @@ export default function Home() {
             {/* ── By Origin Country ── */}
             <div className="grid md:grid-cols-2 gap-6">
               <ChartCard title="Departure Lag by Origin Country" subtitle="Avg hours between PREDES and first RFID reading" tooltip="Each bar shows the avg departure lag per origin country. Amber (positive) = RFID detected after PREDES (normal). Green (negative) = RFID detected before PREDES (anomalous). Reference line at 0h separates both cases.">
-                <ResponsiveContainer width="100%" height={Math.max(220, stats.byOriginCountry.length * 34)}>
-                  <BarChart data={stats.byOriginCountry} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(220, safeStats.byOriginCountry.length * 34)}>
+                  <BarChart data={safeStats.byOriginCountry} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
                     <YAxis type="category" dataKey="country" tick={{ fontSize: 11 }} width={110} />
@@ -821,7 +836,7 @@ export default function Home() {
                       label={{ value: '← RFID before PREDES  |  RFID after PREDES →', position: 'top', style: { fontSize: 9, fill: '#94a3b8' } }} />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="avgDepartureLag" name="Avg lag (hours)" radius={[0, 3, 3, 0]}>
-                      {stats.byOriginCountry.map((entry, i) => <Cell key={i} fill={entry.avgDepartureLag < 0 ? C.emerald : C.amber} />)}
+                      {safeStats.byOriginCountry.map((entry, i) => <Cell key={i} fill={entry.avgDepartureLag < 0 ? C.emerald : C.amber} />)}
                       <LabelList dataKey="avgDepartureLag" position="right" formatter={(v: number) => `${v.toFixed(0)}h / ${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
@@ -829,8 +844,8 @@ export default function Home() {
               </ChartCard>
 
               <ChartCard title="Receptacles by Origin Country" subtitle="Volume of departure pairs per country" tooltip="Number of receptacles with RFID+PREDES pairs per origin country.">
-                <ResponsiveContainer width="100%" height={Math.max(220, stats.byOriginCountry.length * 34)}>
-                  <BarChart data={stats.byOriginCountry} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(220, safeStats.byOriginCountry.length * 34)}>
+                  <BarChart data={safeStats.byOriginCountry} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} />
                     <YAxis type="category" dataKey="country" tick={{ fontSize: 11 }} width={110} />
@@ -846,8 +861,8 @@ export default function Home() {
             {/* ── By Origin Centre ── */}
             <div className="grid md:grid-cols-2 gap-6">
               <ChartCard title="Departure Lag by Origin Centre" subtitle="Avg hours between PREDES and first RFID reading" tooltip="Each bar shows the avg departure lag for receptacles processed at that origin centre. Centres with longer positive bars have larger gaps between administrative preparation (PREDES) and physical RFID detection. Negative bars indicate centres where RFID typically precedes PREDES.">
-                <ResponsiveContainer width="100%" height={Math.max(220, stats.departureByCentre.length * 34)}>
-                  <BarChart data={stats.departureByCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(220, safeStats.departureByCentre.length * 34)}>
+                  <BarChart data={safeStats.departureByCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
                     <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} />
@@ -860,8 +875,8 @@ export default function Home() {
               </ChartCard>
 
               <ChartCard title="RFID Before PREDES Rate by Centre" subtitle="% of cases where RFID was detected before PREDES was issued" tooltip="Red bars show the percentage of receptacles at each centre where RFID was detected before the PREDES message. High rates at specific centres may indicate: (1) EDI message transmission delays at that origin postal operator, (2) systematic timestamp issues, or (3) early physical processing before administrative dispatch.">
-                <ResponsiveContainer width="100%" height={Math.max(220, stats.departureByCentre.length * 34)}>
-                  <BarChart data={stats.departureByCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(220, safeStats.departureByCentre.length * 34)}>
+                  <BarChart data={safeStats.departureByCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
                     <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} />
@@ -874,14 +889,14 @@ export default function Home() {
               </ChartCard>
             </div>
 
-            {stats.departureCdf.length > 0 && (
+            {safeStats.departureCdf.length > 0 && (
               <ChartCard
                 title="Cumulative Frequency: Departure Lag"
-                subtitle={`Distribution of ${stats.departurePairs.toLocaleString()} departure lag values (hours)`}
+                subtitle={`Distribution of ${safeStats.departurePairs.toLocaleString()} departure lag values (hours)`}
                 tooltip="Cumulative distribution function (CDF) of departure lag. The Y axis shows the percentage of receptacles with a lag ≤ X hours. The steeper the curve, the more concentrated the distribution. The vertical reference line marks 0h (RFID = PREDES). Read: 'X% of receptacles have a departure lag ≤ Y hours'."
               >
                 <ResponsiveContainer width="100%" height={260}>
-                  <AreaChart data={stats.departureCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
+                  <AreaChart data={safeStats.departureCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
                     <defs>
                       <linearGradient id="cdfDepGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={C.indigo} stopOpacity={0.18} />
@@ -903,7 +918,7 @@ export default function Home() {
             )}
 
             <InfoBox color="indigo">
-              <span className="font-semibold">Interpretation:</span> The PREDES message is issued by the origin postal operator when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs. The avg lag of <strong>+{stats.departureAvgHours}h ({(stats.departureAvgHours/24).toFixed(1)}d)</strong> is operationally consistent with this workflow. Cases where RFID precedes PREDES ({stats.departureRfidBeforePct}%) may indicate EDI transmission delays or timestamp inconsistencies.
+              <span className="font-semibold">Interpretation:</span> The PREDES message is issued by the origin postal operator when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs. The avg lag of <strong>+{safeStats.departureAvgHours}h ({(safeStats.departureAvgHours/24).toFixed(1)}d)</strong> is operationally consistent with this workflow. Cases where RFID precedes PREDES ({safeStats.departureRfidBeforePct}%) may indicate EDI transmission delays or timestamp inconsistencies.
             </InfoBox>
 
             <DepartureAnalysis s={stats} />
@@ -918,19 +933,19 @@ export default function Home() {
             subtitle="Comparison of the last RFID reading at the destination centre against the RESDES (advice of receipt) EDI message. Negative values = RFID detected BEFORE RESDES (real-time advantage)."
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <KpiCard title="Analysed Pairs" value={stats.arrivalPairs.toLocaleString()} subtitle="RFID + RESDES matches" badge={{ label: 'arrival', color: 'green' }}
+              <KpiCard title="Analysed Pairs" value={safeStats.arrivalPairs.toLocaleString()} subtitle="RFID + RESDES matches" badge={{ label: 'arrival', color: 'green' }}
                 tooltip="Number of receptacles with both an RFID reading at the destination centre AND a RESDES message. Only these pairs enable the arrival lead/lag calculation."
               />
               <KpiCard title="Avg Lead/Lag"
-                value={`${stats.arrivalAvgHours < 0 ? '' : '+'}${stats.arrivalAvgHours.toFixed(1)}h / ${(Math.abs(stats.arrivalAvgHours)/24).toFixed(1)}d`}
-                subtitle={stats.arrivalAvgHours < 0 ? `RFID before RESDES` : `RFID after RESDES`}
-                badge={{ label: stats.arrivalAvgHours < 0 ? 'RFID advantage' : 'EDI faster', color: stats.arrivalAvgHours < 0 ? 'green' : 'amber' }}
+                value={`${safeStats.arrivalAvgHours < 0 ? '' : '+'}${safeStats.arrivalAvgHours.toFixed(1)}h / ${(Math.abs(safeStats.arrivalAvgHours)/24).toFixed(1)}d`}
+                subtitle={safeStats.arrivalAvgHours < 0 ? `RFID before RESDES` : `RFID after RESDES`}
+                badge={{ label: safeStats.arrivalAvgHours < 0 ? 'RFID advantage' : 'EDI faster', color: safeStats.arrivalAvgHours < 0 ? 'green' : 'amber' }}
                 tooltip="Median time between the last RFID reading at the destination and the RESDES message. Negative = RFID detected BEFORE RESDES (RFID provides earlier visibility). Positive = RESDES issued before RFID detection (EDI is faster at this destination)."
               />
-              <KpiCard title="RFID Before RESDES" value={`${stats.arrivalRfidBeforePct}%`} subtitle={`${stats.arrivalRfidBefore} cases`} badge={{ label: 'real-time visibility', color: 'green' }}
+              <KpiCard title="RFID Before RESDES" value={`${safeStats.arrivalRfidBeforePct}%`} subtitle={`${safeStats.arrivalRfidBefore} cases`} badge={{ label: 'real-time visibility', color: 'green' }}
                 tooltip="Percentage of arrivals where RFID detected the receptacle BEFORE the RESDES message was generated. This directly measures the real-time visibility advantage of RFID: the higher this percentage, the more value RFID adds over EDI at the destination."
               />
-              <KpiCard title="RFID After RESDES" value={`${100 - stats.arrivalRfidBeforePct}%`} subtitle="EDI faster than RFID" badge={{ label: 'review', color: 'amber' }}
+              <KpiCard title="RFID After RESDES" value={`${100 - safeStats.arrivalRfidBeforePct}%`} subtitle="EDI faster than RFID" badge={{ label: 'review', color: 'amber' }}
                 tooltip="Percentage of arrivals where the RESDES message was issued BEFORE the RFID reading. In these cases EDI provides earlier visibility than RFID. May indicate: late RFID scanning at the destination, or very fast EDI processing at certain destination operators."
               />
             </div>
@@ -938,8 +953,8 @@ export default function Home() {
             {/* ── By Destination Country ── */}
             <div className="grid md:grid-cols-2 gap-6">
               <ChartCard title="Arrival Lead/Lag by Destination Country" subtitle="Avg hours (negative = RFID before RESDES)" tooltip="Each bar shows the avg arrival lead/lag per destination country. Green (negative) = RFID detected before RESDES — real-time advantage. Amber (positive) = RESDES issued before RFID. Reference line at 0h separates both cases.">
-                <ResponsiveContainer width="100%" height={Math.max(220, stats.byDestCountry.length * 34)}>
-                  <BarChart data={stats.byDestCountry} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(220, safeStats.byDestCountry.length * 34)}>
+                  <BarChart data={safeStats.byDestCountry} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
                     <YAxis type="category" dataKey="country" tick={{ fontSize: 11 }} width={110} />
@@ -947,7 +962,7 @@ export default function Home() {
                       label={{ value: '← RFID before RESDES  |  RFID after RESDES →', position: 'top', style: { fontSize: 9, fill: '#94a3b8' } }} />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="avgArrivalLead" name="Avg lead/lag (hours)" radius={[0, 3, 3, 0]}>
-                      {stats.byDestCountry.map((entry, i) => <Cell key={i} fill={entry.avgArrivalLead < 0 ? C.emerald : C.amber} />)}
+                      {safeStats.byDestCountry.map((entry, i) => <Cell key={i} fill={entry.avgArrivalLead < 0 ? C.emerald : C.amber} />)}
                       <LabelList dataKey="avgArrivalLead" position="right" formatter={(v: number) => `${v.toFixed(0)}h / ${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
@@ -955,8 +970,8 @@ export default function Home() {
               </ChartCard>
 
               <ChartCard title="Receptacles by Destination Country" subtitle="Volume of arrival pairs per country" tooltip="Number of receptacles with RFID+RESDES pairs per destination country.">
-                <ResponsiveContainer width="100%" height={Math.max(220, stats.byDestCountry.length * 34)}>
-                  <BarChart data={stats.byDestCountry} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(220, safeStats.byDestCountry.length * 34)}>
+                  <BarChart data={safeStats.byDestCountry} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} />
                     <YAxis type="category" dataKey="country" tick={{ fontSize: 11 }} width={110} />
@@ -972,15 +987,15 @@ export default function Home() {
             {/* ── By Destination Centre ── */}
             <div className="grid md:grid-cols-2 gap-6">
               <ChartCard title="Arrival Lead/Lag by Destination Centre" subtitle="Avg hours (negative = RFID before RESDES)" tooltip="Each bar shows the avg arrival lead/lag per destination centre. Green bars (negative values) = RFID detected before RESDES — RFID provides real-time advantage. Amber bars (positive values) = RESDES issued before RFID detection. The reference line at 0 separates the two cases.">
-                <ResponsiveContainer width="100%" height={Math.max(220, stats.arrivalByCentre.length * 34)}>
-                  <BarChart data={stats.arrivalByCentre} layout="vertical" margin={{ left: 0, right: 55, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(220, safeStats.arrivalByCentre.length * 34)}>
+                  <BarChart data={safeStats.arrivalByCentre} layout="vertical" margin={{ left: 0, right: 55, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
                     <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} />
                     <ReferenceLine x={0} stroke="#94a3b8" strokeDasharray="4 2" />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="avg" name="Avg lead/lag (hours)" radius={[0, 3, 3, 0]}>
-                      {stats.arrivalByCentre.map((entry, i) => <Cell key={i} fill={entry.avg < 0 ? C.emerald : C.amber} />)}
+                      {safeStats.arrivalByCentre.map((entry, i) => <Cell key={i} fill={entry.avg < 0 ? C.emerald : C.amber} />)}
                       <LabelList dataKey="avg" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
@@ -988,8 +1003,8 @@ export default function Home() {
               </ChartCard>
 
               <ChartCard title="RFID Before RESDES Rate by Destination" subtitle="% of arrivals where RFID detected before RESDES" tooltip="Green bars show the percentage of arrivals at each destination centre where RFID was detected before RESDES. A high rate (close to 100%) means RFID consistently provides earlier visibility than EDI at that destination. A low rate means EDI is typically faster at that centre.">
-                <ResponsiveContainer width="100%" height={Math.max(220, stats.arrivalByCentre.length * 34)}>
-                  <BarChart data={stats.arrivalByCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(220, safeStats.arrivalByCentre.length * 34)}>
+                  <BarChart data={safeStats.arrivalByCentre} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
                     <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} />
@@ -1002,14 +1017,14 @@ export default function Home() {
               </ChartCard>
             </div>
 
-            {stats.arrivalCdf.length > 0 && (
+            {safeStats.arrivalCdf.length > 0 && (
               <ChartCard
                 title="Cumulative Frequency: Arrival Lead/Lag"
-                subtitle={`Distribution of ${stats.arrivalPairs.toLocaleString()} arrival lead/lag values (hours)`}
+                subtitle={`Distribution of ${safeStats.arrivalPairs.toLocaleString()} arrival lead/lag values (hours)`}
                 tooltip="Cumulative distribution function (CDF) of arrival lead/lag. Negative values = RFID detected before RESDES (RFID advantage). The Y axis shows the percentage of receptacles with a lead/lag ≤ X hours. The vertical reference line at 0h separates RFID-before (left) from RFID-after (right) cases."
               >
                 <ResponsiveContainer width="100%" height={260}>
-                  <AreaChart data={stats.arrivalCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
+                  <AreaChart data={safeStats.arrivalCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
                     <defs>
                       <linearGradient id="cdfArrGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={C.emerald} stopOpacity={0.18} />
@@ -1031,7 +1046,7 @@ export default function Home() {
             )}
 
             <InfoBox color="emerald">
-              <span className="font-semibold">Key Finding:</span> In <strong>{stats.arrivalRfidBeforePct}%</strong> of arrival events, the RFID system detects the receptacle <em>before</em> the RESDES message is generated. This represents the measurable real-time visibility advantage of RFID over EDI at the destination centre — the avg lead time is <strong>{Math.abs(stats.arrivalAvgHours).toFixed(1)}h ({(Math.abs(stats.arrivalAvgHours)/24).toFixed(1)}d)</strong>.
+              <span className="font-semibold">Key Finding:</span> In <strong>{safeStats.arrivalRfidBeforePct}%</strong> of arrival events, the RFID system detects the receptacle <em>before</em> the RESDES message is generated. This represents the measurable real-time visibility advantage of RFID over EDI at the destination centre — the avg lead time is <strong>{Math.abs(safeStats.arrivalAvgHours).toFixed(1)}h ({(Math.abs(safeStats.arrivalAvgHours)/24).toFixed(1)}d)</strong>.
             </InfoBox>
 
             <ArrivalAnalysis s={stats} />
@@ -1046,25 +1061,25 @@ export default function Home() {
             subtitle="For receptacles with RFID readings at both origin and destination centres: physical transit (RFID) vs declared transit (EDI: RESDES − PREDES)."
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <KpiCard title="Validated Routes" value={stats.transitPairs.toLocaleString()} subtitle="Full origin→dest RFID" badge={{ label: 'end-to-end', color: 'blue' }}
+              <KpiCard title="Validated Routes" value={safeStats.transitPairs.toLocaleString()} subtitle="Full origin→dest RFID" badge={{ label: 'end-to-end', color: 'blue' }}
                 tooltip="Number of receptacles with RFID readings at both a distinct origin and destination centre (full_route_validated = true). Only these enable a direct comparison between physical transit time (RFID) and declared transit time (EDI)."
               />
-              <KpiCard title="Avg RFID Transit" value={`${stats.rfidTransitAvg}h / ${(stats.rfidTransitAvg / 24).toFixed(1)}d`} subtitle="Avg physical transit (RFID)" badge={{ label: 'physical', color: 'blue' }}
+              <KpiCard title="Avg RFID Transit" value={`${safeStats.rfidTransitAvg}h / ${(safeStats.rfidTransitAvg / 24).toFixed(1)}d`} subtitle="Avg physical transit (RFID)" badge={{ label: 'physical', color: 'blue' }}
                 tooltip="Median physical transit time measured by RFID: the time between the last RFID reading at the origin centre and the first RFID reading at the destination centre. This is the actual time the receptacle spent in transit, as measured by the RFID infrastructure."
               />
-              <KpiCard title="Avg EDI Transit" value={`${stats.ediTransitAvg}h / ${(stats.ediTransitAvg / 24).toFixed(1)}d`} subtitle="Avg declared transit (EDI)" badge={{ label: 'declared', color: 'slate' }}
+              <KpiCard title="Avg EDI Transit" value={`${safeStats.ediTransitAvg}h / ${(safeStats.ediTransitAvg / 24).toFixed(1)}d`} subtitle="Avg declared transit (EDI)" badge={{ label: 'declared', color: 'slate' }}
                 tooltip="Median declared transit time from EDI messages: RESDES timestamp minus PREDES timestamp. This is the administratively declared transit time, which may differ from the physical transit measured by RFID due to processing delays, pre-advice timing, or timestamp inconsistencies."
               />
-              <KpiCard title="EDI Overestimate" value={`${stats.transitDiffAvg > 0 ? '+' : ''}${stats.transitDiffAvg}h / ${(Math.abs(stats.transitDiffAvg)/24).toFixed(1)}d`} subtitle="EDI vs RFID transit gap"
-                badge={{ label: stats.transitDiffAvg > 0 ? 'EDI longer' : 'RFID longer', color: stats.transitDiffAvg > 0 ? 'amber' : 'green' }}
+              <KpiCard title="EDI Overestimate" value={`${safeStats.transitDiffAvg > 0 ? '+' : ''}${safeStats.transitDiffAvg}h / ${(Math.abs(safeStats.transitDiffAvg)/24).toFixed(1)}d`} subtitle="EDI vs RFID transit gap"
+                badge={{ label: safeStats.transitDiffAvg > 0 ? 'EDI longer' : 'RFID longer', color: safeStats.transitDiffAvg > 0 ? 'amber' : 'green' }}
                 tooltip="Median difference between EDI-declared transit and RFID-measured physical transit (EDI minus RFID). Positive = EDI overestimates transit time (EDI says the journey took longer than RFID measured). Negative = EDI underestimates. This gap reveals systematic biases in administrative declarations."
               />
             </div>
 
-            {stats.transitRoutes.length > 0 ? (
+            {safeStats.transitRoutes.length > 0 ? (
               <ChartCard title="Transit Comparison by Route" subtitle="RFID physical transit vs EDI declared transit (avg hours)" tooltip="Grouped bar chart comparing RFID-measured physical transit (indigo) vs EDI-declared transit (grey) for each origin→destination route. Routes where the grey bar is longer than the indigo bar indicate EDI overestimates transit. Routes where indigo is longer indicate EDI underestimates. The difference quantifies the accuracy of EDI declarations.">
-                <ResponsiveContainer width="100%" height={Math.max(200, stats.transitRoutes.length * 60)}>
-                  <BarChart data={stats.transitRoutes} layout="vertical" margin={{ left: 0, right: 65, top: 0, bottom: 0 }}>
+                <ResponsiveContainer width="100%" height={Math.max(200, safeStats.transitRoutes.length * 60)}>
+                  <BarChart data={safeStats.transitRoutes} layout="vertical" margin={{ left: 0, right: 65, top: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                     <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
                     <YAxis type="category" dataKey="route" tick={{ fontSize: 10 }} width={185} />
@@ -1083,15 +1098,15 @@ export default function Home() {
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
                 <p className="font-semibold text-amber-800 text-sm mb-1">Limited transit data</p>
                 <p className="text-xs text-amber-700 leading-relaxed">
-                  End-to-end transit measurement requires RFID coverage at both origin and destination. Only {stats.transitPairs} fully validated routes were found in the selected date range.
+                  End-to-end transit measurement requires RFID coverage at both origin and destination. Only {safeStats.transitPairs} fully validated routes were found in the selected date range.
                 </p>
               </div>
             )}
 
-            {(stats.rfidTransitCdf.length > 0 || stats.ediTransitCdf.length > 0) && (
+            {(safeStats.rfidTransitCdf.length > 0 || safeStats.ediTransitCdf.length > 0) && (
               <ChartCard
                 title="Cumulative Frequency: Transit Times"
-                subtitle={`Distribution of ${stats.transitPairs.toLocaleString()} transit time values — RFID physical vs EDI declared`}
+                subtitle={`Distribution of ${safeStats.transitPairs.toLocaleString()} transit time values — RFID physical vs EDI declared`}
                 tooltip="Cumulative distribution function (CDF) comparing RFID-measured physical transit (indigo) vs EDI-declared transit (grey). A curve shifted to the left means shorter transit times. Where the indigo curve is to the left of the grey curve, RFID measures shorter transit than EDI declares. The gap between curves at any percentile quantifies the systematic over/underestimation of EDI."
               >
                 <ResponsiveContainer width="100%" height={260}>
@@ -1110,8 +1125,8 @@ export default function Home() {
                     <ReferenceLine y={50} strokeDasharray="4 2" strokeOpacity={0.35} stroke="#94a3b8" label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: '#94a3b8' } }} />
                     <Tooltip formatter={(v: any, name: string) => [`${v}%`, name]} labelFormatter={l => `Transit ≤ ${l}h`} />
                     <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                    <Line data={stats.rfidTransitCdf} type="monotone" dataKey="pct" name="RFID Physical" stroke={C.indigo} strokeWidth={2} dot={false} />
-                    <Line data={stats.ediTransitCdf} type="monotone" dataKey="pct" name="EDI Declared" stroke={C.slate} strokeWidth={2} dot={false} strokeDasharray="5 3" />
+                    <Line data={safeStats.rfidTransitCdf} type="monotone" dataKey="pct" name="RFID Physical" stroke={C.indigo} strokeWidth={2} dot={false} />
+                    <Line data={safeStats.ediTransitCdf} type="monotone" dataKey="pct" name="EDI Declared" stroke={C.slate} strokeWidth={2} dot={false} strokeDasharray="5 3" />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartCard>
@@ -1128,9 +1143,13 @@ export default function Home() {
 
         {/* ════════════════════ RFID (PURE EPCIS) ════════════════════ */}
         {activeTab === 'RFID' && (
+          <>
+          <Section title="Search ID" subtitle="Look up any Tag ID or Receptacle ID to see its full journey — RFID readings and EDI messages ordered by timestamp">
+            <SearchID />
+          </Section>
           <Section
             title="RFID Analysis"
-            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · ${(epcis.rfidCounts?.departures ?? '…').toLocaleString()} departures · ${(epcis.rfidCounts?.arrivals ?? '…').toLocaleString()} arrivals · ${(epcis.rfidCounts?.endToEnd ?? '…').toLocaleString()} end-to-end${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
+            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · RFID Outbound: ${(epcis.rfidCounts?.rfPredes ?? '…').toLocaleString()} · RFID Inbound: ${(epcis.rfidCounts?.rfResdes ?? '…').toLocaleString()} · E2E: ${(epcis.rfidCounts?.rfE2e ?? '…').toLocaleString()}${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
           >
             {epcis.loading && (
               <div className="flex items-center justify-center py-16">
@@ -1149,7 +1168,14 @@ export default function Home() {
                 {/* ── OVERVIEW ── */}
                 <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-5">
+                  {/* Progressive loading banner for KPI counts */}
+                  {epcis.rfidCountsLoading && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 mb-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700">
+                      <div className="w-3 h-3 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
+                      <span>Showing last 30 days — loading full history…</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-5">
                     <KpiCard
                       title="Matched Tags"
                       value={matchedTagsData != null ? matchedTagsData.count.toLocaleString() : '—'}
@@ -1161,77 +1187,59 @@ export default function Home() {
                     />
                     <KpiCard
                       title="Total ID Receptacles"
-                      value={epcis.stats.uniqueReceptacles.toLocaleString()}
-                      subtitle="unique tag IDs in RFID table"
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.totalTags.toLocaleString() : '…'}
+                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs in RFID table'}
                       badge={{ label: 'rfid', color: 'blue' }}
-                      tooltip="Total unique tag IDs in the RFID table for the selected filters. Each tag ID represents one physical receptacle tracked by RFID."
+                      tooltip="Total unique tag IDs in the RFID table for the selected date and country filters. Shows last 30 days immediately, then updates with full history."
                     />
                     <KpiCard
                       title="RFID Departures"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.departures.toLocaleString() : '…'}
-                      subtitle="tag IDs with ORIGIN or DEPARTURE"
-                      badge={{ label: 'departure', color: 'blue' }}
-                      tooltip="Unique tag IDs in the RFID table with a known origin reading: tags with event_type = ORIGIN (first reading at dispatch centre) or DEPARTURE (last reading before crossing a border). Includes complete and partial journeys."
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfidDepartures.toLocaleString() : '…'}
+                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs with ORIGIN event'}
+                      badge={{ label: 'origin', color: 'blue' }}
+                      tooltip="Unique tag IDs with event_type = ORIGIN: first reading at the dispatch centre (intra-country). Represents receptacles identified at the sending centre before international dispatch."
+                    />
+                    <KpiCard
+                      title="RFID Outbound"
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfPredes.toLocaleString() : '…'}
+                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs with DEPARTURE event'}
+                      badge={{ label: 'departure', color: 'indigo' }}
+                      tooltip="Unique tag IDs with event_type = DEPARTURE: last RFID reading before crossing an international border. RFID Outbound is the physical equivalent of the EDI PREDES message."
+                    />
+                    <KpiCard
+                      title="RF E2E"
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfE2e.toLocaleString() : '…'}
+                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'tag IDs with RFID Outbound and RFID Inbound'}
+                      badge={{ label: 'e2e', color: 'amber' }}
+                      tooltip="Unique tag IDs with both a DEPARTURE event (RFID Outbound) and an ARRIVAL event (RFID Inbound). These are the receptacles for which a complete international RFID transit can be measured and compared against EDI."
+                    />
+                    <KpiCard
+                      title="RFID Inbound"
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfResdes.toLocaleString() : '…'}
+                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs with ARRIVAL event'}
+                      badge={{ label: 'arrival', color: 'green' }}
+                      tooltip="Unique tag IDs with event_type = ARRIVAL: first RFID reading after crossing an international border. RFID Inbound is the physical equivalent of the EDI RESDES message."
                     />
                     <KpiCard
                       title="RFID Arrivals"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.arrivals.toLocaleString() : '…'}
-                      subtitle="tag IDs with DESTINATION or ARRIVAL"
-                      badge={{ label: 'arrival', color: 'green' }}
-                      tooltip="Unique tag IDs in the RFID table with a known destination reading: tags with event_type = DESTINATION (last reading at delivery centre) or ARRIVAL (first reading after crossing a border). Includes complete and partial journeys."
-                    />
-                    <KpiCard
-                      title="End-to-End Pairs"
-                      value={epcis.rfidCounts != null ? epcis.rfidCounts.endToEnd.toLocaleString() : '…'}
-                      subtitle="s9ids with ORIGIN/DEPARTURE and DESTINATION/ARRIVAL"
-                      badge={{ label: 'e2e', color: 'amber' }}
-                      tooltip="Unique tag IDs with readings at both ends of the journey: ORIGIN or DEPARTURE at the sending side, and DESTINATION or ARRIVAL at the receiving side. These are the receptacles for which a full transit can be measured."
+                      value={epcis.rfidCounts != null ? epcis.rfidCounts.rfidArrivals.toLocaleString() : '…'}
+                      subtitle={epcis.rfidCountsLoading ? 'last 30 days — loading…' : 'unique tag IDs with DESTINATION event'}
+                      badge={{ label: 'dest', color: 'teal' }}
+                      tooltip="Unique tag IDs with event_type = DESTINATION: last reading at the delivery centre (intra-country). Represents receptacles identified at the receiving centre after international arrival."
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <ChartCard
-                      title="Departures by Origin Country"
-                      subtitle="All RFID receptacles by origin country"
-                      tooltip="Number of receptacles with an RFID origin reading, grouped by origin country. Derived from datos EPCIS location field."
-                    >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byOriginCountry.length * 34)}>
-                        <BarChart data={epcis.stats.byOriginCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                          <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                          <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
-                          <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="count" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
-                            <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
-
-                    <ChartCard
-                      title="Arrivals by Destination Country"
-                      subtitle="End-to-end RFID pairs by destination country"
-                      tooltip="Number of receptacles with RFID readings at both origin and destination, grouped by destination country."
-                    >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byDestCountry.length * 34)}>
-                        <BarChart data={epcis.stats.byDestCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                          <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                          <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
-                          <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="count" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
-                            <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
-                  </div>
                 </div>
 
-                {/* ── DEPARTURES ── */}
-                <div className="mt-6">
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Departures</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                {/* ── DEPARTURES + ARRIVALS in parallel columns ── */}
+                <div className="mt-6 grid md:grid-cols-2 gap-8">
+
+                {/* ── LEFT: DEPARTURES ── */}
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4">Departures</h3>
+
+                  {/* KPIs */}
+                  <div className="grid grid-cols-2 gap-4 mb-5">
                     <KpiCard
                       title="Total RFID Departures"
                       value={epcis.stats.withOriginReading.toLocaleString()}
@@ -1262,7 +1270,27 @@ export default function Home() {
                     />
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-6">
+                  {/* By country */}
+                  <ChartCard
+                    title="Departures by Origin Country"
+                    subtitle="All RFID receptacles by origin country"
+                    tooltip="Number of receptacles with an RFID origin reading, grouped by origin country."
+                  >
+                    <ResponsiveContainer width="100%" height={Math.max(220, epcis.safeStats.byOriginCountry.length * 34)}>
+                      <BarChart data={epcis.safeStats.byOriginCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                        <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Bar dataKey="count" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
+                          <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartCard>
+
+                  {/* By centre */}
+                  <div className="mt-4 grid grid-cols-1 gap-4">
                     <ChartCard
                       title="Departure Volume by Origin Centre"
                       subtitle="Receptacles with RFID last scan at origin centre"
@@ -1281,61 +1309,15 @@ export default function Home() {
                       </ResponsiveContainer>
                     </ChartCard>
 
-                    <ChartCard
-                      title="Avg RFID Transit by Origin Centre"
-                      subtitle="Avg hours from last origin scan to first destination scan"
-                      tooltip="Each bar shows the median RFID transit time for receptacles that departed from that origin centre and arrived at a destination centre. Only end-to-end pairs are included."
-                    >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.departureByCentre.length * 34)}>
-                        <BarChart data={epcis.stats.departureByCentre} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                          <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
-                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} interval={0} />
-                          <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="avgH" name="Avg Transit (h)" fill={C.sky} radius={[0, 3, 3, 0]}>
-                            <LabelList dataKey="avgH" position="right" formatter={(v: number) => `${v}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
                   </div>
-
-                  {epcis.stats.transitCdf.length > 0 && (
-                    <ChartCard
-                      title="Cumulative Frequency: RFID Transit Time"
-                      subtitle={`Distribution of ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end transit values (hours)`}
-                      tooltip="Cumulative distribution function (CDF) of RFID physical transit time. The Y axis shows the percentage of receptacles with a transit time ≤ X hours. Steeper curve = more concentrated distribution. Read: 'X% of receptacles have a transit time ≤ Y hours'."
-                    >
-                      <ResponsiveContainer width="100%" height={260}>
-                        <AreaChart data={epcis.stats.transitCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
-                          <defs>
-                            <linearGradient id="cdfRfidTransitGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor={C.indigo} stopOpacity={0.18} />
-                              <stop offset="95%" stopColor={C.indigo} stopOpacity={0.02} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="x" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                            label={{ value: 'Transit time (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
-                          <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]}
-                            label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
-                          <ReferenceLine y={50} stroke={C.indigo} strokeDasharray="4 2" strokeOpacity={0.4} label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: C.indigo } }} />
-                          <Tooltip formatter={(v: any) => [`${v}%`, 'Cumulative']} labelFormatter={l => `Transit ≤ ${l}h`} />
-                          <Area type="monotone" dataKey="pct" stroke={C.indigo} strokeWidth={2} fill="url(#cdfRfidTransitGrad)" dot={false} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
-                  )}
-
-                  <InfoBox color="indigo">
-                    <span className="font-semibold">Methodology:</span> Departure time = <span className="font-mono bg-white/60 px-1 rounded">rfid_origin_time</span>. Origin centre = <span className="font-mono bg-white/60 px-1 rounded">rfid_origin_centre</span>. Data source: <strong>tracking_events</strong> (has_rfid = true).
-                  </InfoBox>
                 </div>
 
-                {/* ── ARRIVALS ── */}
-                <div className="mt-6">
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Arrivals</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                {/* ── RIGHT: ARRIVALS ── */}
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4">Arrivals</h3>
+
+                  {/* KPIs */}
+                  <div className="grid grid-cols-2 gap-4 mb-5">
                     <KpiCard
                       title="Total RFID Arrivals"
                       value={epcis.stats.withDestReading.toLocaleString()}
@@ -1366,7 +1348,27 @@ export default function Home() {
                     />
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-6">
+                  {/* By country */}
+                  <ChartCard
+                    title="Arrivals by Destination Country"
+                    subtitle="End-to-end RFID pairs by destination country"
+                    tooltip="Number of receptacles with RFID readings at both origin and destination, grouped by destination country."
+                  >
+                    <ResponsiveContainer width="100%" height={Math.max(220, epcis.safeStats.byDestCountry.length * 34)}>
+                      <BarChart data={epcis.safeStats.byDestCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                        <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Bar dataKey="count" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
+                          <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartCard>
+
+                  {/* By centre */}
+                  <div className="mt-4 grid grid-cols-1 gap-4">
                     <ChartCard
                       title="Arrival Volume by Destination Centre"
                       subtitle="Receptacles with RFID first scan at destination centre"
@@ -1385,29 +1387,9 @@ export default function Home() {
                       </ResponsiveContainer>
                     </ChartCard>
 
-                    <ChartCard
-                      title="Avg RFID Transit by Destination Centre"
-                      subtitle="Avg hours from last origin scan to first destination scan"
-                      tooltip="Each bar shows the median RFID transit time for receptacles that arrived at that destination centre. Only end-to-end pairs are included."
-                    >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.arrivalByCentre.length * 34)}>
-                        <BarChart data={epcis.stats.arrivalByCentre} layout="vertical" margin={{ left: 0, right: 60, top: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                          <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
-                          <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} interval={0} />
-                          <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="avgH" name="Avg Transit (h)" fill={C.emerald} radius={[0, 3, 3, 0]}>
-                            <LabelList dataKey="avgH" position="right" formatter={(v: number) => `${v}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
                   </div>
-
-                  <InfoBox color="emerald">
-                    <span className="font-semibold">Methodology:</span> Arrival time = <span className="font-mono bg-white/60 px-1 rounded">rfid_dest_time</span>. Destination centre = <span className="font-mono bg-white/60 px-1 rounded">rfid_dest_centre</span>. End-to-end coverage: <strong>{epcis.stats.endToEndPct}%</strong> ({epcis.stats.endToEndPairs.toLocaleString()} receptacles). Data source: <strong>tracking_events</strong> (has_rfid = true).
-                  </InfoBox>
                 </div>
+                </div>{/* end parallel grid */}
 
                 {/* ── TRANSIT ── */}
                 <div className="mt-6">
@@ -1443,10 +1425,10 @@ export default function Home() {
                     />
                   </div>
 
-                  {epcis.stats.byRoute.length > 0 ? (
+                  {epcis.safeStats.byRoute.length > 0 ? (
                     <ChartCard
                       title="RFID Transit by Route"
-                      subtitle={`${epcis.stats.byRoute.length} routes · avg rfid_transit_hours from tracking_events`}
+                      subtitle={`${epcis.safeStats.byRoute.length} routes · avg rfid_transit_hours from tracking_events`}
                       tooltip="Each row is a unique rfid_origin_country → rfid_dest_country pair from tracking_events."
                     >
                       <div className="overflow-x-auto">
@@ -1459,7 +1441,7 @@ export default function Home() {
                             </tr>
                           </thead>
                           <tbody>
-                            {epcis.stats.byRoute.map((r, i) => (
+                            {epcis.safeStats.byRoute.map((r, i) => (
                               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                                 <td className="py-2 pr-4 font-medium text-slate-800">{r.route}</td>
                                 <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.count}</td>
@@ -1486,64 +1468,9 @@ export default function Home() {
                     </div>
                   )}
 
-                  {epcis.stats.transitCdf.length > 0 && (
-                    <ChartCard
-                      title="Cumulative Frequency: RFID Transit Time"
-                      subtitle={`Distribution of ${epcis.stats.endToEndPairs.toLocaleString()} RFID transit values (hours)`}
-                      tooltip="Cumulative distribution function (CDF) of RFID physical transit time. The Y axis shows the percentage of receptacles with a transit time ≤ X hours. Read: 'X% of receptacles have a transit time ≤ Y hours'."
-                    >
-                      <ResponsiveContainer width="100%" height={260}>
-                        <AreaChart data={epcis.stats.transitCdf} margin={{ left: 10, right: 20, top: 10, bottom: 20 }}>
-                          <defs>
-                            <linearGradient id="cdfRfidTransitGrad2" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor={C.indigo} stopOpacity={0.18} />
-                              <stop offset="95%" stopColor={C.indigo} stopOpacity={0.02} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="x" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                            label={{ value: 'Transit time (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
-                          <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]}
-                            label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
-                          <ReferenceLine y={50} stroke={C.indigo} strokeDasharray="4 2" strokeOpacity={0.4} label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: C.indigo } }} />
-                          <Tooltip formatter={(v: any) => [`${v}%`, 'Cumulative']} labelFormatter={l => `Transit ≤ ${l}h`} />
-                          <Area type="monotone" dataKey="pct" stroke={C.indigo} strokeWidth={2} fill="url(#cdfRfidTransitGrad2)" dot={false} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
-                  )}
-
-                  <InfoBox color="indigo">
-                    <span className="font-semibold">Methodology:</span> Physical transit time = <span className="font-mono bg-white/60 px-1 rounded">rfid_transit_hours</span> from <strong>tracking_events</strong>. Only receptacles with <span className="font-mono bg-white/60 px-1 rounded">rfid_dest_impc ≠ rfid_origin_impc</span> are included.
-                  </InfoBox>
                 </div>
 
-                {/* ── ANALYSIS SUMMARY ── */}
-                <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50/60 p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-1 h-5 rounded-full bg-indigo-500" />
-                    <h4 className="text-sm font-semibold text-indigo-900">RFID Analysis Summary</h4>
-                  </div>
-                  <div className="space-y-2 text-sm text-indigo-800 leading-relaxed">
-                    <p>
-                      The RFID system captured <strong>{epcis.stats.uniqueReceptacles.toLocaleString()} unique receptacles</strong> with at least one RFID reading in <strong>tracking_events</strong>.
-                      Origin readings span <strong>{epcis.stats.uniqueOrigins} countries</strong> and <strong>{epcis.stats.byOriginCentre.length} postal centres</strong>.
-                    </p>
-                    <p>
-                      End-to-end traceability — receptacles with RFID readings at both origin and destination — stands at <strong>{epcis.stats.endToEndPairs.toLocaleString()} receptacles ({epcis.stats.endToEndPct}%)</strong>.
-                      {epcis.stats.avgTransitHours != null && epcis.stats.avgTransitHours > 0 && (
-                        <> These pairs yield a avg physical transit time of <strong>{epcis.stats.avgTransitHours}h ({(epcis.stats.avgTransitHours / 24).toFixed(1)} days)</strong>, measured from rfid_origin_time to rfid_dest_time.</>
-                      )}
-                    </p>
-                    {epcis.stats.byOriginCountry.length > 0 && (
-                      <p>
-                        The leading origin country by RFID volume is <strong>{epcis.stats.byOriginCountry[0].country}</strong> ({epcis.stats.byOriginCountry[0].count} receptacles)
-                        {epcis.stats.byOriginCountry.length > 1 ? `, followed by ${epcis.stats.byOriginCountry[1].country} (${epcis.stats.byOriginCountry[1].count})` : ''}.
-                        The primary destination is <strong>{epcis.stats.byDestCountry[0]?.country || '—'}</strong> with {epcis.stats.byDestCountry[0]?.count || 0} arrivals.
-                      </p>
-                    )}
-                  </div>
-                </div>
+
                  {/* ════════════════════ RFID DATA TABLE ════════════════════ */}
                 <div className="mt-8">
                   <div className="flex items-center gap-3 mb-4">
@@ -1559,28 +1486,14 @@ export default function Home() {
                 </div>
               </>)}
           </Section>
+          </>
         )}
-        {/* ════════════════════ TRACKING ════════════════════ */}
-        {activeTab === 'Tracking' && (
-          <Section
-            title="Tracking"
-            subtitle={`${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles · ${epcis.stats.endToEndPairs.toLocaleString()} end-to-end · Search by receptacle ID or tag_id`}
-          >
-            {epcis.loading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
-                <span className="ml-3 text-sm text-slate-500">Loading RFID data…</span>
-              </div>
-            ) : (
-              <EpcisDataTable journeys={epcis.journeys} dateLabel={dateLabel} />
-            )}
-          </Section>
-        )}
+
         {/* ════════════════════ DATA TABLE ════════════════════ */}
         {activeTab === 'Data_legacy' && (
           <Section
             title="Detailed Data"
-            subtitle={`All ${events.length.toLocaleString()} receptacles from the tracking_events table with pre-calculated metrics`}
+            subtitle={`All ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles from the RFID table`}
           >
             <div className="flex flex-wrap gap-2">
               {[
@@ -1602,7 +1515,7 @@ export default function Home() {
                   {f.label}
                   {f.key !== 'ALL' && (
                     <span className={`ml-1.5 text-[10px] font-normal ${tableFilter === f.key ? 'text-indigo-200' : 'text-slate-400'}`}>
-                      {stats.coverageBreakdown.find(c => c.type === f.key)?.count?.toLocaleString() ?? ''}
+                      {safeStats.coverageBreakdown.find(c => c.type === f.key)?.count?.toLocaleString() ?? ''}
                     </span>
                   )}
                 </button>
@@ -1624,7 +1537,7 @@ export default function Home() {
           </div>
           <span className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-            Connected to Supabase · tracking_events · {allEvents.length.toLocaleString()} total records
+            Connected to Supabase · RFID · {epcis.stats.uniqueReceptacles.toLocaleString()} total records
           </span>
         </div>
       </footer>
