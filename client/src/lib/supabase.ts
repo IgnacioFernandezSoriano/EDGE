@@ -250,6 +250,30 @@ export interface RfidReading {
   is_international_boundary: boolean | null;
 }
 
+// Helper: fetch a single page with up to MAX_RETRIES retries on failure
+async function fetchPage(
+  url: string,
+  headers: Record<string, string>,
+  offset: number,
+  rangeEnd: number,
+  maxRetries = 3
+): Promise<RfidReading[]> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { ...headers, 'Range-Unit': 'items', 'Range': `${offset}-${rangeEnd}` },
+      });
+      if (res.ok) return res.json() as Promise<RfidReading[]>;
+      // 500/503 — wait and retry
+      if (attempt < maxRetries) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    } catch {
+      if (attempt < maxRetries) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  console.warn(`[EDGE] Failed to fetch page offset=${offset} after ${maxRetries} retries, returning empty`);
+  return [];
+}
+
 /**
  * Fetches all rows from the RFID table.
  * Supports optional date filtering on event_time_local.
@@ -272,7 +296,7 @@ export async function fetchRfidReadings(
   // Strategy: fetch page 0 to get total count, then fetch remaining pages
   // in batches of CONCURRENCY to avoid HTTP/2 connection limits on Supabase.
   const PAGE_SIZE = 1000;
-  const CONCURRENCY = 10; // max simultaneous requests per batch
+  const CONCURRENCY = 5; // reduced to avoid ERR_HTTP2_PROTOCOL_ERROR
 
   // Step 1: fetch first page and get total count from content-range header
   const firstHeaders = {
@@ -297,21 +321,14 @@ export async function fetchRfidReadings(
     remainingOffsets.push(offset);
   }
 
-  // Step 3: fetch in batches of CONCURRENCY
+  // Step 3: fetch in batches of CONCURRENCY with retries
   const allPages: RfidReading[][] = [firstData];
   for (let i = 0; i < remainingOffsets.length; i += CONCURRENCY) {
     const batch = remainingOffsets.slice(i, i + CONCURRENCY);
     const batchResults = await Promise.all(
-      batch.map(async (offset) => {
+      batch.map((offset) => {
         const rangeEnd = Math.min(offset + PAGE_SIZE - 1, total - 1);
-        const headers = {
-          ...baseHeaders,
-          'Range-Unit': 'items',
-          'Range': `${offset}-${rangeEnd}`,
-        };
-        const res = await fetch(url.toString(), { headers });
-        if (!res.ok) throw new Error(`Supabase RFID error (offset ${offset}): ${res.status}`);
-        return res.json() as Promise<RfidReading[]>;
+        return fetchPage(url.toString(), baseHeaders, offset, rangeEnd);
       })
     );
     allPages.push(...batchResults);
@@ -365,13 +382,9 @@ export async function fetchRfidReadingsWithProgress(
   for (let i = 0; i < remainingOffsets.length; i += CONCURRENCY) {
     const batch = remainingOffsets.slice(i, i + CONCURRENCY);
     const batchResults = await Promise.all(
-      batch.map(async (offset) => {
+      batch.map((offset) => {
         const rangeEnd = Math.min(offset + PAGE_SIZE - 1, total - 1);
-        const res = await fetch(url.toString(), {
-          headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': `${offset}-${rangeEnd}` },
-        });
-        if (!res.ok) throw new Error(`Supabase RFID error (offset ${offset}): ${res.status}`);
-        return res.json() as Promise<RfidReading[]>;
+        return fetchPage(url.toString(), baseHeaders, offset, rangeEnd);
       })
     );
     allPages.push(...batchResults);

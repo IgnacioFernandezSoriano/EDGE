@@ -658,7 +658,11 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   }, [filters.dateFrom, filters.dateTo, filters.originCountry, filters.destCountry]);
 
   // Build journeys from all readings
-  const allJourneys = useMemo(() => readingsToJourneys(allReadings), [allReadings]);
+  const allJourneys = useMemo(() => {
+    const journeys = readingsToJourneys(allReadings);
+    console.log(`[EDGE] allReadings: ${allReadings.length} events → ${journeys.length} journeys`);
+    return journeys;
+  }, [allReadings]);
 
   // Helper: effective destination country for a journey.
   // Priority: DESTINATION event country > ARRIVAL event country.
