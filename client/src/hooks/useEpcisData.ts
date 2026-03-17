@@ -616,32 +616,54 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   // Build journeys from all readings
   const allJourneys = useMemo(() => readingsToJourneys(allReadings), [allReadings]);
 
-  // Available origin countries — narrowed by active destCountry filter (so dropdowns are consistent)
+  // Helper: effective destination country for a journey.
+  // Priority: DESTINATION event country > ARRIVAL event country.
+  // This ensures journeys that only have ARRIVAL (no DESTINATION) still appear in dest filters.
+  function effectiveDestCountry(j: RfidJourney): string | null {
+    if (j.dest_country) return j.dest_country;
+    if (j.arrival_country && j.arrival_country !== j.origin_country) return j.arrival_country;
+    return null;
+  }
+
+  // Helper: effective origin country for a journey.
+  // Priority: ORIGIN event country > DEPARTURE event country.
+  function effectiveOriginCountry(j: RfidJourney): string | null {
+    if (j.origin_country) return j.origin_country;
+    if (j.departure_country) return j.departure_country;
+    return null;
+  }
+
+  // Available origin countries — narrowed by active destCountry filter
   const allOriginCountries = useMemo(() => {
     const pool = (filters.destCountry && filters.destCountry !== 'ALL')
-      ? allJourneys.filter(j => j.dest_country === filters.destCountry)
+      ? allJourneys.filter(j => effectiveDestCountry(j) === filters.destCountry)
       : allJourneys;
-    return Array.from(new Set(pool.map(j => j.origin_country).filter(Boolean))).sort();
+    return Array.from(new Set(pool.map(j => effectiveOriginCountry(j)).filter(Boolean) as string[])).sort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allJourneys, filters.destCountry]);
 
-  // Available destination countries — narrowed by active originCountry filter (so dropdowns are consistent)
+  // Available destination countries — narrowed by active originCountry filter
   const allDestCountries = useMemo(() => {
     const pool = (filters.originCountry && filters.originCountry !== 'ALL')
-      ? allJourneys.filter(j => j.origin_country === filters.originCountry)
+      ? allJourneys.filter(j => effectiveOriginCountry(j) === filters.originCountry)
       : allJourneys;
-    return Array.from(new Set(pool.filter(j => j.has_destination).map(j => j.dest_country!).filter(Boolean))).sort();
+    return Array.from(new Set(
+      pool.map(j => effectiveDestCountry(j)).filter(Boolean) as string[]
+    )).sort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allJourneys, filters.originCountry]);
 
   // Apply country filters in the browser
   const filteredJourneys = useMemo(() => {
     let j = allJourneys;
     if (filters.originCountry && filters.originCountry !== 'ALL') {
-      j = j.filter(x => x.origin_country === filters.originCountry);
+      j = j.filter(x => effectiveOriginCountry(x) === filters.originCountry);
     }
     if (filters.destCountry && filters.destCountry !== 'ALL') {
-      j = j.filter(x => x.dest_country === filters.destCountry);
+      j = j.filter(x => effectiveDestCountry(x) === filters.destCountry);
     }
     return j;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allJourneys, filters.originCountry, filters.destCountry]);
 
   const stats = useMemo(
