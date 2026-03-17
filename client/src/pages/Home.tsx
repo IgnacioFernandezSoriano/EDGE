@@ -1227,7 +1227,21 @@ export default function Home() {
             {epcis.loading && (
               <div className="flex items-center justify-center py-16">
                 <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
-                <span className="ml-3 text-sm text-slate-500">Loading complete dataset…</span>
+                <div className="ml-3">
+                  <span className="text-sm text-slate-500">
+                    {rfidOriginCountry && rfidOriginCountry !== 'ALL'
+                      ? `Loading complete dataset for ${rfidOriginCountry}…`
+                      : rfidDestCountry && rfidDestCountry !== 'ALL'
+                        ? `Loading complete dataset for destination ${rfidDestCountry}…`
+                        : 'Loading tracking data from Supabase…'}
+                  </span>
+                  {epcis.backgroundProgress && (
+                    <span className="ml-2 text-xs text-slate-400">
+                      ({Math.round(epcis.backgroundProgress.loaded / epcis.backgroundProgress.total * 100)}%
+                      — {epcis.backgroundProgress.loaded.toLocaleString()} / {epcis.backgroundProgress.total.toLocaleString()} events)
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             {/* Data scope banner — always visible, shows whether data is partial or complete */}

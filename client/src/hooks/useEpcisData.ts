@@ -523,7 +523,39 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       return () => { cancelled = true; };
     }
 
-    // Progressive loading strategy:
+    // If a country filter is active, load the complete dataset at once so that
+    // dropdowns and KPIs are always accurate (older data like G.1UPU India→Japan
+    // would be missed in a 30-day window).
+    const hasCountryFilter = (filters.originCountry && filters.originCountry !== 'ALL') ||
+                             (filters.destCountry   && filters.destCountry   !== 'ALL');
+
+    if (hasCountryFilter) {
+      setBackgroundProgress(null);
+      fetchRfidReadingsWithProgress(
+        undefined,
+        undefined,
+        (loaded, total) => {
+          if (!cancelled) setBackgroundProgress({ loaded, total });
+        }
+      )
+        .then(data => {
+          if (!cancelled) {
+            setAllReadings(data);
+            setLoading(false);
+            setBackgroundLoading(false);
+            setBackgroundProgress(null);
+          }
+        })
+        .catch(err => {
+          if (!cancelled) {
+            setError(err.message ?? 'Error al cargar datos RFID');
+            setLoading(false);
+          }
+        });
+      return () => { cancelled = true; };
+    }
+
+    // No country filter: progressive loading strategy.
     // Step 1 — fetch last 30 days immediately so the UI is usable fast.
     // Step 2 — load the full history in background using batches of 10 pages.
     //           A progress indicator shows how many pages have been loaded.
@@ -547,7 +579,6 @@ export function useEpcisData(filters: EpcisFilters = {}) {
 
         setBackgroundLoading(true);
 
-        // We need to know the total pages first — fetch page 0 of older data
         fetchRfidReadingsWithProgress(
           undefined,
           olderTo,
