@@ -1,8 +1,14 @@
 /**
  * useBenchmarkData — Benchmark RFID vs EDI
  *
- * Reads from the materialized view `benchmark_rfid_edi`.
- * Supports global filters: dateFrom, dateTo, originCountry, destCountry.
+ * Reads from the view `benchmark_rfid_edi`.
+ * Only includes receptacles with s9id (linked via ID Relation table between RFID and EDI).
+ * Supports filters: dateFrom, dateTo, originCountry, destCountry.
+ *
+ * Three benchmark comparisons:
+ *   1. Origin:  RFID origin events vs EDI PREDES/CARDIT (receptacles with RFID origin + EDI origin)
+ *   2. Dest:    RFID dest events vs EDI RESDES (receptacles with RFID dest + EDI dest)
+ *   3. Transit: RFID Outbound→Inbound vs EDI PREDES→RESDES (receptacles with both sides)
  *
  * EDI event chain (logical order):
  *   PREDES → CARDIT → RESDIT74 → RESDIT21 → RESDES
@@ -131,18 +137,6 @@ function median(arr: number[]): number | null {
   const m = Math.floor(s.length / 2);
   return s.length % 2 !== 0 ? s[m] : Math.round(((s[m - 1] + s[m]) / 2) * 10) / 10;
 }
-function mode(arr: number[]): number | null {
-  if (!arr.length) return null;
-  // Round to nearest hour for grouping
-  const rounded = arr.map(v => Math.round(v));
-  const freq: Record<number, number> = {};
-  for (const v of rounded) freq[v] = (freq[v] ?? 0) + 1;
-  let maxCount = 0, modeVal = rounded[0];
-  for (const [k, c] of Object.entries(freq)) {
-    if (c > maxCount) { maxCount = c; modeVal = Number(k); }
-  }
-  return modeVal;
-}
 function buildCDF(values: number[], steps = 50): { x: number; pct: number }[] {
   if (!values.length) return [];
   const sorted = [...values].sort((a, b) => a - b);
@@ -156,7 +150,7 @@ function buildCDF(values: number[], steps = 50): { x: number; pct: number }[] {
   });
 }
 
-/* ── Fetch from materialized view with filters ──────────────────────────────── */
+/* ── Fetch from view with filters ───────────────────────────────────────────── */
 async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkRow[]> {
   const PAGE = 1000;
   const allRows: BenchmarkRow[] = [];
@@ -166,6 +160,8 @@ async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkR
     let q = supabase
       .from('benchmark_rfid_edi')
       .select('*')
+      // Only receptacles linked between RFID and EDI (have s9id from ID Relation)
+      .not('s9id', 'is', null)
       .range(from, from + PAGE - 1);
 
     // Date filter: apply on edi_predes_time (departure side)
@@ -173,7 +169,6 @@ async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkR
     if (filters.dateTo)   q = q.lte('edi_predes_time', filters.dateTo + 'T23:59:59Z');
 
     // Country filter: match against rf_origin_country / rf_dest_country
-    // Fall back to edi_origin_impc prefix match when rf country is null
     if (filters.originCountry) q = q.eq('rf_origin_country', filters.originCountry);
     if (filters.destCountry)   q = q.eq('rf_dest_country',   filters.destCountry);
 
@@ -187,10 +182,15 @@ async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkR
   }
 
   // Keep only international movements (origin country ≠ destination country)
-  const international = allRows.filter(r =>
-    r.rf_origin_country && r.rf_dest_country &&
-    r.rf_origin_country !== r.rf_dest_country
-  );
+  // Allow partial matches: receptacles may have only origin OR only destination RFID data
+  const international = allRows.filter(r => {
+    const origin = r.rf_origin_country;
+    const dest   = r.rf_dest_country;
+    // Exclude domestic (both sides known and equal)
+    if (origin && dest && origin === dest) return false;
+    // Include if at least one RFID side has a country
+    return !!(origin || dest);
+  });
 
   // Recalculate rf_transit_hours as RFID Outbound → RFID Inbound
   // (rf_predes_time → rf_resdes_time) for each row, overriding the
@@ -270,8 +270,8 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   }>();
 
   for (const r of rows) {
-    const origin = r.edi_origin_impc || r.rf_origin_impc || '?';
-    const dest   = r.edi_dest_impc   || r.rf_dest_impc   || '?';
+    const origin = r.edi_origin_impc || r.rf_origin_impc || r.rf_origin_country || '?';
+    const dest   = r.edi_dest_impc   || r.rf_dest_impc   || r.rf_dest_country   || '?';
     const key    = `${origin}→${dest}`;
     if (!routeMap.has(key)) {
       routeMap.set(key, { origin, dest, count: 0, depCount: 0, arrCount: 0, transitCount: 0, rfH: [], ediH: [], mc: 0, mr74: 0, mr21: 0, mrd: 0 });
@@ -365,14 +365,23 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
 async function fetchBenchmarkCountries(): Promise<{ origins: string[]; dests: string[] }> {
   const { data, error } = await supabase
     .from('benchmark_rfid_edi')
-    .select('rf_origin_country,rf_dest_country');
+    .select('rf_origin_country,rf_dest_country')
+    .not('s9id', 'is', null);  // Only linked receptacles
   if (error || !data) return { origins: [], dests: [] };
-  // Only international rows
-  const intl = data.filter((r: BenchmarkRow) =>
-    r.rf_origin_country && r.rf_dest_country && r.rf_origin_country !== r.rf_dest_country
-  );
-  const origins = [...new Set(intl.map((r: BenchmarkRow) => r.rf_origin_country as string))].sort();
-  const dests   = [...new Set(intl.map((r: BenchmarkRow) => r.rf_dest_country   as string))].sort();
+  // Exclude domestic (both sides known and equal)
+  const intl = data.filter((r: BenchmarkRow) => {
+    const o = r.rf_origin_country, d = r.rf_dest_country;
+    if (o && d && o === d) return false;
+    return !!(o || d);
+  });
+  const origins = [...new Set(
+    intl.filter((r: BenchmarkRow) => r.rf_origin_country)
+        .map((r: BenchmarkRow) => r.rf_origin_country as string)
+  )].sort();
+  const dests = [...new Set(
+    intl.filter((r: BenchmarkRow) => r.rf_dest_country)
+        .map((r: BenchmarkRow) => r.rf_dest_country as string)
+  )].sort();
   return { origins, dests };
 }
 
@@ -417,7 +426,6 @@ export function useBenchmarkData(filters: BenchmarkFilters = {}) {
   const availableDests = useMemo(() => {
     if (!filters.originCountry) return allDests;
     // When origin is selected, only show dests that have rows for that origin
-    // We need to fetch without dest filter — use allDests filtered by current rows
     // Since rows are already filtered by origin, collect unique dests from them
     const destsFromRows = [...new Set(rows
       .filter(r => r.rf_dest_country && r.rf_origin_country !== r.rf_dest_country)

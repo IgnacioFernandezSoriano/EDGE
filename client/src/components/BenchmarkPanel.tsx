@@ -389,8 +389,30 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
     count:   r.count,
   })).filter(r => r.rfidAvg > 0 || r.ediAvg > 0);
 
+  // Coverage summary counts
+  const hasOriginBoth = rows.filter(r => r.rf_origin_country && r.edi_origin_impc).length;
+  const hasDestBoth   = rows.filter(r => r.rf_dest_country   && r.edi_dest_impc).length;
+  const hasFullBoth   = rows.filter(r => r.rf_origin_country && r.rf_dest_country && r.edi_origin_impc && r.edi_dest_impc).length;
+
   return (
     <div className="space-y-2">
+
+      {/* ── 0. Coverage summary ── */}
+      <Section
+        title="Benchmark Coverage"
+        subtitle={`Receptacles linked between RFID and EDI via ID Relation — ${stats.totalPairs} total`}
+      >
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
+          <KPI label="Total linked" value={stats.totalPairs} sub="RFID ↔ EDI via s9id" color="indigo" />
+          <KPI label="Origin comparison" value={hasOriginBoth} sub={`${pct(hasOriginBoth, stats.totalPairs)} have RFID+EDI origin`} color="green" />
+          <KPI label="Dest comparison"   value={hasDestBoth}   sub={`${pct(hasDestBoth, stats.totalPairs)} have RFID+EDI dest`}   color="green" />
+          <KPI label="Full transit"       value={hasFullBoth}   sub={`${pct(hasFullBoth, stats.totalPairs)} have both sides`}       color="amber" />
+        </div>
+        <p className="text-[11px] text-slate-500 italic">
+          Only receptacles with a match in the ID Relation table (tag_id ↔ s9id) are included.
+          Domestic movements (same origin and destination country) are excluded.
+        </p>
+      </Section>
 
       {/* ── 1. RFID Outbound vs EDI PREDES ── */}
       <Section
