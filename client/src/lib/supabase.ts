@@ -269,9 +269,10 @@ export async function fetchRfidReadings(
   if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
 
   // Supabase PostgREST enforces max-rows=1000 per request.
-  // Strategy: fetch page 0 to get the total count, then fire all remaining
-  // pages in parallel with Promise.all — reduces load time from ~2min to ~3-5s.
+  // Strategy: fetch page 0 to get total count, then fetch remaining pages
+  // in batches of CONCURRENCY to avoid HTTP/2 connection limits on Supabase.
   const PAGE_SIZE = 1000;
+  const CONCURRENCY = 10; // max simultaneous requests per batch
 
   // Step 1: fetch first page and get total count from content-range header
   const firstHeaders = {
@@ -290,28 +291,95 @@ export async function fetchRfidReadings(
 
   if (total <= PAGE_SIZE) return firstData;
 
-  // Step 2: fire all remaining pages in parallel
-  const remainingPages: number[] = [];
+  // Step 2: build list of remaining page offsets
+  const remainingOffsets: number[] = [];
   for (let offset = PAGE_SIZE; offset < total; offset += PAGE_SIZE) {
-    remainingPages.push(offset);
+    remainingOffsets.push(offset);
   }
 
-  const pageResults = await Promise.all(
-    remainingPages.map(async (offset) => {
-      const rangeEnd = Math.min(offset + PAGE_SIZE - 1, total - 1);
-      const headers = {
-        ...baseHeaders,
-        'Range-Unit': 'items',
-        'Range': `${offset}-${rangeEnd}`,
-      };
-      const res = await fetch(url.toString(), { headers });
-      if (!res.ok) throw new Error(`Supabase RFID error (offset ${offset}): ${res.status}`);
-      return res.json() as Promise<RfidReading[]>;
-    })
-  );
+  // Step 3: fetch in batches of CONCURRENCY
+  const allPages: RfidReading[][] = [firstData];
+  for (let i = 0; i < remainingOffsets.length; i += CONCURRENCY) {
+    const batch = remainingOffsets.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map(async (offset) => {
+        const rangeEnd = Math.min(offset + PAGE_SIZE - 1, total - 1);
+        const headers = {
+          ...baseHeaders,
+          'Range-Unit': 'items',
+          'Range': `${offset}-${rangeEnd}`,
+        };
+        const res = await fetch(url.toString(), { headers });
+        if (!res.ok) throw new Error(`Supabase RFID error (offset ${offset}): ${res.status}`);
+        return res.json() as Promise<RfidReading[]>;
+      })
+    );
+    allPages.push(...batchResults);
+  }
 
-  // Merge in order: first page + remaining pages
-  return firstData.concat(...pageResults);
+  // Merge all pages in order
+  return ([] as RfidReading[]).concat(...allPages);
+}
+
+/**
+ * Like fetchRfidReadings but reports progress via a callback after each batch.
+ * Used for background loading of older data.
+ */
+export async function fetchRfidReadingsWithProgress(
+  dateFrom?: string,
+  dateTo?: string,
+  onProgress?: (loaded: number, total: number) => void
+): Promise<RfidReading[]> {
+  const baseHeaders = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
+  url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary');
+  url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
+  url.searchParams.set('order', 'event_time_local.asc');
+  if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
+
+  const PAGE_SIZE = 1000;
+  const CONCURRENCY = 10;
+
+  // Step 1: get first page + total count
+  const firstRes = await fetch(url.toString(), {
+    headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': `0-${PAGE_SIZE - 1}`, 'Prefer': 'count=exact' },
+  });
+  if (!firstRes.ok) throw new Error(`Supabase RFID error: ${firstRes.status}`);
+  const firstData: RfidReading[] = await firstRes.json();
+  const cr = firstRes.headers.get('content-range') ?? '';
+  const totalMatch = cr.match(/\/(\d+)$/);
+  const total = totalMatch ? parseInt(totalMatch[1], 10) : firstData.length;
+
+  if (total <= PAGE_SIZE) return firstData;
+
+  const remainingOffsets: number[] = [];
+  for (let offset = PAGE_SIZE; offset < total; offset += PAGE_SIZE) {
+    remainingOffsets.push(offset);
+  }
+
+  const allPages: RfidReading[][] = [firstData];
+  let loaded = PAGE_SIZE;
+  onProgress?.(loaded, total);
+
+  for (let i = 0; i < remainingOffsets.length; i += CONCURRENCY) {
+    const batch = remainingOffsets.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map(async (offset) => {
+        const rangeEnd = Math.min(offset + PAGE_SIZE - 1, total - 1);
+        const res = await fetch(url.toString(), {
+          headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': `${offset}-${rangeEnd}` },
+        });
+        if (!res.ok) throw new Error(`Supabase RFID error (offset ${offset}): ${res.status}`);
+        return res.json() as Promise<RfidReading[]>;
+      })
+    );
+    allPages.push(...batchResults);
+    loaded += batch.length * PAGE_SIZE;
+    onProgress?.(Math.min(loaded, total), total);
+  }
+
+  return ([] as RfidReading[]).concat(...allPages);
 }
 
 /**

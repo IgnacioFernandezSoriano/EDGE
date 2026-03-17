@@ -1240,12 +1240,20 @@ export default function Home() {
                 {epcis.backgroundLoading ? (
                   <>
                     <div className="w-3.5 h-3.5 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
-                    <span>⚠ Showing last 30 days only — loading full history in background, numbers will update when complete</span>
+                    <span>
+                      ⚠ Showing last 30 days only — loading full history in background
+                      {epcis.backgroundProgress && (
+                        <span className="ml-1 font-normal opacity-75">
+                          ({Math.round(epcis.backgroundProgress.loaded / epcis.backgroundProgress.total * 100)}%
+                           — {epcis.backgroundProgress.loaded.toLocaleString()} / {epcis.backgroundProgress.total.toLocaleString()} events)
+                        </span>
+                      )}
+                    </span>
                   </>
                 ) : (
                   <>
                     <span className="text-emerald-600 text-sm">✓</span>
-                    <span>Showing complete dataset — all {epcis.stats.kpiTotalTags.toLocaleString()} receptacles loaded</span>
+                    <span>Complete dataset loaded — all {epcis.stats.kpiTotalTags.toLocaleString()} receptacles</span>
                   </>
                 )}
               </div>

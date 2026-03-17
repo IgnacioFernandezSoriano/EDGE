@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { fetchRfidReadings, fetchRfidEventCounts } from '@/lib/supabase';
+import { fetchRfidReadings, fetchRfidReadingsWithProgress, fetchRfidEventCounts } from '@/lib/supabase';
 import type { RfidReading } from '@/lib/supabase';
 
 // ── Re-exported types (kept for backward compatibility with EpcisDataTable) ──
@@ -491,6 +491,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   const [allReadings, setAllReadings] = useState<RfidReading[]>([]);
   const [loading, setLoading] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
+  const [backgroundProgress, setBackgroundProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rfidCounts, setRfidCounts] = useState<{ totalTags: number; rfidDepartures: number; rfPredes: number; rfResdes: number; rfidArrivals: number; rfE2e: number } | null>(null);
   const [rfidCountsLoading, setRfidCountsLoading] = useState(false);
@@ -520,18 +521,51 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       return () => { cancelled = true; };
     }
 
-    // No date or country filters: load the complete dataset at once.
-    // Progressive loading is intentionally avoided here because:
-    //   1. This is an analysis dashboard — partial numbers are misleading.
-    //   2. Older data (e.g. G.1UPU India→Japan) would be missed in a 30-day window.
-    // The spinner shows "Loading complete dataset…" until all pages are fetched.
-    fetchRfidReadings(undefined, undefined)
-      .then(data => {
-        if (!cancelled) {
-          setAllReadings(data);
-          setLoading(false);
-          setBackgroundLoading(false);
-        }
+    // Progressive loading strategy:
+    // Step 1 — fetch last 30 days immediately so the UI is usable fast.
+    // Step 2 — load the full history in background using batches of 10 pages.
+    //           A progress indicator shows how many pages have been loaded.
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    const recentFrom = thirtyDaysAgo.toISOString().split('T')[0];
+
+    setBackgroundProgress(null);
+
+    fetchRfidReadings(recentFrom, undefined)
+      .then(recentData => {
+        if (cancelled) return;
+        setAllReadings(recentData);
+        setLoading(false); // UI is now usable with recent data
+
+        // Step 2: load older data in background using batched parallel fetches
+        const dayBefore = new Date(thirtyDaysAgo);
+        dayBefore.setDate(dayBefore.getDate() - 1);
+        const olderTo = dayBefore.toISOString().split('T')[0];
+
+        setBackgroundLoading(true);
+
+        // We need to know the total pages first — fetch page 0 of older data
+        fetchRfidReadingsWithProgress(
+          undefined,
+          olderTo,
+          (loaded, total) => {
+            if (!cancelled) setBackgroundProgress({ loaded, total });
+          }
+        )
+          .then(olderData => {
+            if (!cancelled) {
+              setAllReadings(prev => [...olderData, ...prev]);
+              setBackgroundLoading(false);
+              setBackgroundProgress(null);
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setBackgroundLoading(false);
+              setBackgroundProgress(null);
+            }
+          });
       })
       .catch(err => {
         if (!cancelled) {
@@ -651,6 +685,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   return {
     loading,
     backgroundLoading,
+    backgroundProgress,
     rfidCountsLoading,
     error,
     stats,
