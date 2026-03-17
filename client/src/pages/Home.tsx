@@ -56,7 +56,7 @@ const COVERAGE_LABEL: Record<string, string> = {
   EDI_ONLY:    'EDI only (no RFID)',
 };
 
-const TABS = ['RFID', 'Benchmark'];
+const TABS = ['RFID', 'EDI+RFID'];
 
 /* ─── Tooltip ─── */
 function ChartTooltip({ active, payload, label }: any) {
@@ -741,9 +741,9 @@ export default function Home() {
               <div className="w-px h-10 bg-slate-200 self-center" />
               {/* EDI / RFID Benchmark group */}
               <div className="flex flex-col items-center gap-1">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-amber-500 px-1">EDI / RFID Benchmark</span>
+                <span className="text-[11px] font-bold uppercase tracking-widest text-amber-500 px-1">EDI / RFID</span>
                 <div className="flex items-center gap-1">
-                  {['Benchmark'].map(tab => (
+                  {['EDI+RFID'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -781,10 +781,10 @@ export default function Home() {
       <main className="container py-6 space-y-7">
 
         {/* ════════════════════ BENCHMARK ════════════════════ */}
-        {activeTab === 'Benchmark' && (
+        {activeTab === 'EDI+RFID' && (
           <Section
-            title="RFID vs EDI Benchmark"
-            subtitle="Direct comparison between RFID physical readings and EDI declared events — only receptacles with a pair in both RFID and EDI via ID Relation"
+            title="EDI + RFID Analysis"
+            subtitle="Receptacles with both RFID tag_id and EDI s9id linked via ID Relation — comparison of physical readings vs declared events"
           >
             {/* ── Benchmark filters ── */}
             <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">

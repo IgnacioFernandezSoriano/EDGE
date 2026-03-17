@@ -160,8 +160,11 @@ async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkR
     let q = supabase
       .from('benchmark_rfid_edi')
       .select('*')
-      // Only receptacles linked between RFID and EDI (have s9id from ID Relation)
+      // Only receptacles linked between RFID and EDI:
+      // - s9id: has EDI data (linked via ID Relation)
+      // - tag_id: has RFID data
       .not('s9id', 'is', null)
+      .not('tag_id', 'is', null)
       .range(from, from + PAGE - 1);
 
     // Date filter: apply on edi_predes_time (departure side)
@@ -363,24 +366,35 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
 
 /* ── Fetch all unique countries from benchmark_rfid_edi (no filters) ────────── */
 async function fetchBenchmarkCountries(): Promise<{ origins: string[]; dests: string[] }> {
-  const { data, error } = await supabase
-    .from('benchmark_rfid_edi')
-    .select('rf_origin_country,rf_dest_country')
-    .not('s9id', 'is', null);  // Only linked receptacles
-  if (error || !data) return { origins: [], dests: [] };
+  // Paginate to get all rows (Supabase limit is 1000 per request)
+  const PAGE = 1000;
+  const allData: { rf_origin_country: string | null; rf_dest_country: string | null }[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('benchmark_rfid_edi')
+      .select('rf_origin_country,rf_dest_country')
+      .not('s9id', 'is', null)   // Only receptacles linked via ID Relation (have EDI)
+      .not('tag_id', 'is', null) // Must also have RFID tag_id
+      .range(from, from + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
   // Exclude domestic (both sides known and equal)
-  const intl = data.filter((r: BenchmarkRow) => {
+  const intl = allData.filter(r => {
     const o = r.rf_origin_country, d = r.rf_dest_country;
     if (o && d && o === d) return false;
     return !!(o || d);
   });
   const origins = [...new Set(
-    intl.filter((r: BenchmarkRow) => r.rf_origin_country)
-        .map((r: BenchmarkRow) => r.rf_origin_country as string)
+    intl.filter(r => r.rf_origin_country)
+        .map(r => r.rf_origin_country as string)
   )].sort();
   const dests = [...new Set(
-    intl.filter((r: BenchmarkRow) => r.rf_dest_country)
-        .map((r: BenchmarkRow) => r.rf_dest_country as string)
+    intl.filter(r => r.rf_dest_country)
+        .map(r => r.rf_dest_country as string)
   )].sort();
   return { origins, dests };
 }
