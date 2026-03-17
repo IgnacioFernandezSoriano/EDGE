@@ -16,6 +16,7 @@ import {
 } from 'recharts';
 import { useTrackingData } from '@/hooks/useTrackingData';
 import { useEpcisData } from '@/hooks/useEpcisData';
+import { useBenchmarkData } from '@/hooks/useBenchmarkData';
 import { fetchMatchedTagsCount, supabase } from '@/lib/supabase';
 import { KpiCard } from '@/components/KpiCard';
 import { DataTable } from '@/components/DataTable';
@@ -609,6 +610,14 @@ export default function Home() {
     destCountry: destCountry || undefined,
   });
 
+  /* Benchmark data — used for country dropdowns when Benchmark tab is active */
+  const benchmarkMeta = useBenchmarkData({
+    dateFrom: dateRange.from || undefined,
+    dateTo: dateRange.to || undefined,
+    originCountry: originCountry || undefined,
+    destCountry: destCountry || undefined,
+  });
+
   /* Date label for CSV filename */
   const dateLabel = useMemo(() => {
     if (!dateRange.from && !dateRange.to) return '';
@@ -768,10 +777,10 @@ export default function Home() {
               onOriginChange={setOriginCountry}
               destCountry={destCountry}
               onDestChange={setDestCountry}
-              allOriginCountries={epcis.allOriginCountries}
-              allDestCountries={epcis.allDestCountries}
-              filteredCount={epcis.journeys.length}
-              totalCount={epcis.stats.uniqueReceptacles}
+              allOriginCountries={activeTab === 'Benchmark' ? benchmarkMeta.allOriginCountries : epcis.allOriginCountries}
+              allDestCountries={activeTab === 'Benchmark' ? benchmarkMeta.allDestCountries : epcis.allDestCountries}
+              filteredCount={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.journeys.length}
+              totalCount={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.stats.uniqueReceptacles}
             />
           </div>
         </div>
@@ -786,8 +795,8 @@ export default function Home() {
           to={dateRange.to}
           originCountry={originCountry}
           destCountry={destCountry}
-          count={epcis.journeys.length}
-          total={epcis.stats.uniqueReceptacles}
+          count={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.journeys.length}
+          total={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.stats.uniqueReceptacles}
         />
 
         {/* ════════════════════ BENCHMARK ════════════════════ */}

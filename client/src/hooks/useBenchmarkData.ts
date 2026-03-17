@@ -361,11 +361,36 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   };
 }
 
+/* ── Fetch all unique countries from benchmark_rfid_edi (no filters) ────────── */
+async function fetchBenchmarkCountries(): Promise<{ origins: string[]; dests: string[] }> {
+  const { data, error } = await supabase
+    .from('benchmark_rfid_edi')
+    .select('rf_origin_country,rf_dest_country');
+  if (error || !data) return { origins: [], dests: [] };
+  // Only international rows
+  const intl = data.filter((r: BenchmarkRow) =>
+    r.rf_origin_country && r.rf_dest_country && r.rf_origin_country !== r.rf_dest_country
+  );
+  const origins = [...new Set(intl.map((r: BenchmarkRow) => r.rf_origin_country as string))].sort();
+  const dests   = [...new Set(intl.map((r: BenchmarkRow) => r.rf_dest_country   as string))].sort();
+  return { origins, dests };
+}
+
 /* ── Hook ───────────────────────────────────────────────────────────────────── */
 export function useBenchmarkData(filters: BenchmarkFilters = {}) {
   const [rows, setRows]       = useState<BenchmarkRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
+  const [allOrigins, setAllOrigins] = useState<string[]>([]);
+  const [allDests,   setAllDests]   = useState<string[]>([]);
+
+  // Load all available countries once on mount
+  useEffect(() => {
+    fetchBenchmarkCountries().then(({ origins, dests }) => {
+      setAllOrigins(origins);
+      setAllDests(dests);
+    });
+  }, []);
 
   const filterKey = JSON.stringify(filters);
 
@@ -380,6 +405,27 @@ export function useBenchmarkData(filters: BenchmarkFilters = {}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 
+  // Dynamic dest list: when origin is selected, show only dests reachable from that origin
+  const availableOrigins = useMemo(() => {
+    if (!filters.destCountry) return allOrigins;
+    return allOrigins.filter(o =>
+      rows.some(r => r.rf_origin_country === o) ||
+      allOrigins.includes(o) // always show all origins; dest restricts origins via rows
+    );
+  }, [allOrigins, filters.destCountry, rows]);
+
+  const availableDests = useMemo(() => {
+    if (!filters.originCountry) return allDests;
+    // When origin is selected, only show dests that have rows for that origin
+    // We need to fetch without dest filter — use allDests filtered by current rows
+    // Since rows are already filtered by origin, collect unique dests from them
+    const destsFromRows = [...new Set(rows
+      .filter(r => r.rf_dest_country && r.rf_origin_country !== r.rf_dest_country)
+      .map(r => r.rf_dest_country as string)
+    )].sort();
+    return destsFromRows.length > 0 ? destsFromRows : allDests;
+  }, [allDests, filters.originCountry, rows]);
+
   const stats = useMemo(() => rows.length ? computeStats(rows) : null, [rows]);
-  return { rows, stats, loading, error };
+  return { rows, stats, loading, error, allOriginCountries: availableOrigins, allDestCountries: availableDests };
 }
