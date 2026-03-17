@@ -520,6 +520,27 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       return () => { cancelled = true; };
     }
 
+    // If a country filter is active (no date filter), load ALL data at once.
+    // Progressive loading would show incomplete results because data from different
+    // time periods may belong to the same country (e.g. G.1UPU India→Japan tags
+    // are older and would be missed if only the last 30 days are loaded first).
+    if (filters.originCountry || filters.destCountry) {
+      fetchRfidReadings(undefined, undefined)
+        .then(data => {
+          if (!cancelled) {
+            setAllReadings(data);
+            setLoading(false);
+          }
+        })
+        .catch(err => {
+          if (!cancelled) {
+            setError(err.message ?? 'Error al cargar datos RFID');
+            setLoading(false);
+          }
+        });
+      return () => { cancelled = true; };
+    }
+
     // Progressive loading: fetch last 30 days first, then load the rest in background
     const today = new Date();
     const thirtyDaysAgo = new Date(today);
@@ -580,8 +601,8 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       });
 
     return () => { cancelled = true; };
-    // Re-fetch when date filters change
-  }, [filters.dateFrom, filters.dateTo]);
+    // Re-fetch when date or country filters change
+  }, [filters.dateFrom, filters.dateTo, filters.originCountry, filters.destCountry]);
 
   // Fetch direct RFID event counts with progressive loading:
   // Step 1 — show last 30 days immediately
