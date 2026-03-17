@@ -21,7 +21,6 @@ import { fetchMatchedTagsCount, supabase } from '@/lib/supabase';
 import { KpiCard } from '@/components/KpiCard';
 import { DataTable } from '@/components/DataTable';
 import { EpcisDataTable } from '@/components/EpcisDataTable';
-import { GlobalFilters } from '@/components/GlobalFilters';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { OverviewAnalysis, DepartureAnalysis, ArrivalAnalysis, TransitAnalysis } from '@/components/AnalysisPanel';
 import { BenchmarkPanel } from '@/components/BenchmarkPanel';
@@ -574,6 +573,15 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('RFID');
   const [tableFilter, setTableFilter] = useState('ALL');
 
+  // ── Per-tab independent filters ────────────────────────────────────────────
+  const [rfidDateRange,        setRfidDateRange]        = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [rfidOriginCountry,    setRfidOriginCountry]    = useState<string | null>(null);
+  const [rfidDestCountry,      setRfidDestCountry]      = useState<string | null>(null);
+
+  const [benchDateRange,       setBenchDateRange]       = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [benchOriginCountry,   setBenchOriginCountry]   = useState<string | null>(null);
+  const [benchDestCountry,     setBenchDestCountry]     = useState<string | null>(null);
+
   /* Matched Tags count from ID Relation table */
   const [matchedTagsData, setMatchedTagsData] = useState<{ count: number; minDate: string | null; maxDate: string | null } | null>(null);
   // Build country→IMPC map from allEvents
@@ -592,54 +600,36 @@ export default function Home() {
     return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, Array.from(v)]));
   }, [allEvents]);
   useEffect(() => {
-    // Use tracking_events date bounds when no date filter is active
-    const dateFrom = dateRange.from || allDataBounds.min || undefined;
-    const dateTo = dateRange.to || allDataBounds.max || undefined;
-    const originImpcCodes = originCountry ? (countryToImpc[originCountry] || []) : undefined;
-    const destImpcCodes = destCountry ? (countryToImpc[destCountry] || []) : undefined;
+    const dateFrom = rfidDateRange.from || allDataBounds.min || undefined;
+    const dateTo   = rfidDateRange.to   || allDataBounds.max || undefined;
+    const originImpcCodes = rfidOriginCountry ? (countryToImpc[rfidOriginCountry] || []) : undefined;
+    const destImpcCodes   = rfidDestCountry   ? (countryToImpc[rfidDestCountry]   || []) : undefined;
     fetchMatchedTagsCount(dateFrom, dateTo, originImpcCodes, destImpcCodes)
       .then(setMatchedTagsData)
       .catch(() => setMatchedTagsData(null));
-  }, [dateRange.from, dateRange.to, originCountry, destCountry, countryToImpc, allDataBounds.min, allDataBounds.max]);
+  }, [rfidDateRange.from, rfidDateRange.to, rfidOriginCountry, rfidDestCountry, countryToImpc, allDataBounds.min, allDataBounds.max]);
 
   /* RFID tab data — fetched directly from the RFID table (ETL-enriched) */
   const epcis = useEpcisData({
-    dateFrom: dateRange.from || undefined,
-    dateTo: dateRange.to || undefined,
-    originCountry: originCountry || undefined,
-    destCountry: destCountry || undefined,
+    dateFrom: rfidDateRange.from || undefined,
+    dateTo:   rfidDateRange.to   || undefined,
+    originCountry: rfidOriginCountry || undefined,
+    destCountry:   rfidDestCountry   || undefined,
   });
 
-  /* Benchmark data — used for country dropdowns when Benchmark tab is active */
+  /* Benchmark tab data — fetched from benchmark_rfid_edi */
   const benchmarkMeta = useBenchmarkData({
-    dateFrom: dateRange.from || undefined,
-    dateTo: dateRange.to || undefined,
-    originCountry: originCountry || undefined,
-    destCountry: destCountry || undefined,
+    dateFrom: benchDateRange.from || undefined,
+    dateTo:   benchDateRange.to   || undefined,
+    originCountry: benchOriginCountry || undefined,
+    destCountry:   benchDestCountry   || undefined,
   });
 
-  /* Unified country lists: union of RFID and Benchmark countries for global filters */
-  const unifiedOriginCountries = useMemo(() => {
-    const combined = new Set([
-      ...epcis.allOriginCountries,
-      ...benchmarkMeta.allOriginCountries,
-    ]);
-    return [...combined].sort();
-  }, [epcis.allOriginCountries, benchmarkMeta.allOriginCountries]);
-
-  const unifiedDestCountries = useMemo(() => {
-    const combined = new Set([
-      ...epcis.allDestCountries,
-      ...benchmarkMeta.allDestCountries,
-    ]);
-    return [...combined].sort();
-  }, [epcis.allDestCountries, benchmarkMeta.allDestCountries]);
-
-  /* Date label for CSV filename */
+  /* Date label for CSV filename — uses RFID filters */
   const dateLabel = useMemo(() => {
-    if (!dateRange.from && !dateRange.to) return '';
-    return [dateRange.from, dateRange.to].filter(Boolean).join('_to_');
-  }, [dateRange]);
+    if (!rfidDateRange.from && !rfidDateRange.to) return '';
+    return [rfidDateRange.from, rfidDateRange.to].filter(Boolean).join('_to_');
+  }, [rfidDateRange]);
 
   /* Scatter data: departure lag vs arrival lead (FULL coverage only) */
   const scatterData = useMemo(() => {
@@ -783,50 +773,65 @@ export default function Home() {
             </select>
           </div>
 
-          {/* Global filters row: dates + origin + destination */}
-          <div className="border-t border-slate-100 py-2">
-            <GlobalFilters
-              dateRange={dateRange}
-              onDateChange={setDateRange}
-              minDate={allDataBounds.min}
-              maxDate={allDataBounds.max}
-              originCountry={originCountry}
-              onOriginChange={setOriginCountry}
-              destCountry={destCountry}
-              onDestChange={setDestCountry}
-              allOriginCountries={unifiedOriginCountries}
-              allDestCountries={unifiedDestCountries}
-              filteredCount={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.journeys.length}
-              totalCount={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.stats.uniqueReceptacles}
-            />
-          </div>
+
         </div>
       </header>
 
       {/* ─── Main content ─── */}
       <main className="container py-6 space-y-7">
 
-        {/* Active filter banner */}
-        <FilterBanner
-          from={dateRange.from}
-          to={dateRange.to}
-          originCountry={originCountry}
-          destCountry={destCountry}
-          count={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.journeys.length}
-          total={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.stats.uniqueReceptacles}
-        />
-
         {/* ════════════════════ BENCHMARK ════════════════════ */}
         {activeTab === 'Benchmark' && (
           <Section
             title="RFID vs EDI Benchmark"
-            subtitle="Direct comparison between RFID physical readings and EDI declared events — only receptacles with a pair in both RFID and datos EDI via ID Relation"
+            subtitle="Direct comparison between RFID physical readings and EDI declared events — only receptacles with a pair in both RFID and EDI via ID Relation"
           >
+            {/* ── Benchmark filters ── */}
+            <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mr-1">Filters</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400 font-medium">Dates:</span>
+                <input type="date" value={benchDateRange.from || ''} max={benchDateRange.to || undefined}
+                  onChange={e => setBenchDateRange(r => ({ ...r, from: e.target.value || null }))}
+                  className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 w-[130px]" />
+                <span className="text-slate-300 text-xs">–</span>
+                <input type="date" value={benchDateRange.to || ''} min={benchDateRange.from || undefined}
+                  onChange={e => setBenchDateRange(r => ({ ...r, to: e.target.value || null }))}
+                  className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 w-[130px]" />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400 font-medium">Origin:</span>
+                <select value={benchOriginCountry || ''} onChange={e => setBenchOriginCountry(e.target.value || null)}
+                  className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 min-w-[130px] max-w-[170px]">
+                  <option value="">All countries</option>
+                  {benchmarkMeta.allOriginCountries.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400 font-medium">Destination:</span>
+                <select value={benchDestCountry || ''} onChange={e => setBenchDestCountry(e.target.value || null)}
+                  className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 min-w-[130px] max-w-[170px]">
+                  <option value="">All countries</option>
+                  {benchmarkMeta.allDestCountries.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              {(benchDateRange.from || benchDateRange.to || benchOriginCountry || benchDestCountry) && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
+                    {benchmarkMeta.rows.length.toLocaleString()} receptacles
+                  </span>
+                  <button onClick={() => { setBenchDateRange({ from: null, to: null }); setBenchOriginCountry(null); setBenchDestCountry(null); }}
+                    className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 border border-transparent hover:border-rose-200 whitespace-nowrap">
+                    ✕ Clear all
+                  </button>
+                </div>
+              )}
+            </div>
             <BenchmarkPanel filters={{
-              dateFrom: dateRange.from || undefined,
-              dateTo: dateRange.to || undefined,
-              originCountry: originCountry || undefined,
-              destCountry: destCountry || undefined,
+              dateFrom: benchDateRange.from || undefined,
+              dateTo:   benchDateRange.to   || undefined,
+              originCountry: benchOriginCountry || undefined,
+              destCountry:   benchDestCountry   || undefined,
             }} />
           </Section>
         )}
@@ -1173,6 +1178,48 @@ export default function Home() {
           <Section title="Search ID" subtitle="Look up any Tag ID or Receptacle ID to see its full journey — RFID readings and EDI messages ordered by timestamp">
             <SearchID />
           </Section>
+          {/* ── RFID tab filters ── */}
+          <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mr-1">Filters</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-400 font-medium">Dates:</span>
+              <input type="date" value={rfidDateRange.from || ''} max={rfidDateRange.to || allDataBounds.max || undefined}
+                onChange={e => setRfidDateRange(r => ({ ...r, from: e.target.value || null }))}
+                className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 w-[130px]" />
+              <span className="text-slate-300 text-xs">–</span>
+              <input type="date" value={rfidDateRange.to || ''} min={rfidDateRange.from || allDataBounds.min || undefined}
+                onChange={e => setRfidDateRange(r => ({ ...r, to: e.target.value || null }))}
+                className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 w-[130px]" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-400 font-medium">Origin:</span>
+              <select value={rfidOriginCountry || ''} onChange={e => setRfidOriginCountry(e.target.value || null)}
+                className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 min-w-[130px] max-w-[170px]">
+                <option value="">All countries</option>
+                {epcis.allOriginCountries.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-400 font-medium">Destination:</span>
+              <select value={rfidDestCountry || ''} onChange={e => setRfidDestCountry(e.target.value || null)}
+                className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 min-w-[130px] max-w-[170px]">
+                <option value="">All countries</option>
+                {epcis.allDestCountries.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            {(rfidDateRange.from || rfidDateRange.to || rfidOriginCountry || rfidDestCountry) && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
+                  {epcis.journeys.length.toLocaleString()} receptacles
+                </span>
+                <button onClick={() => { setRfidDateRange({ from: null, to: null }); setRfidOriginCountry(null); setRfidDestCountry(null); }}
+                  className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 border border-transparent hover:border-rose-200 whitespace-nowrap">
+                  ✕ Clear all
+                </button>
+              </div>
+            )}
+          </div>
+
           <Section
             title="RFID Analysis"
             subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · RFID Outbound: ${(epcis.rfidCounts?.rfPredes ?? '…').toLocaleString()} · RFID Inbound: ${(epcis.rfidCounts?.rfResdes ?? '…').toLocaleString()} · E2E: ${(epcis.rfidCounts?.rfE2e ?? '…').toLocaleString()}${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
