@@ -196,20 +196,20 @@ async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkR
   });
 
   // Recalculate rf_transit_hours as RFID Outbound → RFID Inbound
-  // (rf_predes_time → rf_resdes_time) for each row, overriding the
-  // pre-computed value from the view which uses DEPARTURE→ARRIVAL events
-  // and can include cross-journey readings producing inflated values.
+  // RFID Outbound = rf_departure_time (DEPARTURE event = receptacle leaves origin centre)
+  // RFID Inbound  = rf_arrival_time   (ARRIVAL event   = receptacle arrives at dest centre)
+  // This is the correct equivalent to EDI PREDES → RESDES transit.
   for (const r of international) {
-    if (r.rf_predes_time && r.rf_resdes_time) {
-      const dep = new Date(r.rf_predes_time).getTime();
-      const arr = new Date(r.rf_resdes_time).getTime();
+    if (r.rf_departure_time && r.rf_arrival_time) {
+      const dep = new Date(r.rf_departure_time).getTime();
+      const arr = new Date(r.rf_arrival_time).getTime();
       const diffH = (arr - dep) / 3_600_000;
       // Only accept positive, plausible transit times (0–720h = 30 days)
       r.rf_transit_hours = diffH > 0 && diffH <= 720 ? Math.round(diffH * 10) / 10 : null;
     } else {
       r.rf_transit_hours = null;
     }
-    // Recalculate has_rf_transit: need both RFID Outbound and Inbound
+    // has_rf_transit: need both RFID Outbound (DEPARTURE) and Inbound (ARRIVAL)
     r.has_rf_transit = r.rf_transit_hours !== null;
   }
 
