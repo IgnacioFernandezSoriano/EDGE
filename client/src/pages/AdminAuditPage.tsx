@@ -1326,6 +1326,29 @@ export default function AdminAuditPage() {
   const { summary, loading: auditLoading, refetch: refetchAudit } = useAuditLog();
   const { pendingCount, loading: masterLoading } = useMasterPending();
 
+  // ── Refresco manual de benchmark_rfid_edi ──────────────────────────────
+  const [benchmarkRefreshing, setBenchmarkRefreshing] = useState(false);
+  const [benchmarkResult, setBenchmarkResult]         = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleRefreshBenchmark = useCallback(async () => {
+    if (benchmarkRefreshing) return;
+    setBenchmarkRefreshing(true);
+    setBenchmarkResult(null);
+    try {
+      const { data, error } = await supabase.rpc('refresh_benchmark_view');
+      if (error) throw new Error(error.message);
+      const durationS = data?.duration_ms ? (data.duration_ms / 1000).toFixed(1) : '?';
+      setBenchmarkResult({ success: true, message: `Vista actualizada en ${durationS}s` });
+      toast.success('benchmark_rfid_edi refrescada correctamente');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
+      setBenchmarkResult({ success: false, message: msg });
+      toast.error(`Error al refrescar: ${msg}`);
+    } finally {
+      setBenchmarkRefreshing(false);
+    }
+  }, [benchmarkRefreshing]);
+
   // ── Ejecución manual del Audit ─────────────────────────────────────────
   const [auditRunning, setAuditRunning] = useState(false);
   const [showRunLog, setShowRunLog] = useState(false);
@@ -1451,6 +1474,44 @@ export default function AdminAuditPage() {
             <h1 className="text-xl font-bold text-slate-800">Audit de Carga de Datos</h1>
           </div>
           <div className="flex items-center gap-4">
+            {/* Refresh Benchmark View button */}
+            <div className="flex flex-col items-end gap-1">
+              <button
+                onClick={handleRefreshBenchmark}
+                disabled={benchmarkRefreshing}
+                title="Refresca la vista materializada benchmark_rfid_edi con los datos más recientes de RFID y EDI"
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  benchmarkRefreshing
+                    ? 'bg-amber-100 text-amber-400 cursor-not-allowed'
+                    : 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm hover:shadow-md'
+                }`}
+              >
+                {benchmarkRefreshing ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Actualizando...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh Benchmark
+                  </>
+                )}
+              </button>
+              {benchmarkResult && (
+                <span className={`text-[11px] font-medium ${
+                  benchmarkResult.success ? 'text-emerald-600' : 'text-red-500'
+                }`}>
+                  {benchmarkResult.success ? '✓' : '✗'} {benchmarkResult.message}
+                </span>
+              )}
+            </div>
             <button
               onClick={handleRunAudit}
               disabled={auditRunning}

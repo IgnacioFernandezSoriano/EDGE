@@ -618,6 +618,23 @@ export default function Home() {
     destCountry: destCountry || undefined,
   });
 
+  /* Unified country lists: union of RFID and Benchmark countries for global filters */
+  const unifiedOriginCountries = useMemo(() => {
+    const combined = new Set([
+      ...epcis.allOriginCountries,
+      ...benchmarkMeta.allOriginCountries,
+    ]);
+    return [...combined].sort();
+  }, [epcis.allOriginCountries, benchmarkMeta.allOriginCountries]);
+
+  const unifiedDestCountries = useMemo(() => {
+    const combined = new Set([
+      ...epcis.allDestCountries,
+      ...benchmarkMeta.allDestCountries,
+    ]);
+    return [...combined].sort();
+  }, [epcis.allDestCountries, benchmarkMeta.allDestCountries]);
+
   /* Date label for CSV filename */
   const dateLabel = useMemo(() => {
     if (!dateRange.from && !dateRange.to) return '';
@@ -777,8 +794,8 @@ export default function Home() {
               onOriginChange={setOriginCountry}
               destCountry={destCountry}
               onDestChange={setDestCountry}
-              allOriginCountries={activeTab === 'Benchmark' ? benchmarkMeta.allOriginCountries : epcis.allOriginCountries}
-              allDestCountries={activeTab === 'Benchmark' ? benchmarkMeta.allDestCountries : epcis.allDestCountries}
+              allOriginCountries={unifiedOriginCountries}
+              allDestCountries={unifiedDestCountries}
               filteredCount={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.journeys.length}
               totalCount={activeTab === 'Benchmark' ? benchmarkMeta.rows.length : epcis.stats.uniqueReceptacles}
             />
