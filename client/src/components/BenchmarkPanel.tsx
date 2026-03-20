@@ -440,7 +440,7 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
 
       {/* ── 0. Coverage summary ── */}
       <Section
-        title="Benchmark Coverage"
+        title="Coverage Summary"
         subtitle={`Receptacles linked between RFID and EDI via ID Relation — ${stats.totalPairs} total`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
@@ -457,57 +457,57 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
 
       {/* ── 1. RFID Outbound vs EDI PREDES ── */}
       <Section
-        title="RFID Outbound vs EDI PREDES"
-        subtitle={`Departure preparation: RFID Outbound (DEPARTURE event) vs EDI PREDES — ${stats.departurePairs} pairs with both events`}
+        title="AMU Outbound + PREDES"
+        subtitle={`RFID AMU Outbound matched with EDI PREDES — ${stats.departurePairs} pairs`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="Pairs with both"        value={stats.hasRfPredes}    color="indigo" />
-          <KPI label="Avg Δ Outbound"         value={fmtH(stats.avgDeltaPredesH)} sub="RFID Outbound minus EDI (+ = RFID later)" color={stats.avgDeltaPredesH !== null && stats.avgDeltaPredesH >= 0 ? 'green' : 'rose'} />
-          <KPI label="EDI PREDES cover"       value={pct(stats.hasEdiPredes, stats.totalPairs)} sub={`${stats.hasEdiPredes} / ${stats.totalPairs}`} color="slate" />
-          <KPI label="RFID Outbound cover"    value={pct(stats.hasRfPredes, stats.totalPairs)}  sub={`${stats.hasRfPredes} / ${stats.totalPairs}`} color="green" />
+          <KPI label="RFID Outbound pairs with PREDES" value={stats.hasRfPredes} color="indigo" />
+          <KPI label="Avg PREDES advance/delay vs RFID Outbound" value={fmtH(stats.avgDeltaPredesH)} sub="RFID Outbound minus EDI PREDES (+ = RFID later)" color={stats.avgDeltaPredesH !== null && stats.avgDeltaPredesH >= 0 ? 'green' : 'rose'} />
+          <KPI label="EDI PREDES coverage" value={pct(stats.hasEdiPredes, stats.totalPairs)} sub={`${stats.hasEdiPredes} / ${stats.totalPairs}`} color="slate" />
+          <KPI label="RFID Outbound coverage" value={pct(stats.hasRfPredes, stats.totalPairs)} sub={`${stats.hasRfPredes} / ${stats.totalPairs}`} color="green" />
         </div>
 
         <p className="text-[11px] text-slate-500 mb-2 italic">
-          Δ = RFID Outbound minus EDI PREDES (hours). Negative = RFID reads <strong>before</strong> EDI declares; positive = RFID reads <strong>after</strong>.
-          Colour: green = positive · red = negative.
+          Δ = RFID Outbound minus EDI PREDES (hours). Negative = PREDES declared <strong>after</strong> RFID reads; positive = PREDES declared <strong>before</strong>.
+          Green = PREDES in advance · Red = PREDES delayed.
         </p>
         <CentreTable data={stats.byOriginCentre} label="Δ" />
       </Section>
 
       {/* ── 2. RFID Inbound vs EDI RESDES ── */}
       <Section
-        title="RFID Inbound vs EDI RESDES"
-        subtitle={`Delivery confirmation: RFID Inbound (ARRIVAL event) vs EDI RESDES — ${stats.arrivalPairs} pairs with both events`}
+        title="AMU Inbound + EDI RESDES"
+        subtitle={`RFID AMU Inbound matched with EDI RESDES — ${stats.arrivalPairs} pairs`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="Pairs with both"       value={stats.hasRfResdes}    color="indigo" />
-          <KPI label="Avg Δ Inbound"         value={fmtH(stats.avgDeltaResdesH)} sub="RFID Inbound minus EDI (+ = RFID later)" color={stats.avgDeltaResdesH !== null && stats.avgDeltaResdesH >= 0 ? 'green' : 'rose'} />
-          <KPI label="EDI RESDES cover"      value={pct(stats.hasEdiResdes, stats.totalPairs)} sub={`${stats.hasEdiResdes} / ${stats.totalPairs}`} color="slate" />
-          <KPI label="RFID Inbound cover"    value={pct(stats.hasRfResdes, stats.totalPairs)}  sub={`${stats.hasRfResdes} / ${stats.totalPairs}`} color="green" />
+          <KPI label="RFID Inbound pairs with RESDES" value={stats.hasRfResdes} color="indigo" />
+          <KPI label="Avg RESDES advance/delay vs RFID Inbound" value={fmtH(stats.avgDeltaResdesH)} sub="RFID Inbound minus EDI RESDES (+ = RFID later)" color={stats.avgDeltaResdesH !== null && stats.avgDeltaResdesH >= 0 ? 'green' : 'rose'} />
+          <KPI label="EDI RESDES coverage" value={pct(stats.hasEdiResdes, stats.totalPairs)} sub={`${stats.hasEdiResdes} / ${stats.totalPairs}`} color="slate" />
+          <KPI label="RFID Inbound coverage" value={pct(stats.hasRfResdes, stats.totalPairs)} sub={`${stats.hasRfResdes} / ${stats.totalPairs}`} color="green" />
         </div>
 
         <p className="text-[11px] text-slate-500 mb-2 italic">
-          Δ = RFID Inbound minus EDI RESDES (hours). Negative = RFID reads <strong>before</strong> EDI declares; positive = RFID reads <strong>after</strong>.
-          Colour: green = positive · red = negative.
+          Δ = RFID Inbound minus EDI RESDES (hours). Negative = RESDES declared <strong>after</strong> RFID reads; positive = RESDES declared <strong>before</strong>.
+          Green = RESDES in advance · Red = RESDES delayed.
         </p>
         <CentreTable data={stats.byDestCentre} label="Δ" />
       </Section>
 
       {/* ── 4. Transit time comparison ── */}
       <Section
-        title="Transit Time: RFID vs EDI"
-        subtitle={`RFID Outbound → RFID Inbound vs EDI PREDES → RESDES — ${stats.transitPairs} international pairs`}
+        title="Transit Times (AMU's + EDI)"
+        subtitle={`RFID AMU Outbound → AMU Inbound vs EDI PREDES → RESDES — ${stats.transitPairs} international pairs`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="Transit pairs"     value={stats.transitPairs}    color="indigo" />
-          <KPI label="Avg RFID transit"  value={fmtHAbs(stats.avgRfTransitH)}  color="indigo" />
-          <KPI label="Avg EDI transit"   value={fmtHAbs(stats.avgEdiTransitH)} color="slate" />
-          <KPI label="Median RFID"       value={fmtHAbs(stats.medRfTransitH)}  color="indigo" />
+          <KPI label="Matched transit pairs" value={stats.transitPairs} color="indigo" />
+          <KPI label="Avg RFID transit" value={fmtHAbs(stats.avgRfTransitH)} color="indigo" />
+          <KPI label="Avg EDI transit" value={fmtHAbs(stats.avgEdiTransitH)} color="slate" />
+          <KPI label="Median RFID transit" value={fmtHAbs(stats.medRfTransitH)} color="indigo" />
         </div>
 
         {routeChartData.length > 0 && (
           <div className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
-            <p className="text-xs font-semibold text-slate-600 mb-3">Average transit time by route — RFID physical vs EDI declared</p>
+            <p className="text-xs font-semibold text-slate-600 mb-3">Average transit time by route — RFID (AMU Outbound → Inbound) vs EDI (PREDES → RESDES)</p>
             <ResponsiveContainer width="100%" height={Math.max(220, routeChartData.length * 32)}>
               <BarChart data={routeChartData} layout="vertical" margin={{ left: 10, right: 60, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
@@ -515,8 +515,8 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
                 <YAxis type="category" dataKey="route" tick={{ fontSize: 10 }} width={140} />
                 <Tooltip formatter={(v: number) => [`${v.toFixed(1)}h (${(v / 24).toFixed(1)}d)`, '']} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Bar dataKey="rfidAvg" name="RFID (Outbound→Inbound)" fill={C.rfid} radius={[0, 3, 3, 0]} barSize={11} />
-                <Bar dataKey="ediAvg"  name="EDI (PREDES→RESDES)"  fill={C.edi}  radius={[0, 3, 3, 0]} barSize={11} />
+                <Bar dataKey="rfidAvg" name="RFID Transit (h)" fill={C.rfid} radius={[0, 3, 3, 0]} barSize={11} />
+                <Bar dataKey="ediAvg"  name="EDI Transit (h)"  fill={C.edi}  radius={[0, 3, 3, 0]} barSize={11} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -524,7 +524,7 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
 
         {(stats.rfTransitCdf.length > 0 || stats.ediTransitCdf.length > 0) && (
           <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-xs font-semibold text-slate-600 mb-3">Cumulative distribution — transit times</p>
+            <p className="text-xs font-semibold text-slate-600 mb-3">Avg transit distribution — Cumulative Distribution</p>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart margin={{ left: 10, right: 20, top: 5, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -537,8 +537,8 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
                   label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: '#94a3b8' } }} />
                 <Tooltip formatter={(v: any, name: string) => [`${v}%`, name]} labelFormatter={l => `≤ ${l}h`} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Line data={stats.rfTransitCdf}  type="monotone" dataKey="pct" name="RFID (Outbound→Inbound)" stroke={C.rfid} strokeWidth={2} dot={false} />
-                <Line data={stats.ediTransitCdf} type="monotone" dataKey="pct" name="EDI"  stroke={C.edi}  strokeWidth={2} dot={false} strokeDasharray="5 3" />
+                <Line data={stats.rfTransitCdf}  type="monotone" dataKey="pct" name="RFID Transit (h)" stroke={C.rfid} strokeWidth={2} dot={false} />
+                <Line data={stats.ediTransitCdf} type="monotone" dataKey="pct" name="EDI Transit (h)"  stroke={C.edi}  strokeWidth={2} dot={false} strokeDasharray="5 3" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -547,25 +547,23 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
 
       {/* ── 5. EDI Chain completeness (gap analysis) ── */}
       <Section
-        title="EDI Chain Completeness"
-        subtitle={`Events received per receptacle across the full chain: PREDES → RFID Outbound → RESDIT74 → RESDIT21 → RFID Inbound → RESDES — ${stats.totalPairs} total pairs`}
+        title="Comparative Matchings"
+        subtitle={`Percentage of EDI matches per event type across ${stats.totalPairs} receptacles linked via ID Relation`}
       >
         <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
           <p className="text-[11px] text-slate-400 mb-3 italic">
-            RFID has no equivalent for RESDIT74 or RESDIT21. Where these are missing, RFID readings provide the only physical evidence of the receptacle's location.
+            RFID physical readings complement EDI declared events. Where EDI events are missing, RFID provides the only evidence of the receptacle's location.
           </p>
           <ChainBar label="PREDES"        present={stats.hasEdiPredes}   total={stats.totalPairs} />
-          <ChainBar label="RFID Outbound" present={stats.hasRfPredes}    total={stats.totalPairs} rfid />
-          <ChainBar label="RESDIT74"      present={stats.hasEdiResdit74} total={stats.totalPairs} />
-          <ChainBar label="RESDIT21"      present={stats.hasEdiResdit21} total={stats.totalPairs} />
-          <ChainBar label="RFID Inbound"  present={stats.hasRfResdes}    total={stats.totalPairs} rfid />
           <ChainBar label="RESDES"        present={stats.hasEdiResdes}   total={stats.totalPairs} />
+          <ChainBar label="RFID Inbound"  present={stats.hasRfResdes}    total={stats.totalPairs} rfid />
+          <ChainBar label="RESDIT"        present={stats.hasEdiResdit74} total={stats.totalPairs} />
         </div>
 
         {/* Gap by route */}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
-            <p className="text-xs font-semibold text-slate-600">Missing EDI events by route — % of receptacles lacking each event</p>
+            <p className="text-xs font-semibold text-slate-600">Percentage breakdown of EDI matches by route</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -576,9 +574,9 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
                   <th className="px-3 py-2 text-center font-semibold text-slate-600">DEP</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-600">ARR</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-600">Transit</th>
-                  <th className="px-3 py-2 text-center font-semibold text-amber-600">Missing RESDIT74</th>
-                  <th className="px-3 py-2 text-center font-semibold text-amber-600">Missing RESDIT21</th>
-                  <th className="px-3 py-2 text-center font-semibold text-rose-600">Missing RESDES</th>
+                  <th className="px-3 py-2 text-center font-semibold text-rose-600">Avg Δ (PREDES)</th>
+                  <th className="px-3 py-2 text-center font-semibold text-amber-600">Avg Δ (RESDES)</th>
+                  <th className="px-3 py-2 text-center font-semibold text-indigo-600">Avg Δ (TRANSIT)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -589,9 +587,9 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
                     <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.depCount}</td>
                     <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.arrCount}</td>
                     <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.transitCount}</td>
-                    <td className="px-3 py-2 text-center"><GapBadge pct={r.missingResdit74Pct} /></td>
-                    <td className="px-3 py-2 text-center"><GapBadge pct={r.missingResdit21Pct} /></td>
-                    <td className="px-3 py-2 text-center"><GapBadge pct={r.missingResdesPct} /></td>
+                    <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.avgDeltaPredesH ?? null)}`}>{fmtH(r.avgDeltaPredesH ?? null)}</td>
+                    <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.avgDeltaResdesH ?? null)}`}>{fmtH(r.avgDeltaResdesH ?? null)}</td>
+                    <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.avgDeltaTransitH ?? null)}`}>{fmtH(r.avgDeltaTransitH ?? null)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -610,8 +608,8 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
                   ? 'bg-indigo-600 text-white border-indigo-600'
                   : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
               }`}>
-              {v === 'departure' ? `Departure (${stats.departurePairs})`
-               : v === 'arrival' ? `Arrival (${stats.arrivalPairs})`
+              {v === 'departure' ? `Receptacles (${stats.departurePairs})`
+               : v === 'arrival' ? `Predes (${stats.arrivalPairs})`
                : `Transit (${stats.transitPairs})`}
             </button>
           ))}

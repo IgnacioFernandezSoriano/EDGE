@@ -78,6 +78,7 @@ export interface RouteStats {
   count: number; depCount: number; arrCount: number; transitCount: number;
   avgRfH: number | null; avgEdiH: number | null;
   missingCarditPct: number; missingResdit74Pct: number; missingResdit21Pct: number; missingResdesPct: number;
+  avgDeltaPredesH: number | null; avgDeltaResdesH: number | null; avgDeltaTransitH: number | null;
 }
 export interface BenchmarkStats {
   totalPairs: number; departurePairs: number; arrivalPairs: number; transitPairs: number;
@@ -293,6 +294,9 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
     missingResdit74Pct: v.count ? Math.round(v.rows.filter(r => r.missing_resdit74).length / v.count * 100) : 0,
     missingResdit21Pct: v.count ? Math.round(v.rows.filter(r => r.missing_resdit21).length / v.count * 100) : 0,
     missingResdesPct:   v.count ? Math.round(v.rows.filter(r => r.missing_resdes).length   / v.count * 100) : 0,
+    avgDeltaPredesH:  mean(v.rows.filter(r => r.delta_predes_hours !== null).map(r => r.delta_predes_hours!)),
+    avgDeltaResdesH:  mean(v.rows.filter(r => r.delta_resdes_hours !== null).map(r => r.delta_resdes_hours!)),
+    avgDeltaTransitH: mean(v.rows.filter(r => r.rf_transit_hours !== null && r.edi_transit_hours !== null).map(r => r.rf_transit_hours! - r.edi_transit_hours!)),
   })).sort((a, b) => b.count - a.count);
   return {
     totalPairs: rows.length, departurePairs: rows.filter(r => r.has_rf_departure).length,
