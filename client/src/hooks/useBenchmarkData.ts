@@ -22,6 +22,21 @@ export interface BenchmarkFilters {
 
 interface IdRelationRow { tagid: string; s9id: string; }
 
+/* Raw row from 'datos EDI' table */
+interface DatosEdiRow {
+  ean:            string;        // = s9id in ID Relation
+  origin:         string | null; // 6-char IMPC e.g. "INBOMB"
+  destination:    string | null; // 6-char IMPC e.g. "JPTYOA"
+  predes_time:    string | null;
+  cardit_time:    string | null;
+  resdit74_time:  string | null;
+  resdit74_impc:  string | null;
+  resdit21_time:  string | null;
+  resdit21_impc:  string | null;
+  redes_time:     string | null; // RESDES time (note: column is 'redes_time')
+}
+
+/* Normalised EDI row keyed by s9id (= ean) */
 interface EdiRow {
   s9id:              string;
   edi_origin_impc:   string | null;
@@ -129,12 +144,39 @@ async function getIdRelationMap(): Promise<Map<string, string>> {
   return map;
 }
 
-/* ── Module-level cache: full EDI table (pagination, no .in()) ──────────────── */
+/* ── Module-level cache: full EDI table from 'datos EDI' (pagination) ──────── */
 let ediCache: Map<string, EdiRow> | null = null;
 let ediCacheLoading = false;
 let ediCacheCallbacks: Array<(m: Map<string, EdiRow>) => void> = [];
 
-const EDI_COLS = 's9id,edi_origin_impc,edi_dest_impc,edi_predes_time,edi_cardit_time,edi_resdit74_time,edi_resdit74_impc,edi_resdit21_time,edi_resdit21_impc,edi_resdes_time,edi_transit_hours,missing_cardit,missing_resdit74,missing_resdit21,missing_resdes';
+const DATOS_EDI_COLS = 'ean,origin,destination,predes_time,cardit_time,resdit74_time,resdit74_impc,resdit21_time,resdit21_impc,redes_time';
+
+function normaliseDatosEdiRow(raw: DatosEdiRow): EdiRow {
+  const predes  = raw.predes_time  ?? null;
+  const cardit  = raw.cardit_time  ?? null;
+  const res74   = raw.resdit74_time ?? null;
+  const res21   = raw.resdit21_time ?? null;
+  const resdes  = raw.redes_time   ?? null;
+  // transit = RESDES time minus PREDES time in hours
+  const transit = diffHours(predes, resdes);
+  return {
+    s9id:              raw.ean,
+    edi_origin_impc:   raw.origin   ? raw.origin.slice(0, 6)      : null,
+    edi_dest_impc:     raw.destination ? raw.destination.slice(0, 6) : null,
+    edi_predes_time:   predes,
+    edi_cardit_time:   cardit,
+    edi_resdit74_time: res74,
+    edi_resdit74_impc: raw.resdit74_impc ?? null,
+    edi_resdit21_time: res21,
+    edi_resdit21_impc: raw.resdit21_impc ?? null,
+    edi_resdes_time:   resdes,
+    edi_transit_hours: transit,
+    missing_cardit:    !cardit,
+    missing_resdit74:  !res74,
+    missing_resdit21:  !res21,
+    missing_resdes:    !resdes,
+  };
+}
 
 async function getEdiMap(onProgress?: (loaded: number, total: number) => void): Promise<Map<string, EdiRow>> {
   if (ediCache) return ediCache;
@@ -142,21 +184,21 @@ async function getEdiMap(onProgress?: (loaded: number, total: number) => void): 
   ediCacheLoading = true;
   let total = 0;
   try {
-    const { count } = await supabase.from('benchmark_rfid_edi').select('s9id', { count: 'exact', head: true });
+    const { count } = await supabase.from('datos EDI').select('ean', { count: 'exact', head: true });
     total = count ?? 0;
   } catch { /* ignore */ }
-  const all: EdiRow[] = [];
+  const all: DatosEdiRow[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase.from('benchmark_rfid_edi').select(EDI_COLS).range(from, from + 499);
+    const { data, error } = await supabase.from('datos EDI').select(DATOS_EDI_COLS).range(from, from + 499);
     if (error || !data || !data.length) break;
-    all.push(...(data as EdiRow[]));
+    all.push(...(data as DatosEdiRow[]));
     if (onProgress) onProgress(all.length, total || all.length);
     if (data.length < 500) break;
     from += 500;
   }
   const map = new Map<string, EdiRow>();
-  for (const row of all) { if (row.s9id) map.set(row.s9id, row); }
+  for (const raw of all) { if (raw.ean) map.set(raw.ean, normaliseDatosEdiRow(raw)); }
   ediCache = map;
   ediCacheLoading = false;
   ediCacheCallbacks.forEach(cb => cb(map));
