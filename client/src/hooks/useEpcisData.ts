@@ -11,8 +11,8 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { fetchRfidReadings, fetchRfidReadingsWithProgress } from '@/lib/supabase';
-import type { RfidReading } from '@/lib/supabase';
+import { fetchRfidReadings, fetchRfidReadingsWithProgress, fetchRfidReadersMaster } from '@/lib/supabase';
+import type { RfidReading, RfidReaderMaster } from '@/lib/supabase';
 
 // ── Re-exported types (kept for backward compatibility with EpcisDataTable) ──
 
@@ -150,13 +150,28 @@ function parseLocation(location: string | null): { country: string; centre: stri
 }
 
 /**
- * Groups individual RFID readings by tag_id and builds journey objects.
- * ETL v3: each tag has ORIGIN, DESTINATION, and optionally DEPARTURE/ARRIVAL
- * for international transits. Country and centre come from the `country` and
- * `center_name` fields (set by the ETL from rfid_readers_master), with
- * fallback to parsing the `location` field.
+ * REGLA DE SELECCIÓN DE EVENTOS DEL TRAYECTO
+ *
+ * Groups individual RFID readings by tag_id and builds journey objects
+ * applying the "Regla de Selección de Eventos del Trayecto":
+ *
+ * 1. Sort readings by record_time ASC
+ * 2. Identify country change → defines ORIGIN block (first country) and DESTINATION block (first different country)
+ * 3. Within each block, group by read_point_id (centre):
+ *    - ORIGIN block: select LAST reading per centre
+ *    - DESTINATION block: select FIRST reading per centre
+ * 4. Classify by td_reader (from rfid_readers_master):
+ *    - ORIGIN + td_reader=false → OE Origin (last of all last-per-centre)
+ *    - ORIGIN + td_reader=true  → AMU Outbound (last of all last-per-centre)
+ *    - DEST   + td_reader=true  → AMU Inbound (first of all first-per-centre)
+ *    - DEST   + td_reader=false → OE Destination (first of all first-per-centre)
+ * 5. Leg2 = tags with both AMU Outbound AND AMU Inbound
+ * 6. transit_hours = record_time(AMU Inbound) - record_time(AMU Outbound)
  */
-function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
+function readingsToJourneys(
+  readings: RfidReading[],
+  readerMap: Map<string, RfidReaderMaster>
+): RfidJourney[] {
   // Group by tag_id
   const byTag = new Map<string, RfidReading[]>();
   for (const r of readings) {
@@ -169,132 +184,183 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
   const journeys: RfidJourney[] = [];
 
   for (const [tagKey, rows] of Array.from(byTag.entries())) {
-    // Sort by event_time_local ascending
+    // Step 1: Sort by record_time ASC
     const sorted = [...rows].sort((a, b) => {
-      const ta = a.event_time_local || a.record_time || '';
-      const tb = b.event_time_local || b.record_time || '';
+      const ta = a.record_time || a.event_time_local || '';
+      const tb = b.record_time || b.event_time_local || '';
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
 
-    const originRow  = sorted.find(r => r.event_type === 'ORIGIN') ?? null;
-    const destRow    = sorted.slice().reverse().find(r => r.event_type === 'DESTINATION') ?? null;
-    // DEPARTURE = last reading before crossing border (may be same as ORIGIN if only 1 reading in origin country)
-    const depRow     = sorted.slice().reverse().find(r => r.event_type === 'DEPARTURE') ?? null;
-    // ARRIVAL = first reading after crossing border
-    const arrRow     = sorted.find(r => r.event_type === 'ARRIVAL') ?? null;
-
-    // Need at least one known event to build a journey
-    // A tag without ORIGIN but with DEPARTURE/ARRIVAL/DESTINATION is still a valid partial journey
-    const anchorRow = originRow ?? depRow ?? arrRow ?? destRow;
-    if (!anchorRow) continue;
-
-    // Helper: extract country and centre from a reading
-    function getCentre(r: RfidReading): { country: string; centre: string; impc: string } {
-      const country = r.country || parseLocation(r.location).country;
-      const centre  = r.center_name || parseLocation(r.location).centre || r.impc_code || '';
-      const impc    = r.impc_code || '';
-      return { country, centre, impc };
+    // Helper: get country and centre for a reading (prefer rfid_readers_master data)
+    function getReaderInfo(r: RfidReading): { country: string; centre: string; impc: string; td_reader: boolean } {
+      const master = r.read_point_id ? readerMap.get(r.read_point_id) : undefined;
+      const country = master?.country || r.country || parseLocation(r.location).country || '';
+      const centre  = master?.center_name || r.center_name || parseLocation(r.location).centre || r.impc_code || '';
+      const impc    = master?.impc_code || r.impc_code || '';
+      const td_reader = master?.td_reader ?? false;
+      return { country, centre, impc, td_reader };
     }
 
-    // Use originRow if available; fall back to anchorRow for partial journeys
-    const originInfo = getCentre(originRow ?? anchorRow);
-    const originTime = (originRow ?? anchorRow).event_time_local || (originRow ?? anchorRow).record_time || '';
+    // Step 2: Identify origin country (first record's country)
+    const firstInfo = getReaderInfo(sorted[0]);
+    const originCountry = firstInfo.country;
+    if (!originCountry) continue; // skip tags with no known country
 
-    // hasDest is true when a DESTINATION row exists AND it is at a DIFFERENT
-    // centre than ORIGIN.  We compare impc_code when both are non-empty;
-    // when either is empty we fall back to centre name comparison.
-    // This avoids the bug where null !== null evaluates to false and hides
-    // a real DESTINATION (which was the root cause of the blank-destination issue).
-    const destRowRaw  = destRow;
-    const destInfoRaw = destRowRaw ? getCentre(destRowRaw) : null;
-    const isSameCentre = (() => {
-      if (!destInfoRaw) return true; // no destination row → treat as same
-      const oImpc = originInfo.impc || '';
-      const dImpc = destInfoRaw.impc || '';
-      if (oImpc && dImpc) return oImpc === dImpc;   // both non-empty: compare IMPC
-      // Fallback: compare centre names (non-empty strings only)
-      const oCentre = originInfo.centre || '';
-      const dCentre = destInfoRaw.centre || '';
-      return oCentre !== '' && oCentre === dCentre;
-    })();
-    const hasDest  = destRowRaw !== null && destInfoRaw !== null && !isSameCentre;
-    const destInfo = hasDest ? destInfoRaw : null;
-    const destTime = hasDest ? (destRowRaw!.event_time_local || destRowRaw!.record_time || null) : null;
-
-    const hasIntl = depRow !== null && arrRow !== null;
-    const depInfo  = depRow  ? getCentre(depRow)  : null;
-    const arrInfo  = arrRow  ? getCentre(arrRow)  : null;
-    const depTime  = depRow  ? (depRow.event_time_local  || depRow.record_time  || null) : null;
-    const arrTime  = arrRow  ? (arrRow.event_time_local  || arrRow.record_time  || null) : null;
-
-    // s9id: use real s9id only if it differs from tag_id
-    // Use anchorRow as fallback when originRow is null (partial journey without ORIGIN)
-    const refRow = originRow ?? anchorRow;
-    const tag_id = refRow.tag_id || tagKey;
-    const s9id   = (refRow.s9id && refRow.s9id !== tag_id) ? refRow.s9id : tag_id;
-
-    // transit_hours: ORIGIN → DESTINATION total time (shown in table column)
-    let transitHours: number | null = null;
-    if (hasDest && originTime && destTime) {
-      const diffMs = new Date(destTime).getTime() - new Date(originTime).getTime();
-      if (diffMs > 0) transitHours = Math.round((diffMs / 3600000) * 10) / 10;
+    // Split into ORIGIN block and DESTINATION block
+    // ORIGIN block: consecutive records from the start with the origin country
+    // DESTINATION block: all records from the first record with a different country
+    let firstDestIdx = -1;
+    for (let i = 0; i < sorted.length; i++) {
+      const info = getReaderInfo(sorted[i]);
+      if (info.country && info.country !== originCountry) {
+        firstDestIdx = i;
+        break;
+      }
     }
 
-    // international_transit_hours: DEPARTURE → ARRIVAL only (used for KPI)
+    const originBlock = firstDestIdx === -1 ? sorted : sorted.slice(0, firstDestIdx);
+    const destBlock   = firstDestIdx === -1 ? []     : sorted.slice(firstDestIdx);
+
+    // Step 3 + 4: ORIGIN block — last reading per centre
+    const originLastByCentre = new Map<string, { reading: RfidReading; info: ReturnType<typeof getReaderInfo> }>();
+    for (const r of originBlock) {
+      const centreKey = r.read_point_id || r.center_name || '';
+      if (!centreKey) continue;
+      const info = getReaderInfo(r);
+      // Always overwrite → last one wins (sorted ASC so last = latest)
+      originLastByCentre.set(centreKey, { reading: r, info });
+    }
+
+    // Step 3 + 4: DESTINATION block — first reading per centre
+    const destFirstByCentre = new Map<string, { reading: RfidReading; info: ReturnType<typeof getReaderInfo> }>();
+    for (const r of destBlock) {
+      const centreKey = r.read_point_id || r.center_name || '';
+      if (!centreKey) continue;
+      if (!destFirstByCentre.has(centreKey)) {
+        const info = getReaderInfo(r);
+        destFirstByCentre.set(centreKey, { reading: r, info });
+      }
+    }
+
+    // Classify origin centres
+    const originOE:  Array<{ reading: RfidReading; info: ReturnType<typeof getReaderInfo> }> = [];
+    const originAMU: Array<{ reading: RfidReading; info: ReturnType<typeof getReaderInfo> }> = [];
+    for (const v of originLastByCentre.values()) {
+      if (v.info.td_reader) originAMU.push(v);
+      else originOE.push(v);
+    }
+
+    // Classify destination centres
+    const destAMU: Array<{ reading: RfidReading; info: ReturnType<typeof getReaderInfo> }> = [];
+    const destOE:  Array<{ reading: RfidReading; info: ReturnType<typeof getReaderInfo> }> = [];
+    for (const v of destFirstByCentre.values()) {
+      if (v.info.td_reader) destAMU.push(v);
+      else destOE.push(v);
+    }
+
+    // Step 4: Select final hito readings
+    // OE Origin: last of all last-per-centre with td_reader=false in origin block
+    const oeOriginEntry = originOE.length > 0
+      ? originOE.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
+      : null;
+
+    // AMU Outbound: last of all last-per-centre with td_reader=true in origin block
+    const amuOutboundEntry = originAMU.length > 0
+      ? originAMU.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
+      : null;
+
+    // AMU Inbound: first of all first-per-centre with td_reader=true in dest block
+    const amuInboundEntry = destAMU.length > 0
+      ? destAMU.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1)[0]
+      : null;
+
+    // OE Destination: first of all first-per-centre with td_reader=false in dest block
+    const oeDestEntry = destOE.length > 0
+      ? destOE.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1)[0]
+      : null;
+
+    // Step 5: Leg2 = has both AMU Outbound AND AMU Inbound
+    const hasIntl = amuOutboundEntry !== null && amuInboundEntry !== null;
+
+    // Step 6: transit_hours = AMU Inbound record_time - AMU Outbound record_time
     let intlTransitHours: number | null = null;
-    if (hasIntl && depTime && arrTime) {
-      const diffMs = new Date(arrTime).getTime() - new Date(depTime).getTime();
-      if (diffMs > 0) intlTransitHours = Math.round((diffMs / 3600000) * 10) / 10;
+    if (hasIntl) {
+      const depTime = amuOutboundEntry!.reading.record_time || amuOutboundEntry!.reading.event_time_local || null;
+      const arrTime = amuInboundEntry!.reading.record_time  || amuInboundEntry!.reading.event_time_local  || null;
+      if (depTime && arrTime) {
+        const diffMs = new Date(arrTime).getTime() - new Date(depTime).getTime();
+        if (diffMs > 0) intlTransitHours = Math.round((diffMs / 3600000) * 10) / 10;
+      }
     }
 
-    // Full journey time: ORIGIN → DESTINATION
+    // Full journey time: OE Origin → OE Destination
+    let transitHours: number | null = null;
     let fullJourneyHours: number | null = null;
-    if (hasDest && originTime && destTime) {
-      const diffMs = new Date(destTime).getTime() - new Date(originTime).getTime();
-      if (diffMs > 0) fullJourneyHours = Math.round((diffMs / 3600000) * 10) / 10;
+    if (oeOriginEntry && oeDestEntry) {
+      const t1 = oeOriginEntry.reading.record_time || oeOriginEntry.reading.event_time_local || null;
+      const t2 = oeDestEntry.reading.record_time   || oeDestEntry.reading.event_time_local   || null;
+      if (t1 && t2) {
+        const diffMs = new Date(t2).getTime() - new Date(t1).getTime();
+        if (diffMs > 0) {
+          transitHours = Math.round((diffMs / 3600000) * 10) / 10;
+          fullJourneyHours = transitHours;
+        }
+      }
     }
 
-    // Build centres visited list (all unique impc_codes in order)
+    // Build centres visited list
     const centresVisited: string[] = [];
     for (const r of sorted) {
-      const c = r.center_name || parseLocation(r.location).centre || r.impc_code || '';
+      const c = getReaderInfo(r).centre;
       if (c && !centresVisited.includes(c)) centresVisited.push(c);
     }
+
+    // Derive fields for backward compatibility
+    const originInfo  = oeOriginEntry?.info    ?? firstInfo;
+    const originTime  = oeOriginEntry?.reading.record_time || oeOriginEntry?.reading.event_time_local || sorted[0].record_time || sorted[0].event_time_local || '';
+    const destInfo    = oeDestEntry?.info      ?? null;
+    const destTime    = oeDestEntry?.reading.record_time   || oeDestEntry?.reading.event_time_local   || null;
+    const depInfo     = amuOutboundEntry?.info ?? null;
+    const depTime     = amuOutboundEntry?.reading.record_time || amuOutboundEntry?.reading.event_time_local || null;
+    const arrInfo     = amuInboundEntry?.info  ?? null;
+    const arrTime     = amuInboundEntry?.reading.record_time  || amuInboundEntry?.reading.event_time_local  || null;
+
+    const refRow = sorted[0];
+    const tag_id = refRow.tag_id || tagKey;
+    const s9id   = (refRow.s9id && refRow.s9id !== tag_id) ? refRow.s9id : tag_id;
 
     journeys.push({
       s9id,
       tag_id,
-      // Full journey
+      // Full journey (OE Origin → OE Destination)
       origin_country:   originInfo.country,
       origin_centre:    originInfo.centre,
       origin_impc:      originInfo.impc,
       origin_time:      originTime,
-      origin_readings:  1,
+      origin_readings:  oeOriginEntry ? 1 : 0,
       dest_country:     destInfo?.country ?? null,
-      dest_centre:      destInfo?.centre ?? null,
-      dest_impc:        destInfo?.impc ?? null,
+      dest_centre:      destInfo?.centre  ?? null,
+      dest_impc:        destInfo?.impc    ?? null,
       dest_time:        destTime,
-      dest_readings:    hasDest ? 1 : 0,
-      // International transit
+      dest_readings:    oeDestEntry ? 1 : 0,
+      // International transit (AMU Outbound → AMU Inbound)
       departure_country: depInfo?.country ?? null,
-      departure_centre:  depInfo?.centre ?? null,
-      departure_impc:    depInfo?.impc ?? null,
+      departure_centre:  depInfo?.centre  ?? null,
+      departure_impc:    depInfo?.impc    ?? null,
       departure_time:    depTime,
       arrival_country:   arrInfo?.country ?? null,
-      arrival_centre:    arrInfo?.centre ?? null,
-      arrival_impc:      arrInfo?.impc ?? null,
+      arrival_centre:    arrInfo?.centre  ?? null,
+      arrival_impc:      arrInfo?.impc    ?? null,
       arrival_time:      arrTime,
       // Times
       transit_hours:               transitHours,
       international_transit_hours: intlTransitHours,
       full_journey_hours:          fullJourneyHours,
-      has_origin:         originRow !== null,
-      has_destination:    hasDest,
+      has_origin:         oeOriginEntry !== null,
+      has_destination:    oeDestEntry   !== null,
       has_international:  hasIntl,
-      // is_complete: all rows for this tag_id have status=COMPLETE (required for Leg2 and Transit KPIs)
       is_complete:        sorted.every(r => r.status === 'COMPLETE'),
-      // is_both_rfid: tag has both ORIGIN (or DEPARTURE) and DESTINATION (or ARRIVAL)
-      is_both_rfid:       (originRow !== null || depRow !== null) && (destRow !== null || arrRow !== null),
+      is_both_rfid:       oeOriginEntry !== null && oeDestEntry !== null,
       centres_visited:    centresVisited,
     });
   }
@@ -506,10 +572,20 @@ export interface EpcisFilters {
  */
 export function useEpcisData(filters: EpcisFilters = {}) {
   const [allReadings, setAllReadings] = useState<RfidReading[]>([]);
+  const [readerMap, setReaderMap] = useState<Map<string, RfidReaderMaster>>(new Map());
   const [loading, setLoading] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [backgroundProgress, setBackgroundProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Load rfid_readers_master once on mount
+  useEffect(() => {
+    fetchRfidReadersMaster().then(masters => {
+      const map = new Map<string, RfidReaderMaster>();
+      for (const m of masters) map.set(m.read_point_id, m);
+      setReaderMap(map);
+    }).catch(() => { /* non-critical — fallback to RFID table fields */ });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -624,12 +700,12 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     // Re-fetch when date or country filters change
   }, [filters.dateFrom, filters.dateTo, filters.originCountry, filters.destCountry]);
 
-  // Build journeys from all readings
+  // Build journeys from all readings using the Regla de Selección de Eventos del Trayecto
   const allJourneys = useMemo(() => {
-    const journeys = readingsToJourneys(allReadings);
-    console.log(`[EDGE] allReadings: ${allReadings.length} events → ${journeys.length} journeys`);
+    const journeys = readingsToJourneys(allReadings, readerMap);
+    console.log(`[EDGE] allReadings: ${allReadings.length} events → ${journeys.length} journeys (readerMap: ${readerMap.size} entries)`);
     return journeys;
-  }, [allReadings]);
+  }, [allReadings, readerMap]);
 
   // Helper: effective destination country for a journey.
   // Priority: DESTINATION event country > ARRIVAL event country.

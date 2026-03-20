@@ -494,6 +494,7 @@ export interface RfidReaderMaster {
   impc_code: string | null;
   country: string | null;
   center_name: string | null;
+  td_reader: boolean | null;  // true = AMU/border reader, false = internal OE centre
 }
 
 /**
@@ -504,7 +505,7 @@ export interface RfidReaderMaster {
 export async function fetchRfidReadersMaster(): Promise<RfidReaderMaster[]> {
   const headers = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/rfid_readers_master`);
-  url.searchParams.set('select', 'read_point_id,impc_code,country,center_name');
+  url.searchParams.set('select', 'read_point_id,impc_code,country,center_name,td_reader');
   url.searchParams.set('order', 'read_point_id.asc');
 
   let all: RfidReaderMaster[] = [];
