@@ -1,26 +1,28 @@
 /**
- * useBenchmarkData — Benchmark RFID vs EDI
+ * useBenchmarkData — RFID vs EDI Benchmark (rebuilt)
  *
- * Reads from the view `benchmark_rfid_edi`.
- * Only includes receptacles with s9id (linked via ID Relation table between RFID and EDI).
- * Supports filters: dateFrom, dateTo, originCountry, destCountry.
+ * Data pipeline:
+ *   1. Load "ID Relation" table once (tagid ↔ s9id, 6 323 rows) — cached in module scope
+ *   2. Receive RfidJourney[] already computed by useEpcisData (Regla de Selección)
+ *   3. For each journey, look up s9id via ID Relation (tagid = journey.tag_id)
+ *   4. Fetch EDI data from benchmark_rfid_edi WHERE s9id IN (matched s9ids)
+ *   5. Join: one BenchmarkRow per journey that has a matched s9id
  *
- * Three benchmark comparisons:
- *   1. Origin:  RFID origin events vs EDI PREDES/CARDIT (receptacles with RFID origin + EDI origin)
- *   2. Dest:    RFID dest events vs EDI RESDES (receptacles with RFID dest + EDI dest)
- *   3. Transit: RFID Outbound→Inbound vs EDI PREDES→RESDES (receptacles with both sides)
+ * RFID fields come from RfidJourney (Regla de Selección):
+ *   - Origin:       origin_country / origin_centre / origin_impc / origin_time
+ *   - AMU Outbound: departure_country / departure_centre / departure_impc / departure_time
+ *   - AMU Inbound:  arrival_country  / arrival_centre  / arrival_impc  / arrival_time
+ *   - OE Dest:      dest_country / dest_centre / dest_impc / dest_time
+ *   - Transit:      international_transit_hours (AMU Out → AMU In)
  *
- * EDI event chain (logical order):
- *   PREDES → CARDIT → RESDIT74 → RESDIT21 → RESDES
- *
- * RFID equivalences:
- *   RFID Outbound = RFID DEPARTURE event (last reading before international border ≈ PREDES)
- *   RFID Inbound  = RFID ARRIVAL event   (first reading after international border ≈ RESDES)
- *   RFID transit = DEPARTURE → ARRIVAL
- *   EDI  transit = PREDES    → RESDES
+ * EDI fields come from benchmark_rfid_edi (only EDI columns, keyed by s9id):
+ *   - edi_predes_time, edi_cardit_time, edi_resdit74_time, edi_resdit21_time, edi_resdes_time
+ *   - edi_origin_impc, edi_dest_impc, edi_transit_hours
+ *   - missing_cardit, missing_resdit74, missing_resdit21, missing_resdes
  */
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import type { RfidJourney } from '@/hooks/useEpcisData';
 
 /* ── Filter params ──────────────────────────────────────────────────────────── */
 export interface BenchmarkFilters {
@@ -30,11 +32,15 @@ export interface BenchmarkFilters {
   destCountry?:   string;
 }
 
-/* ── Types ─────────────────────────────────────────────────────────────────── */
-export interface BenchmarkRow {
-  s9id: string;
-  tag_id: string;
-  // EDI
+/* ── ID Relation row ────────────────────────────────────────────────────────── */
+interface IdRelationRow {
+  tagid: string;
+  s9id:  string;
+}
+
+/* ── EDI-only row from benchmark_rfid_edi ───────────────────────────────────── */
+interface EdiRow {
+  s9id:              string;
   edi_origin_impc:   string | null;
   edi_dest_impc:     string | null;
   edi_predes_time:   string | null;
@@ -44,53 +50,79 @@ export interface BenchmarkRow {
   edi_resdit21_time: string | null;
   edi_resdit21_impc: string | null;
   edi_resdes_time:   string | null;
-  // RFID
-  rf_origin_country:  string | null;
-  rf_origin_centre:   string | null;
-  rf_origin_impc:     string | null;
-  rf_predes_time:     string | null;
-  rf_departure_time:  string | null;
-  rf_arrival_time:    string | null;
-  rf_dest_country:    string | null;
-  rf_dest_centre:     string | null;
-  rf_dest_impc:       string | null;
-  rf_resdes_time:     string | null;
-  // Computed (pre-calculated in view)
-  rf_transit_hours:   number | null;
-  edi_transit_hours:  number | null;
-  delta_predes_hours: number | null;
-  delta_resdes_hours: number | null;
-  // Gap flags
+  edi_transit_hours: number | null;
   missing_cardit:    boolean;
   missing_resdit74:  boolean;
   missing_resdit21:  boolean;
   missing_resdes:    boolean;
-  // Scope flags
-  has_rf_departure:  boolean;
-  has_rf_arrival:    boolean;
-  has_rf_transit:    boolean;
-  has_edi_transit:   boolean;
 }
 
+/* ── BenchmarkRow: RFID (Regla de Selección) + EDI ─────────────────────────── */
+export interface BenchmarkRow {
+  tag_id: string;
+  s9id:   string;
+  // RFID — from RfidJourney (Regla de Selección)
+  rf_origin_country:    string | null;
+  rf_origin_centre:     string | null;
+  rf_origin_impc:       string | null;
+  rf_origin_time:       string | null;
+  rf_departure_country: string | null;
+  rf_departure_centre:  string | null;
+  rf_departure_impc:    string | null;
+  rf_departure_time:    string | null;
+  rf_arrival_country:   string | null;
+  rf_arrival_centre:    string | null;
+  rf_arrival_impc:      string | null;
+  rf_arrival_time:      string | null;
+  rf_dest_country:      string | null;
+  rf_dest_centre:       string | null;
+  rf_dest_impc:         string | null;
+  rf_dest_time:         string | null;
+  rf_transit_hours:     number | null;
+  has_rf_departure:     boolean;
+  has_rf_arrival:       boolean;
+  has_rf_transit:       boolean;
+  // EDI — from benchmark_rfid_edi
+  edi_origin_impc:      string | null;
+  edi_dest_impc:        string | null;
+  edi_predes_time:      string | null;
+  edi_cardit_time:      string | null;
+  edi_resdit74_time:    string | null;
+  edi_resdit74_impc:    string | null;
+  edi_resdit21_time:    string | null;
+  edi_resdit21_impc:    string | null;
+  edi_resdes_time:      string | null;
+  edi_transit_hours:    number | null;
+  missing_cardit:       boolean;
+  missing_resdit74:     boolean;
+  missing_resdit21:     boolean;
+  missing_resdes:       boolean;
+  has_edi_transit:      boolean;
+  // Computed deltas
+  delta_predes_hours:   number | null;
+  delta_resdes_hours:   number | null;
+}
+
+/* ── Stats types ────────────────────────────────────────────────────────────── */
 export interface CentreStats {
-  centre:     string;
-  impc:       string;
-  country:    string;
-  n:          number;
-  mean:       number | null;
-  median:     number | null;
+  centre:  string;
+  impc:    string;
+  country: string;
+  n:       number;
+  mean:    number | null;
+  median:  number | null;
 }
 
 export interface RouteStats {
-  route:   string;
-  origin:  string;
-  dest:    string;
-  count:   number;
-  depCount: number;
-  arrCount: number;
-  transitCount: number;
-  avgRfH:  number | null;
-  avgEdiH: number | null;
+  route:              string;
+  origin:             string;
+  dest:               string;
+  count:              number;
+  depCount:           number;
+  arrCount:           number;
+  transitCount:       number;
+  avgRfH:             number | null;
+  avgEdiH:            number | null;
   missingCarditPct:   number;
   missingResdit74Pct: number;
   missingResdit21Pct: number;
@@ -120,8 +152,8 @@ export interface BenchmarkStats {
   avgDeltaPredesH: number | null;
   avgDeltaResdesH: number | null;
   byRoute:         RouteStats[];
-  byOriginCentre:  CentreStats[];   // Δ PREDES by origin centre
-  byDestCentre:    CentreStats[];   // Δ RESDES by destination centre
+  byOriginCentre:  CentreStats[];
+  byDestCentre:    CentreStats[];
   rfTransitCdf:    { x: number; pct: number }[];
   ediTransitCdf:   { x: number; pct: number }[];
 }
@@ -149,190 +181,216 @@ function buildCDF(values: number[], steps = 50): { x: number; pct: number }[] {
     return { x, pct };
   });
 }
+function diffHours(a: string | null, b: string | null): number | null {
+  if (!a || !b) return null;
+  const d = (new Date(b).getTime() - new Date(a).getTime()) / 3_600_000;
+  return Math.round(d * 10) / 10;
+}
 
-/* ── Fetch from view with filters ───────────────────────────────────────────── */
-async function fetchBenchmarkRows(filters: BenchmarkFilters): Promise<BenchmarkRow[]> {
+/* ── Module-level cache for ID Relation ─────────────────────────────────────── */
+let idRelationCache: Map<string, string> | null = null;
+let idRelationLoading = false;
+let idRelationCallbacks: Array<(m: Map<string, string>) => void> = [];
+
+async function getIdRelationMap(): Promise<Map<string, string>> {
+  if (idRelationCache) return idRelationCache;
+  if (idRelationLoading) {
+    return new Promise(resolve => { idRelationCallbacks.push(resolve); });
+  }
+  idRelationLoading = true;
   const PAGE = 1000;
-  const allRows: BenchmarkRow[] = [];
+  const all: IdRelationRow[] = [];
   let from = 0;
-
   while (true) {
-    let q = supabase
-      .from('benchmark_rfid_edi')
-      .select('*')
-      // Only receptacles linked between RFID and EDI:
-      // - s9id: has EDI data (linked via ID Relation)
-      // - tag_id: has RFID data
-      .not('s9id', 'is', null)
-      .not('tag_id', 'is', null)
+    const { data, error } = await supabase
+      .from('ID Relation')
+      .select('tagid,s9id')
       .range(from, from + PAGE - 1);
-
-    // Date filter: apply on edi_predes_time (departure side)
-    if (filters.dateFrom) q = q.gte('edi_predes_time', filters.dateFrom);
-    if (filters.dateTo)   q = q.lte('edi_predes_time', filters.dateTo + 'T23:59:59Z');
-
-    // Country filter: match against rf_origin_country / rf_dest_country
-    if (filters.originCountry) q = q.eq('rf_origin_country', filters.originCountry);
-    if (filters.destCountry)   q = q.eq('rf_dest_country',   filters.destCountry);
-
-    const { data, error } = await q;
-    if (error) throw new Error(`benchmark_rfid_edi: ${error.message}`);
-    if (!data || data.length === 0) break;
-
-    allRows.push(...(data as BenchmarkRow[]));
+    if (error || !data || data.length === 0) break;
+    all.push(...(data as IdRelationRow[]));
     if (data.length < PAGE) break;
     from += PAGE;
   }
+  const map = new Map<string, string>();
+  for (const row of all) {
+    if (row.tagid && row.s9id) map.set(row.tagid, row.s9id);
+  }
+  idRelationCache = map;
+  idRelationLoading = false;
+  idRelationCallbacks.forEach(cb => cb(map));
+  idRelationCallbacks = [];
+  return map;
+}
 
-  // Keep only international movements (origin country ≠ destination country)
-  // Allow partial matches: receptacles may have only origin OR only destination RFID data
-  const international = allRows.filter(r => {
-    const origin = r.rf_origin_country;
-    const dest   = r.rf_dest_country;
-    // Exclude domestic (both sides known and equal)
-    if (origin && dest && origin === dest) return false;
-    // Include if at least one RFID side has a country
-    return !!(origin || dest);
-  });
-
-  // Recalculate rf_transit_hours as RFID Outbound → RFID Inbound
-  // RFID Outbound = rf_departure_time (DEPARTURE event = receptacle leaves origin centre)
-  // RFID Inbound  = rf_arrival_time   (ARRIVAL event   = receptacle arrives at dest centre)
-  // This is the correct equivalent to EDI PREDES → RESDES transit.
-  for (const r of international) {
-    if (r.rf_departure_time && r.rf_arrival_time) {
-      const dep = new Date(r.rf_departure_time).getTime();
-      const arr = new Date(r.rf_arrival_time).getTime();
-      const diffH = (arr - dep) / 3_600_000;
-      // Only accept positive, plausible transit times (0–720h = 30 days)
-      r.rf_transit_hours = diffH > 0 && diffH <= 720 ? Math.round(diffH * 10) / 10 : null;
-    } else {
-      r.rf_transit_hours = null;
+/* ── Fetch EDI rows for a set of s9ids ─────────────────────────────────────── */
+async function fetchEdiRows(s9ids: string[]): Promise<Map<string, EdiRow>> {
+  const map = new Map<string, EdiRow>();
+  if (!s9ids.length) return map;
+  const CHUNK = 500;
+  const EDI_COLS = [
+    's9id','edi_origin_impc','edi_dest_impc',
+    'edi_predes_time','edi_cardit_time',
+    'edi_resdit74_time','edi_resdit74_impc',
+    'edi_resdit21_time','edi_resdit21_impc',
+    'edi_resdes_time','edi_transit_hours',
+    'missing_cardit','missing_resdit74','missing_resdit21','missing_resdes',
+  ].join(',');
+  for (let i = 0; i < s9ids.length; i += CHUNK) {
+    const chunk = s9ids.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('benchmark_rfid_edi')
+      .select(EDI_COLS)
+      .in('s9id', chunk);
+    if (error || !data) continue;
+    for (const row of data as EdiRow[]) {
+      if (row.s9id) map.set(row.s9id, row);
     }
-    // has_rf_transit: need both RFID Outbound (DEPARTURE) and Inbound (ARRIVAL)
-    r.has_rf_transit = r.rf_transit_hours !== null;
   }
-
-  return international;
+  return map;
 }
 
-/* ── Centre-level delta stats ───────────────────────────────────────────────── */
-function buildCentreStats(
-  rows: BenchmarkRow[],
-  getCentre: (r: BenchmarkRow) => string | null,
-  getImpc:   (r: BenchmarkRow) => string | null,
-  getCountry:(r: BenchmarkRow) => string | null,
-  getDelta:  (r: BenchmarkRow) => number | null,
-  hasData:   (r: BenchmarkRow) => boolean,
-): CentreStats[] {
-  const map = new Map<string, { impc: string; country: string; deltas: number[] }>();
+/* ── Build BenchmarkRow[] from journeys + ID Relation + EDI ─────────────────── */
+function buildBenchmarkRows(
+  journeys: RfidJourney[],
+  idMap: Map<string, string>,
+  ediMap: Map<string, EdiRow>,
+  filters: BenchmarkFilters,
+): BenchmarkRow[] {
+  const rows: BenchmarkRow[] = [];
+  for (const j of journeys) {
+    if (!j.tag_id) continue;
+    const s9id = idMap.get(j.tag_id);
+    if (!s9id) continue;
 
-  for (const r of rows) {
-    if (!hasData(r)) continue;
-    const delta = getDelta(r);
-    if (delta === null) continue;
-    const centre  = getCentre(r)  || getImpc(r) || '?';
-    const impc    = getImpc(r)    || '?';
-    const country = getCountry(r) || '?';
-    if (!map.has(centre)) map.set(centre, { impc, country, deltas: [] });
-    map.get(centre)!.deltas.push(Number(delta));
-  }
+    const rfDep     = j.departure_time ?? null;
+    const rfArr     = j.arrival_time   ?? null;
+    const rfTransit = j.international_transit_hours ?? null;
+    const edi       = ediMap.get(s9id) ?? null;
 
-  return Array.from(map.entries())
-    .map(([centre, v]) => ({
-      centre,
-      impc:    v.impc,
-      country: v.country,
-      n:       v.deltas.length,
-      mean:    mean(v.deltas),
-      median:  median(v.deltas),
-    }))
-    .sort((a, b) => {
-      const cmp = a.country.localeCompare(b.country);
-      return cmp !== 0 ? cmp : a.centre.localeCompare(b.centre);
+    const deltaPredes = diffHours(edi?.edi_predes_time ?? null, rfDep);
+    const deltaResdes = diffHours(edi?.edi_resdes_time ?? null, rfArr);
+
+    const originCountry = j.origin_country     ?? j.departure_country ?? null;
+    const destCountry   = j.dest_country       ?? j.arrival_country   ?? null;
+
+    if (filters.dateFrom && rfDep && rfDep < filters.dateFrom) continue;
+    if (filters.dateTo   && rfDep && rfDep > filters.dateTo + 'T23:59:59Z') continue;
+    if (filters.originCountry && originCountry !== filters.originCountry) continue;
+    if (filters.destCountry   && destCountry   !== filters.destCountry)   continue;
+    if (originCountry && destCountry && originCountry === destCountry) continue;
+
+    rows.push({
+      tag_id: j.tag_id,
+      s9id,
+      rf_origin_country:    j.origin_country    ?? null,
+      rf_origin_centre:     j.origin_centre     ?? null,
+      rf_origin_impc:       j.origin_impc       ?? null,
+      rf_origin_time:       j.origin_time       ?? null,
+      rf_departure_country: j.departure_country ?? null,
+      rf_departure_centre:  j.departure_centre  ?? null,
+      rf_departure_impc:    j.departure_impc    ?? null,
+      rf_departure_time:    rfDep,
+      rf_arrival_country:   j.arrival_country   ?? null,
+      rf_arrival_centre:    j.arrival_centre    ?? null,
+      rf_arrival_impc:      j.arrival_impc      ?? null,
+      rf_arrival_time:      rfArr,
+      rf_dest_country:      j.dest_country      ?? null,
+      rf_dest_centre:       j.dest_centre       ?? null,
+      rf_dest_impc:         j.dest_impc         ?? null,
+      rf_dest_time:         j.dest_time         ?? null,
+      rf_transit_hours:     rfTransit,
+      has_rf_departure:     !!rfDep,
+      has_rf_arrival:       !!rfArr,
+      has_rf_transit:       rfTransit !== null,
+      edi_origin_impc:      edi?.edi_origin_impc   ?? null,
+      edi_dest_impc:        edi?.edi_dest_impc     ?? null,
+      edi_predes_time:      edi?.edi_predes_time   ?? null,
+      edi_cardit_time:      edi?.edi_cardit_time   ?? null,
+      edi_resdit74_time:    edi?.edi_resdit74_time ?? null,
+      edi_resdit74_impc:    edi?.edi_resdit74_impc ?? null,
+      edi_resdit21_time:    edi?.edi_resdit21_time ?? null,
+      edi_resdit21_impc:    edi?.edi_resdit21_impc ?? null,
+      edi_resdes_time:      edi?.edi_resdes_time   ?? null,
+      edi_transit_hours:    edi?.edi_transit_hours ?? null,
+      missing_cardit:       edi?.missing_cardit    ?? true,
+      missing_resdit74:     edi?.missing_resdit74  ?? true,
+      missing_resdit21:     edi?.missing_resdit21  ?? true,
+      missing_resdes:       edi?.missing_resdes    ?? true,
+      has_edi_transit:      !!(edi?.edi_predes_time && edi?.edi_resdes_time),
+      delta_predes_hours:   deltaPredes,
+      delta_resdes_hours:   deltaResdes,
     });
+  }
+  return rows;
 }
 
-/* ── Stats ──────────────────────────────────────────────────────────────────── */
+/* ── computeStats ───────────────────────────────────────────────────────────── */
+function buildCentreStatsLocal(
+  rows: BenchmarkRow[],
+  centreKey: keyof BenchmarkRow,
+  impcKey:   keyof BenchmarkRow,
+  countryKey:keyof BenchmarkRow,
+  deltaKey:  keyof BenchmarkRow,
+): CentreStats[] {
+  const map = new Map<string, { impc: string; country: string; vals: number[] }>();
+  for (const r of rows) {
+    const c = r[centreKey] as string | null;
+    const d = r[deltaKey]  as number | null;
+    if (!c || d === null) continue;
+    if (!map.has(c)) map.set(c, { impc: (r[impcKey] as string) ?? '', country: (r[countryKey] as string) ?? '', vals: [] });
+    map.get(c)!.vals.push(d);
+  }
+  return [...map.entries()]
+    .map(([centre, v]) => ({ centre, impc: v.impc, country: v.country, n: v.vals.length, mean: mean(v.vals), median: median(v.vals) }))
+    .sort((a, b) => b.n - a.n);
+}
+
 function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   const depRows     = rows.filter(r => r.has_rf_departure);
   const arrRows     = rows.filter(r => r.has_rf_arrival);
   const transitRows = rows.filter(r => r.has_rf_transit && r.has_edi_transit);
 
-  const rfTransitVals   = transitRows.map(r => Number(r.rf_transit_hours)).filter(v => v > 0);
-  const ediTransitVals  = transitRows.map(r => Number(r.edi_transit_hours)).filter(v => v > 0);
-  const deltaPredesVals = rows.filter(r => r.delta_predes_hours !== null).map(r => Number(r.delta_predes_hours));
-  const deltaResdesVals = rows.filter(r => r.delta_resdes_hours !== null).map(r => Number(r.delta_resdes_hours));
+  const rfTransitVals   = rows.filter(r => r.rf_transit_hours  !== null).map(r => r.rf_transit_hours!);
+  const ediTransitVals  = rows.filter(r => r.edi_transit_hours !== null).map(r => r.edi_transit_hours!);
+  const deltaPredesVals = rows.filter(r => r.delta_predes_hours !== null).map(r => r.delta_predes_hours!);
+  const deltaResdesVals = rows.filter(r => r.delta_resdes_hours !== null).map(r => r.delta_resdes_hours!);
 
-  // By route
-  const routeMap = new Map<string, {
-    origin: string; dest: string; count: number;
-    depCount: number; arrCount: number; transitCount: number;
-    rfH: number[]; ediH: number[];
-    mc: number; mr74: number; mr21: number; mrd: number;
-  }>();
-
+  const routeMap = new Map<string, RouteStats & { rfH: number[]; ediH: number[] }>();
   for (const r of rows) {
-    const origin = r.edi_origin_impc || r.rf_origin_impc || r.rf_origin_country || '?';
-    const dest   = r.edi_dest_impc   || r.rf_dest_impc   || r.rf_dest_country   || '?';
-    const key    = `${origin}→${dest}`;
-    if (!routeMap.has(key)) {
-      routeMap.set(key, { origin, dest, count: 0, depCount: 0, arrCount: 0, transitCount: 0, rfH: [], ediH: [], mc: 0, mr74: 0, mr21: 0, mrd: 0 });
+    const origin = r.rf_origin_country ?? r.edi_origin_impc ?? '?';
+    const dest   = r.rf_dest_country   ?? r.rf_arrival_country ?? r.edi_dest_impc ?? '?';
+    const route  = `${origin} → ${dest}`;
+    if (!routeMap.has(route)) {
+      routeMap.set(route, { route, origin, dest, count: 0, depCount: 0, arrCount: 0, transitCount: 0,
+        avgRfH: null, avgEdiH: null, missingCarditPct: 0, missingResdit74Pct: 0, missingResdit21Pct: 0, missingResdesPct: 0,
+        rfH: [], ediH: [] });
     }
-    const v = routeMap.get(key)!;
+    const v = routeMap.get(route)!;
     v.count++;
     if (r.has_rf_departure) v.depCount++;
     if (r.has_rf_arrival)   v.arrCount++;
     if (r.has_rf_transit && r.has_edi_transit) {
       v.transitCount++;
-      const rfH  = Number(r.rf_transit_hours);
-      const ediH = Number(r.edi_transit_hours);
-      if (!isNaN(rfH)  && rfH  > 0) v.rfH.push(rfH);
-      if (!isNaN(ediH) && ediH > 0) v.ediH.push(ediH);
+      if (r.rf_transit_hours  !== null) v.rfH.push(r.rf_transit_hours);
+      if (r.edi_transit_hours !== null) v.ediH.push(r.edi_transit_hours);
     }
-    if (r.missing_cardit)   v.mc++;
-    if (r.missing_resdit74) v.mr74++;
-    if (r.missing_resdit21) v.mr21++;
-    if (r.missing_resdes)   v.mrd++;
   }
-
-  const byRoute: RouteStats[] = Array.from(routeMap.entries())
-    .map(([route, v]) => ({
-      route,
-      origin: v.origin,
-      dest:   v.dest,
-      count:  v.count,
-      depCount: v.depCount,
-      arrCount: v.arrCount,
-      transitCount: v.transitCount,
-      avgRfH:  mean(v.rfH),
-      avgEdiH: mean(v.ediH),
-      missingCarditPct:   Math.round((v.mc   / v.count) * 100),
-      missingResdit74Pct: Math.round((v.mr74 / v.count) * 100),
-      missingResdit21Pct: Math.round((v.mr21 / v.count) * 100),
-      missingResdesPct:   Math.round((v.mrd  / v.count) * 100),
-    }))
-    .sort((a, b) => b.count - a.count);
-
-  // By origin centre — Δ PREDES (RFID Outbound minus EDI PREDES)
-  const byOriginCentre = buildCentreStats(
-    rows,
-    r => r.rf_origin_centre,
-    r => r.rf_origin_impc || r.edi_origin_impc,
-    r => r.rf_origin_country,
-    r => r.delta_predes_hours,
-    r => r.delta_predes_hours !== null,
-  );
-
-  // By destination centre — Δ RESDES (RFID Inbound minus EDI RESDES)
-  const byDestCentre = buildCentreStats(
-    rows,
-    r => r.rf_dest_centre,
-    r => r.rf_dest_impc || r.edi_dest_impc,
-    r => r.rf_dest_country,
-    r => r.delta_resdes_hours,
-    r => r.delta_resdes_hours !== null,
-  );
+  const byRoute: RouteStats[] = [...routeMap.values()].map(v => {
+    const rr = rows.filter(r => {
+      const o = r.rf_origin_country ?? r.edi_origin_impc ?? '?';
+      const d = r.rf_dest_country   ?? r.rf_arrival_country ?? r.edi_dest_impc ?? '?';
+      return `${o} → ${d}` === v.route;
+    });
+    return {
+      route: v.route, origin: v.origin, dest: v.dest,
+      count: v.count, depCount: v.depCount, arrCount: v.arrCount, transitCount: v.transitCount,
+      avgRfH: mean(v.rfH), avgEdiH: mean(v.ediH),
+      missingCarditPct:   v.count ? Math.round(rr.filter(r => r.missing_cardit).length   / v.count * 100) : 0,
+      missingResdit74Pct: v.count ? Math.round(rr.filter(r => r.missing_resdit74).length / v.count * 100) : 0,
+      missingResdit21Pct: v.count ? Math.round(rr.filter(r => r.missing_resdit21).length / v.count * 100) : 0,
+      missingResdesPct:   v.count ? Math.round(rr.filter(r => r.missing_resdes).length   / v.count * 100) : 0,
+    };
+  }).sort((a, b) => b.count - a.count);
 
   return {
     totalPairs:      rows.length,
@@ -344,8 +402,8 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
     hasEdiResdit74:  rows.filter(r => r.edi_resdit74_time).length,
     hasEdiResdit21:  rows.filter(r => r.edi_resdit21_time).length,
     hasEdiResdes:    rows.filter(r => r.edi_resdes_time).length,
-    hasRfPredes:     rows.filter(r => r.rf_predes_time).length,
-    hasRfResdes:     rows.filter(r => r.rf_resdes_time).length,
+    hasRfPredes:     rows.filter(r => r.has_rf_departure).length,
+    hasRfResdes:     rows.filter(r => r.has_rf_arrival).length,
     avgRfTransitH:   mean(rfTransitVals),
     avgEdiTransitH:  mean(ediTransitVals),
     medRfTransitH:   median(rfTransitVals),
@@ -357,97 +415,69 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
     avgDeltaPredesH: mean(deltaPredesVals),
     avgDeltaResdesH: mean(deltaResdesVals),
     byRoute,
-    byOriginCentre,
-    byDestCentre,
+    byOriginCentre:  buildCentreStatsLocal(rows, 'rf_origin_centre',  'rf_origin_impc',  'rf_origin_country',  'delta_predes_hours'),
+    byDestCentre:    buildCentreStatsLocal(rows, 'rf_arrival_centre', 'rf_arrival_impc', 'rf_arrival_country', 'delta_resdes_hours'),
     rfTransitCdf:    buildCDF(rfTransitVals),
     ediTransitCdf:   buildCDF(ediTransitVals),
   };
 }
 
-/* ── Fetch all unique countries from benchmark_rfid_edi (no filters) ────────── */
-async function fetchBenchmarkCountries(): Promise<{ origins: string[]; dests: string[] }> {
-  // Paginate to get all rows (Supabase limit is 1000 per request)
-  const PAGE = 1000;
-  const allData: { rf_origin_country: string | null; rf_dest_country: string | null }[] = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from('benchmark_rfid_edi')
-      .select('rf_origin_country,rf_dest_country')
-      .not('s9id', 'is', null)   // Only receptacles linked via ID Relation (have EDI)
-      .not('tag_id', 'is', null) // Must also have RFID tag_id
-      .range(from, from + PAGE - 1);
-    if (error || !data || data.length === 0) break;
-    allData.push(...data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  // Exclude domestic (both sides known and equal)
-  const intl = allData.filter(r => {
-    const o = r.rf_origin_country, d = r.rf_dest_country;
-    if (o && d && o === d) return false;
-    return !!(o || d);
-  });
-  const origins = [...new Set(
-    intl.filter(r => r.rf_origin_country)
-        .map(r => r.rf_origin_country as string)
-  )].sort();
-  const dests = [...new Set(
-    intl.filter(r => r.rf_dest_country)
-        .map(r => r.rf_dest_country as string)
-  )].sort();
-  return { origins, dests };
-}
-
 /* ── Hook ───────────────────────────────────────────────────────────────────── */
-export function useBenchmarkData(filters: BenchmarkFilters = {}) {
-  const [rows, setRows]       = useState<BenchmarkRow[]>([]);
+export function useBenchmarkData(
+  journeys: RfidJourney[],
+  filters: BenchmarkFilters = {},
+) {
+  const [idMap,   setIdMap]   = useState<Map<string, string> | null>(null);
+  const [ediMap,  setEdiMap]  = useState<Map<string, EdiRow> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
-  const [allOrigins, setAllOrigins] = useState<string[]>([]);
-  const [allDests,   setAllDests]   = useState<string[]>([]);
+  const [error,   setError]   = useState<string | null>(null);
 
-  // Load all available countries once on mount
   useEffect(() => {
-    fetchBenchmarkCountries().then(({ origins, dests }) => {
-      setAllOrigins(origins);
-      setAllDests(dests);
-    });
+    getIdRelationMap()
+      .then(m => setIdMap(m))
+      .catch(e => setError(e.message ?? 'Error loading ID Relation'));
   }, []);
 
-  const filterKey = JSON.stringify(filters);
-
   useEffect(() => {
+    if (!idMap || !journeys.length) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchBenchmarkRows(filters)
-      .then(data => { if (!cancelled) { setRows(data); setLoading(false); } })
-      .catch(err  => { if (!cancelled) { setError(err.message ?? 'Error loading benchmark data'); setLoading(false); } });
+    const s9ids = [...new Set(
+      journeys.map(j => j.tag_id ? idMap.get(j.tag_id) : undefined).filter((s): s is string => !!s)
+    )];
+    fetchEdiRows(s9ids)
+      .then(m => { if (!cancelled) { setEdiMap(m); setLoading(false); } })
+      .catch(e => { if (!cancelled) { setError(e.message ?? 'Error loading EDI data'); setLoading(false); } });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey]);
+  }, [idMap, journeys.length]);
 
-  // Dynamic dest list: when origin is selected, show only dests reachable from that origin
-  const availableOrigins = useMemo(() => {
-    if (!filters.destCountry) return allOrigins;
-    return allOrigins.filter(o =>
-      rows.some(r => r.rf_origin_country === o) ||
-      allOrigins.includes(o) // always show all origins; dest restricts origins via rows
-    );
-  }, [allOrigins, filters.destCountry, rows]);
-
-  const availableDests = useMemo(() => {
-    if (!filters.originCountry) return allDests;
-    // When origin is selected, only show dests that have rows for that origin
-    // Since rows are already filtered by origin, collect unique dests from them
-    const destsFromRows = [...new Set(rows
-      .filter(r => r.rf_dest_country && r.rf_origin_country !== r.rf_dest_country)
-      .map(r => r.rf_dest_country as string)
-    )].sort();
-    return destsFromRows.length > 0 ? destsFromRows : allDests;
-  }, [allDests, filters.originCountry, rows]);
+  const rows = useMemo<BenchmarkRow[]>(() => {
+    if (!idMap || !ediMap || !journeys.length) return [];
+    return buildBenchmarkRows(journeys, idMap, ediMap, filters);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idMap, ediMap, journeys, JSON.stringify(filters)]);
 
   const stats = useMemo(() => rows.length ? computeStats(rows) : null, [rows]);
-  return { rows, stats, loading, error, allOriginCountries: availableOrigins, allDestCountries: availableDests };
+
+  const allOriginCountries = useMemo(() => {
+    if (!idMap || !ediMap) return [];
+    const base = buildBenchmarkRows(journeys, idMap, ediMap, {});
+    return [...new Set(base.map(r => r.rf_origin_country).filter((c): c is string => !!c))].sort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idMap, ediMap, journeys.length]);
+
+  const allDestCountries = useMemo(() => {
+    if (!idMap || !ediMap) return [];
+    const base = filters.originCountry
+      ? buildBenchmarkRows(journeys, idMap, ediMap, { originCountry: filters.originCountry })
+      : buildBenchmarkRows(journeys, idMap, ediMap, {});
+    return [...new Set(
+      base.map(r => r.rf_dest_country ?? r.rf_arrival_country).filter((c): c is string => !!c)
+    )].sort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idMap, ediMap, journeys.length, filters.originCountry]);
+
+  return { rows, stats, loading, error, idRelationSize: idMap?.size ?? 0, allOriginCountries, allDestCountries };
 }

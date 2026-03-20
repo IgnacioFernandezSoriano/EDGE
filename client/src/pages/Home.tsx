@@ -848,7 +848,9 @@ export default function Home() {
                 </div>
               )}
             </div>
-            <BenchmarkPanel filters={{
+            <BenchmarkPanel
+              journeys={epcis.journeys}
+              filters={{
               dateFrom: benchDateRange.from || undefined,
               dateTo:   benchDateRange.to   || undefined,
               originCountry: benchOriginCountry || undefined,

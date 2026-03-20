@@ -18,6 +18,7 @@ import {
   LineChart, Line,
 } from 'recharts';
 import { useBenchmarkData, BenchmarkRow, RouteStats, CentreStats, BenchmarkFilters } from '@/hooks/useBenchmarkData';
+import type { RfidJourney } from '@/hooks/useEpcisData';
 
 /* ── Palette ────────────────────────────────────────────────────────────────── */
 const C = {
@@ -173,12 +174,12 @@ function exportBenchmarkCsv(rows: BenchmarkRow[], view: DetailView) {
     { key: 'rf_dest_centre',     label: 'Dest Centre' },
     ...(view !== 'arrival' ? [
       { key: 'edi_predes_time'    as keyof BenchmarkRow, label: 'EDI PREDES' },
-      { key: 'rf_predes_time'    as keyof BenchmarkRow, label: 'RFID Outbound' },
+      { key: 'rf_departure_time' as keyof BenchmarkRow, label: 'RFID Outbound' },
       { key: 'delta_predes_hours' as keyof BenchmarkRow, label: 'Δ Outbound (h)' },
     ] : []),
     ...(view !== 'departure' ? [
       { key: 'edi_resdes_time'    as keyof BenchmarkRow, label: 'EDI RESDES' },
-      { key: 'rf_resdes_time'    as keyof BenchmarkRow, label: 'RFID Inbound' },
+      { key: 'rf_arrival_time'   as keyof BenchmarkRow, label: 'RFID Inbound' },
       { key: 'delta_resdes_hours' as keyof BenchmarkRow, label: 'Δ Inbound (h)' },
     ] : []),
     ...(view === 'transit' ? [
@@ -191,7 +192,7 @@ function exportBenchmarkCsv(rows: BenchmarkRow[], view: DetailView) {
 
   const header = cols.map(c => c.label).join(',');
   const lines = rows.map(r => {
-    const route = `${r.edi_origin_impc ?? r.rf_origin_impc ?? '?'}→${r.edi_dest_impc ?? r.rf_dest_impc ?? '?'}`;
+    const route = `${r.edi_origin_impc ?? r.rf_origin_impc ?? r.rf_departure_impc ?? '?'}→${r.edi_dest_impc ?? r.rf_dest_impc ?? r.rf_arrival_impc ?? '?'}`;
     return cols.map(c => {
       if (c.key === 'route') return escapeCell(route);
       if (c.key === 'transit_delta') {
@@ -269,7 +270,7 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
               const transitDelta = (r.rf_transit_hours !== null && r.edi_transit_hours !== null)
                 ? Math.round((r.rf_transit_hours - r.edi_transit_hours) * 10) / 10
                 : null;
-              const route = `${r.edi_origin_impc ?? r.rf_origin_impc ?? '?'} → ${r.edi_dest_impc ?? r.rf_dest_impc ?? '?'}`;
+              const route = `${r.edi_origin_impc ?? r.rf_origin_impc ?? r.rf_departure_impc ?? '?'} → ${r.edi_dest_impc ?? r.rf_dest_impc ?? r.rf_arrival_impc ?? '?'}`;
               const missing = [
                 !r.edi_resdit74_time ? 'RESDIT74' : null,
                 !r.edi_resdit21_time ? 'RESDIT21' : null,
@@ -281,14 +282,14 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
                   {view !== 'arrival' && (
                     <>
                       <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmt(r.edi_predes_time)}</td>
-                      <td className="px-3 py-2 text-indigo-600 whitespace-nowrap">{fmt(r.rf_predes_time)}</td>
+                      <td className="px-3 py-2 text-indigo-600 whitespace-nowrap">{fmt(r.rf_departure_time)}</td>
                       <td className={`px-3 py-2 text-center font-semibold whitespace-nowrap ${deltaColor(r.delta_predes_hours)}`}>{fmtH(r.delta_predes_hours)}</td>
                     </>
                   )}
                   {view !== 'departure' && (
                     <>
                       <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmt(r.edi_resdes_time)}</td>
-                      <td className="px-3 py-2 text-indigo-600 whitespace-nowrap">{fmt(r.rf_resdes_time)}</td>
+                      <td className="px-3 py-2 text-indigo-600 whitespace-nowrap">{fmt(r.rf_arrival_time)}</td>
                       <td className={`px-3 py-2 text-center font-semibold whitespace-nowrap ${deltaColor(r.delta_resdes_hours)}`}>{fmtH(r.delta_resdes_hours)}</td>
                     </>
                   )}
@@ -360,10 +361,11 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
 /* ── Main component ─────────────────────────────────────────────────────────── */
 interface BenchmarkPanelProps {
   filters?: BenchmarkFilters;
+  journeys: RfidJourney[];
 }
 
-export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
-  const { rows, stats, loading, error } = useBenchmarkData(filters);
+export function BenchmarkPanel({ filters = {}, journeys }: BenchmarkPanelProps) {
+  const { rows, stats, loading, error } = useBenchmarkData(journeys, filters);
   const [detailView, setDetailView] = useState<DetailView>('departure');
 
   if (loading) {
@@ -390,9 +392,9 @@ export function BenchmarkPanel({ filters = {} }: BenchmarkPanelProps) {
   })).filter(r => r.rfidAvg > 0 || r.ediAvg > 0);
 
   // Coverage summary counts
-  const hasOriginBoth = rows.filter(r => r.rf_origin_country && r.edi_origin_impc).length;
-  const hasDestBoth   = rows.filter(r => r.rf_dest_country   && r.edi_dest_impc).length;
-  const hasFullBoth   = rows.filter(r => r.rf_origin_country && r.rf_dest_country && r.edi_origin_impc && r.edi_dest_impc).length;
+  const hasOriginBoth = rows.filter(r => (r.rf_origin_country ?? r.rf_departure_country) && r.edi_origin_impc).length;
+  const hasDestBoth   = rows.filter(r => (r.rf_dest_country   ?? r.rf_arrival_country)   && r.edi_dest_impc).length;
+  const hasFullBoth   = rows.filter(r => (r.rf_origin_country ?? r.rf_departure_country) && (r.rf_dest_country ?? r.rf_arrival_country) && r.edi_origin_impc && r.edi_dest_impc).length;
 
   return (
     <div className="space-y-2">
