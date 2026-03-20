@@ -68,6 +68,7 @@ export interface RfidJourney {
   transit_hours: number | null;           // ORIGIN → DESTINATION (total, for table column)
   international_transit_hours: number | null; // DEPARTURE → ARRIVAL only (for KPI)
   full_journey_hours: number | null;      // ORIGIN → DESTINATION (full)
+  has_origin: boolean;                   // has real ORIGIN event (not fallback)
   has_destination: boolean;
   has_international: boolean;             // has DEPARTURE + ARRIVAL pair
   is_both_rfid: boolean;
@@ -286,6 +287,7 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
       transit_hours:               transitHours,
       international_transit_hours: intlTransitHours,
       full_journey_hours:          fullJourneyHours,
+      has_origin:         originRow !== null,
       has_destination:    hasDest,
       has_international:  hasIntl,
       // is_both_rfid: tag has both ORIGIN (or DEPARTURE) and DESTINATION (or ARRIVAL)
@@ -439,8 +441,9 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
 
   // Overview KPI counts — unique tag_ids with status=COMPLETE per event_type
   // (data is already pre-filtered to status=COMPLETE at fetch time in supabase.ts)
+  // Each KPI counts tag_ids that have a REAL event of that type (no fallback substitution)
   const kpiTotalTags      = new Set(journeys.map(j => j.tag_id)).size;
-  const kpiRfidDepartures = new Set(journeys.filter(j => j.origin_time !== '' && j.origin_time !== null).map(j => j.tag_id)).size;   // ORIGIN
+  const kpiRfidDepartures = new Set(journeys.filter(j => j.has_origin).map(j => j.tag_id)).size;                                      // ORIGIN (real event only)
   const kpiRfPredes       = new Set(journeys.filter(j => j.departure_time !== null).map(j => j.tag_id)).size;                         // DEPARTURE
   const kpiRfResdes       = new Set(journeys.filter(j => j.arrival_time !== null).map(j => j.tag_id)).size;                           // ARRIVAL
   const kpiRfidArrivals   = new Set(journeys.filter(j => j.dest_time !== null).map(j => j.tag_id)).size;                              // DESTINATION
@@ -589,7 +592,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
         setBackgroundLoading(true);
 
         fetchRfidReadingsWithProgress(
-          undefined,
+          '2024-01-01',  // anchor start date — avoids full-table scan timeout
           olderTo,
           (loaded, total) => {
             if (!cancelled) setBackgroundProgress({ loaded, total });
