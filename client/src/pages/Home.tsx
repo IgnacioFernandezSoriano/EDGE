@@ -25,6 +25,7 @@ import { InfoTooltip } from '@/components/InfoTooltip';
 import { OverviewAnalysis, DepartureAnalysis, ArrivalAnalysis, TransitAnalysis } from '@/components/AnalysisPanel';
 import { BenchmarkPanel } from '@/components/BenchmarkPanel';
 import { SearchID } from '@/components/SearchID';
+import { BackgroundLoadingBanner } from '@/components/BackgroundLoadingBanner';
 
 const EDGE_LOGO = 'https://d2xsxph8kpxj0f.cloudfront.net/108732851/5NdCdX6TpQ4zqErLoimWrK/edge-logo_ae84570f.png';
 
@@ -617,13 +618,18 @@ export default function Home() {
     destCountry:   rfidDestCountry   || undefined,
   });
 
-  /* Benchmark tab data — fetched from benchmark_rfid_edi */
-  const benchmarkMeta = useBenchmarkData({
-    dateFrom: benchDateRange.from || undefined,
-    dateTo:   benchDateRange.to   || undefined,
-    originCountry: benchOriginCountry || undefined,
-    destCountry:   benchDestCountry   || undefined,
-  });
+  /* Benchmark tab data — uses journeys in memory + ID Relation + EDI pagination (no direct .in() query) */
+  const benchmarkMeta = useBenchmarkData(
+    epcis.journeys,
+    {
+      dateFrom: benchDateRange.from || undefined,
+      dateTo:   benchDateRange.to   || undefined,
+      originCountry: benchOriginCountry || undefined,
+      destCountry:   benchDestCountry   || undefined,
+    },
+    epcis.backgroundLoading,
+    epcis.backgroundProgress ?? null,
+  );
 
   /* Date label for CSV filename — uses RFID filters */
   const dateLabel = useMemo(() => {
@@ -848,6 +854,11 @@ export default function Home() {
                 </div>
               )}
             </div>
+            <BackgroundLoadingBanner
+              loading={epcis.backgroundLoading}
+              progress={epcis.backgroundProgress ?? null}
+              totalLabel="receptacles"
+            />
             <BenchmarkPanel
               journeys={epcis.journeys}
               rfidBackgroundLoading={epcis.backgroundLoading}
