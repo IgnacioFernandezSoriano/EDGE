@@ -56,7 +56,7 @@ const COVERAGE_LABEL: Record<string, string> = {
   EDI_ONLY:    'EDI only (no RFID)',
 };
 
-const TABS = ['RFID', 'EDI+RFID'];
+const TABS = ['RFID', 'Tracking', 'EDI+RFID'];
 
 /* ─── Tooltip ─── */
 function ChartTooltip({ active, payload, label }: any) {
@@ -739,6 +739,27 @@ export default function Home() {
               </div>
               {/* Divider */}
               <div className="w-px h-10 bg-slate-200 self-center" />
+              {/* Tracking tab group */}
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-emerald-500 px-1">RFID</span>
+                <div className="flex items-center gap-1">
+                  {['Tracking'].map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all duration-150 ${
+                        activeTab === tab
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Divider */}
+              <div className="w-px h-10 bg-slate-200 self-center" />
               {/* EDI / RFID Benchmark group */}
               <div className="flex flex-col items-center gap-1">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-amber-500 px-1">EDI / RFID</span>
@@ -1398,38 +1419,7 @@ export default function Home() {
                       </ResponsiveContainer>
                     </ChartCard>
 
-                    {epcis.stats.departureByCentre.length > 0 && (
-                      <ChartCard
-                        title="Transit Statistics by Origin Centre"
-                        subtitle="DEPARTURE→ARRIVAL transit hours per origin centre (status=COMPLETE tag_ids only)"
-                        tooltip="N = unique tag_ids with DEPARTURE+ARRIVAL. Avg = mean. P50 = median (50% of sample). IQR = P25–P75 range (middle 50% of the sample)."
-                      >
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="border-b border-slate-100">
-                                <th className="text-left py-2 pr-4 text-slate-500 font-medium">Origin Centre</th>
-                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">N</th>
-                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">Avg (h)</th>
-                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">P50 / Median (h)</th>
-                                <th className="text-right py-2 text-slate-500 font-medium">IQR P25–P75 (h)</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {epcis.stats.departureByCentre.map((c, i) => (
-                                <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                  <td className="py-2 pr-4 font-medium text-slate-800">{c.centre}</td>
-                                  <td className="py-2 pr-4 text-right font-medium text-slate-700">{c.n.toLocaleString()}</td>
-                                  <td className="py-2 pr-4 text-right"><span className="font-semibold text-indigo-600">{c.avgH}h</span></td>
-                                  <td className="py-2 pr-4 text-right"><span className="font-semibold text-emerald-600">{c.p50H}h</span></td>
-                                  <td className="py-2 text-right"><span className="text-slate-600">{c.p25H}h – {c.p75H}h</span></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </ChartCard>
-                    )}
+
                   </div>
                 </div>
 
@@ -1494,38 +1484,7 @@ export default function Home() {
                       </ResponsiveContainer>
                     </ChartCard>
 
-                    {epcis.stats.arrivalByCentre.length > 0 && (
-                      <ChartCard
-                        title="Transit Statistics by Destination Centre"
-                        subtitle="DEPARTURE→ARRIVAL transit hours per destination centre (status=COMPLETE tag_ids only)"
-                        tooltip="N = unique tag_ids with DEPARTURE+ARRIVAL. Avg = mean. P50 = median (50% of sample). IQR = P25–P75 range (middle 50% of the sample)."
-                      >
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="border-b border-slate-100">
-                                <th className="text-left py-2 pr-4 text-slate-500 font-medium">Destination Centre</th>
-                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">N</th>
-                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">Avg (h)</th>
-                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">P50 / Median (h)</th>
-                                <th className="text-right py-2 text-slate-500 font-medium">IQR P25–P75 (h)</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {epcis.stats.arrivalByCentre.map((c, i) => (
-                                <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                  <td className="py-2 pr-4 font-medium text-slate-800">{c.centre}</td>
-                                  <td className="py-2 pr-4 text-right font-medium text-slate-700">{c.n.toLocaleString()}</td>
-                                  <td className="py-2 pr-4 text-right"><span className="font-semibold text-indigo-600">{c.avgH}h</span></td>
-                                  <td className="py-2 pr-4 text-right"><span className="font-semibold text-emerald-600">{c.p50H}h</span></td>
-                                  <td className="py-2 text-right"><span className="text-slate-600">{c.p25H}h – {c.p75H}h</span></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </ChartCard>
-                    )}
+
                   </div>
                 </div>
                 </div>{/* end parallel grid */}
@@ -1619,22 +1578,20 @@ export default function Home() {
                 </div>
 
 
-                 {/* ════════════════════ RFID DATA TABLE ════════════════════ */}
-                <div className="mt-8">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-1 h-6 rounded-full bg-indigo-500" />
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-800">Tracking</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {epcis.stats.uniqueReceptacles.toLocaleString()} receptacles — one row per unique tag_id
-                      </p>
-                    </div>
-                  </div>
-                  <EpcisDataTable journeys={epcis.journeys} dateLabel={dateLabel} />
-                </div>
-              </>)}
+              </>
+          )}
           </Section>
           </>
+        )}
+
+        {/* ════════════════════ TRACKING ════════════════════ */}
+        {activeTab === 'Tracking' && (
+          <Section
+            title="Tracking"
+            subtitle={`${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles — one row per unique tag_id`}
+          >
+            <EpcisDataTable journeys={epcis.journeys} dateLabel={dateLabel} />
+          </Section>
         )}
 
         {/* ════════════════════ DATA TABLE ════════════════════ */}
