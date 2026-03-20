@@ -1389,6 +1389,38 @@ export default function Home() {
                       </ResponsiveContainer>
                     </ChartCard>
 
+                    {epcis.stats.departureByCentre.length > 0 && (
+                      <ChartCard
+                        title="Transit Statistics by Origin Centre"
+                        subtitle="DEPARTURE→ARRIVAL transit hours per origin centre (status=COMPLETE tag_ids only)"
+                        tooltip="N = unique tag_ids with DEPARTURE+ARRIVAL. Avg = mean. P50 = median (50% of sample). IQR = P25–P75 range (middle 50% of the sample)."
+                      >
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-100">
+                                <th className="text-left py-2 pr-4 text-slate-500 font-medium">Origin Centre</th>
+                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">N</th>
+                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">Avg (h)</th>
+                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">P50 / Median (h)</th>
+                                <th className="text-right py-2 text-slate-500 font-medium">IQR P25–P75 (h)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {epcis.stats.departureByCentre.map((c, i) => (
+                                <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                  <td className="py-2 pr-4 font-medium text-slate-800">{c.centre}</td>
+                                  <td className="py-2 pr-4 text-right font-medium text-slate-700">{c.n.toLocaleString()}</td>
+                                  <td className="py-2 pr-4 text-right"><span className="font-semibold text-indigo-600">{c.avgH}h</span></td>
+                                  <td className="py-2 pr-4 text-right"><span className="font-semibold text-emerald-600">{c.p50H}h</span></td>
+                                  <td className="py-2 text-right"><span className="text-slate-600">{c.p25H}h – {c.p75H}h</span></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </ChartCard>
+                    )}
                   </div>
                 </div>
 
@@ -1453,6 +1485,38 @@ export default function Home() {
                       </ResponsiveContainer>
                     </ChartCard>
 
+                    {epcis.stats.arrivalByCentre.length > 0 && (
+                      <ChartCard
+                        title="Transit Statistics by Destination Centre"
+                        subtitle="DEPARTURE→ARRIVAL transit hours per destination centre (status=COMPLETE tag_ids only)"
+                        tooltip="N = unique tag_ids with DEPARTURE+ARRIVAL. Avg = mean. P50 = median (50% of sample). IQR = P25–P75 range (middle 50% of the sample)."
+                      >
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-100">
+                                <th className="text-left py-2 pr-4 text-slate-500 font-medium">Destination Centre</th>
+                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">N</th>
+                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">Avg (h)</th>
+                                <th className="text-right py-2 pr-4 text-slate-500 font-medium">P50 / Median (h)</th>
+                                <th className="text-right py-2 text-slate-500 font-medium">IQR P25–P75 (h)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {epcis.stats.arrivalByCentre.map((c, i) => (
+                                <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                  <td className="py-2 pr-4 font-medium text-slate-800">{c.centre}</td>
+                                  <td className="py-2 pr-4 text-right font-medium text-slate-700">{c.n.toLocaleString()}</td>
+                                  <td className="py-2 pr-4 text-right"><span className="font-semibold text-indigo-600">{c.avgH}h</span></td>
+                                  <td className="py-2 pr-4 text-right"><span className="font-semibold text-emerald-600">{c.p50H}h</span></td>
+                                  <td className="py-2 text-right"><span className="text-slate-600">{c.p25H}h – {c.p75H}h</span></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </ChartCard>
+                    )}
                   </div>
                 </div>
                 </div>{/* end parallel grid */}
@@ -1494,29 +1558,38 @@ export default function Home() {
                   {epcis.stats.byRoute.length > 0 ? (
                     <ChartCard
                       title="RFID Transit by Route"
-                      subtitle={`${epcis.stats.byRoute.length} routes · avg rfid_transit_hours from RFID table`}
-                      tooltip="Each row is a unique rfid_origin_country → rfid_dest_country pair from RFID table."
+                      subtitle={`${epcis.stats.byRoute.length} routes · unique tag_ids with status=COMPLETE (DEPARTURE→ARRIVAL)`}
+                      tooltip="Each row is a unique origin→destination route. N = unique tag_ids. Avg = mean transit hours. P50 = median (50th percentile). IQR = P25–P75 range (middle 50% of the sample)."
                     >
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="border-b border-slate-100">
-                              <th className="text-left py-2 pr-4 text-slate-500 font-medium">Route (RFID)</th>
-                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">n</th>
-                              <th className="text-right py-2 text-slate-500 font-medium">Avg Transit</th>
+                              <th className="text-left py-2 pr-4 text-slate-500 font-medium">Route</th>
+                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">N</th>
+                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">Avg (h)</th>
+                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">P50 / Median (h)</th>
+                              <th className="text-right py-2 text-slate-500 font-medium">IQR P25–P75 (h)</th>
                             </tr>
                           </thead>
                           <tbody>
                             {epcis.stats.byRoute.map((r, i) => (
                               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                                 <td className="py-2 pr-4 font-medium text-slate-800">{r.route}</td>
-                                <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.count}</td>
-                                <td className="py-2 text-right">
+                                <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.count.toLocaleString()}</td>
+                                <td className="py-2 pr-4 text-right">
                                   {r.avgH !== null ? (
-                                    <>
-                                      <span className="font-semibold text-indigo-600">{r.avgH}h</span>
-                                      <span className="text-slate-400 ml-1">/ {(r.avgH / 24).toFixed(1)}d</span>
-                                    </>
+                                    <span className="font-semibold text-indigo-600">{r.avgH}h</span>
+                                  ) : <span className="text-slate-300">—</span>}
+                                </td>
+                                <td className="py-2 pr-4 text-right">
+                                  {r.p50H !== null ? (
+                                    <span className="font-semibold text-emerald-600">{r.p50H}h</span>
+                                  ) : <span className="text-slate-300">—</span>}
+                                </td>
+                                <td className="py-2 text-right">
+                                  {r.p25H !== null && r.p75H !== null ? (
+                                    <span className="text-slate-600">{r.p25H}h – {r.p75H}h</span>
                                   ) : <span className="text-slate-300">—</span>}
                                 </td>
                               </tr>

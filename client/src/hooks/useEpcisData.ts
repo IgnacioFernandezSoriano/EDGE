@@ -93,9 +93,9 @@ export interface EpcisStats {
   byDestCountry:   { country: string; count: number }[];
   byOriginCentre:  { centre: string; country: string; count: number; endToEnd: number }[];
   byDestCentre:    { centre: string; country: string; count: number }[];
-  departureByCentre: { centre: string; country: string; n: number; avgH: number }[];
-  arrivalByCentre:   { centre: string; country: string; n: number; avgH: number }[];
-  byRoute:           { route: string; origin: string; dest: string; count: number; avgH: number | null }[];
+  departureByCentre: { centre: string; country: string; n: number; avgH: number; p50H: number; p25H: number; p75H: number }[];
+  arrivalByCentre:   { centre: string; country: string; n: number; avgH: number; p50H: number; p25H: number; p75H: number }[];
+  byRoute:           { route: string; origin: string; dest: string; count: number; avgH: number | null; p50H: number | null; p25H: number | null; p75H: number | null }[];
   transitCdf:        { x: number; pct: number }[];
   dateRange: { min: string; max: string } | null;
 }
@@ -377,7 +377,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
       centre,
       country: v.country,
       n: v.hours.length,
-      avgH: Math.round((mean(v.hours) ?? 0) * 10) / 10,
+      avgH:  Math.round((mean(v.hours)              ?? 0) * 10) / 10,
+      p50H:  Math.round((median(v.hours)            ?? 0) * 10) / 10,
+      p25H:  Math.round((percentile(v.hours, 25)    ?? 0) * 10) / 10,
+      p75H:  Math.round((percentile(v.hours, 75)    ?? 0) * 10) / 10,
     }))
     .sort((a, b) => b.n - a.n);
 
@@ -395,7 +398,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
       centre,
       country: v.country,
       n: v.hours.length,
-      avgH: Math.round((mean(v.hours) ?? 0) * 10) / 10,
+      avgH:  Math.round((mean(v.hours)              ?? 0) * 10) / 10,
+      p50H:  Math.round((median(v.hours)            ?? 0) * 10) / 10,
+      p25H:  Math.round((percentile(v.hours, 25)    ?? 0) * 10) / 10,
+      p75H:  Math.round((percentile(v.hours, 75)    ?? 0) * 10) / 10,
     }))
     .sort((a, b) => b.n - a.n);
 
@@ -416,7 +422,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
       origin: v.origin,
       dest: v.dest,
       count: v.count,
-      avgH: v.hours.length > 0 ? Math.round((mean(v.hours) ?? 0) * 10) / 10 : null,
+      avgH:  v.hours.length > 0 ? Math.round((mean(v.hours)              ?? 0) * 10) / 10 : null,
+      p50H:  v.hours.length > 0 ? Math.round((median(v.hours)            ?? 0) * 10) / 10 : null,
+      p25H:  v.hours.length > 0 ? Math.round((percentile(v.hours, 25)    ?? 0) * 10) / 10 : null,
+      p75H:  v.hours.length > 0 ? Math.round((percentile(v.hours, 75)    ?? 0) * 10) / 10 : null,
     }))
     .sort((a, b) => b.count - a.count);
 
@@ -428,14 +437,14 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   // RFID Arrivals: tags with DESTINATION or ARRIVAL (known at destination, complete or partial journey)
   const withDestReading = journeys.filter(j => j.dest_time !== null || j.arrival_time !== null).length;
 
-  // Overview KPI counts — computed from filteredJourneys (respects all active filters)
-  // These replace the rfid_kpi_counts RPC call which does not apply country filters correctly.
-  const kpiTotalTags      = journeys.length;
-  const kpiRfidDepartures = journeys.filter(j => j.origin_time !== '' && j.origin_time !== null).length;
-  const kpiRfPredes       = journeys.filter(j => j.departure_time !== null).length;   // DEPARTURE events
-  const kpiRfResdes       = journeys.filter(j => j.arrival_time !== null).length;     // ARRIVAL events
-  const kpiRfidArrivals   = journeys.filter(j => j.dest_time !== null).length;        // DESTINATION events
-  const kpiRfE2e          = journeys.filter(j => j.has_international).length;        // DEPARTURE + ARRIVAL (international transit)
+  // Overview KPI counts — unique tag_ids with status=COMPLETE per event_type
+  // (data is already pre-filtered to status=COMPLETE at fetch time in supabase.ts)
+  const kpiTotalTags      = new Set(journeys.map(j => j.tag_id)).size;
+  const kpiRfidDepartures = new Set(journeys.filter(j => j.origin_time !== '' && j.origin_time !== null).map(j => j.tag_id)).size;   // ORIGIN
+  const kpiRfPredes       = new Set(journeys.filter(j => j.departure_time !== null).map(j => j.tag_id)).size;                         // DEPARTURE
+  const kpiRfResdes       = new Set(journeys.filter(j => j.arrival_time !== null).map(j => j.tag_id)).size;                           // ARRIVAL
+  const kpiRfidArrivals   = new Set(journeys.filter(j => j.dest_time !== null).map(j => j.tag_id)).size;                              // DESTINATION
+  const kpiRfE2e          = new Set(journeys.filter(j => j.has_international).map(j => j.tag_id)).size;                               // DEPARTURE + ARRIVAL (Leg2)
 
   return {
     totalReadings,

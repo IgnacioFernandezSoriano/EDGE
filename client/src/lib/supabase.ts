@@ -286,6 +286,8 @@ export async function fetchRfidReadings(
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
   // Only fetch fields needed by readingsToJourneys — reduces payload ~60%
   url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary');
+  // Only process COMPLETE records — PENDING means the ETL has not finished classifying the tag
+  url.searchParams.set('status', 'eq.COMPLETE');
   // Fetch all event types relevant for journey reconstruction
   url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
   url.searchParams.set('order', 'event_time_local.asc');
@@ -350,6 +352,8 @@ export async function fetchRfidReadingsWithProgress(
   const baseHeaders = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
   url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary');
+  // Only process COMPLETE records
+  url.searchParams.set('status', 'eq.COMPLETE');
   url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
   url.searchParams.set('order', 'event_time_local.asc');
   if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
