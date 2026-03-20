@@ -850,6 +850,8 @@ export default function Home() {
             </div>
             <BenchmarkPanel
               journeys={epcis.journeys}
+              rfidBackgroundLoading={epcis.backgroundLoading}
+              rfidBackgroundProgress={epcis.backgroundProgress ?? null}
               filters={{
               dateFrom: benchDateRange.from || undefined,
               dateTo:   benchDateRange.to   || undefined,

@@ -362,18 +362,32 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
 interface BenchmarkPanelProps {
   filters?: BenchmarkFilters;
   journeys: RfidJourney[];
+  rfidBackgroundLoading?: boolean;
+  rfidBackgroundProgress?: { loaded: number; total: number } | null;
 }
 
-export function BenchmarkPanel({ filters = {}, journeys }: BenchmarkPanelProps) {
-  const { rows, stats, loading, error } = useBenchmarkData(journeys, filters);
+export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading = false, rfidBackgroundProgress = null }: BenchmarkPanelProps) {
+  const { rows, stats, loading, error, ediProgress, backgroundLoading, backgroundProgress } = useBenchmarkData(journeys, filters, rfidBackgroundLoading, rfidBackgroundProgress);
   const [detailView, setDetailView] = useState<DetailView>('departure');
 
   if (loading) {
+    const pctEdi = ediProgress && ediProgress.total > 0 ? Math.round(ediProgress.loaded / ediProgress.total * 100) : null;
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-center space-y-3">
+        <div className="text-center space-y-3" style={{ minWidth: 280 }}>
           <div className="w-8 h-8 rounded-full mx-auto animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: C.rfid }} />
           <p className="text-sm text-slate-500">Loading benchmark data…</p>
+          {ediProgress && (
+            <div className="space-y-1">
+              <p className="text-xs text-slate-400">
+                EDI data: {ediProgress.loaded.toLocaleString()} / {ediProgress.total.toLocaleString()} rows
+                {pctEdi !== null && ` (${pctEdi}%)`}
+              </p>
+              <div className="w-full bg-slate-100 rounded-full h-1.5">
+                <div className="h-1.5 rounded-full transition-all" style={{ width: `${pctEdi ?? 0}%`, background: C.rfid }} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -396,8 +410,33 @@ export function BenchmarkPanel({ filters = {}, journeys }: BenchmarkPanelProps) 
   const hasDestBoth   = rows.filter(r => (r.rf_dest_country   ?? r.rf_arrival_country)   && r.edi_dest_impc).length;
   const hasFullBoth   = rows.filter(r => (r.rf_origin_country ?? r.rf_departure_country) && (r.rf_dest_country ?? r.rf_arrival_country) && r.edi_origin_impc && r.edi_dest_impc).length;
 
+  const bgPct = backgroundProgress && backgroundProgress.total > 0
+    ? Math.round(backgroundProgress.loaded / backgroundProgress.total * 100) : null;
+
   return (
     <div className="space-y-2">
+
+      {/* Background RFID loading banner */}
+      {backgroundLoading && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+          <div className="w-4 h-4 rounded-full flex-shrink-0 animate-spin" style={{ border: '2px solid #fde68a', borderTopColor: '#f59e0b' }} />
+          <div className="flex-1 min-w-0">
+            <span className="text-amber-700 font-medium">Loading historical RFID data…</span>
+            {backgroundProgress && (
+              <span className="text-amber-600 ml-2">
+                {backgroundProgress.loaded.toLocaleString()} / {backgroundProgress.total.toLocaleString()} events
+                {bgPct !== null && ` · ${bgPct}%`}
+              </span>
+            )}
+            {backgroundProgress && backgroundProgress.total > 0 && (
+              <div className="mt-1 w-full bg-amber-100 rounded-full h-1">
+                <div className="h-1 rounded-full transition-all" style={{ width: `${bgPct ?? 0}%`, background: '#f59e0b' }} />
+              </div>
+            )}
+          </div>
+          <span className="text-amber-500 text-xs flex-shrink-0">Benchmark updates as data loads</span>
+        </div>
+      )}
 
       {/* ── 0. Coverage summary ── */}
       <Section
