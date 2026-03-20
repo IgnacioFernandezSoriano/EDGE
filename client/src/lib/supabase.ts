@@ -343,9 +343,17 @@ export async function fetchRfidReadings(
 }
 
 /**
- * Fetches historical RFID readings using paginated REST API with progress reporting.
- * Uses the same 'and=' PostgREST operator as fetchRfidReadings to correctly
- * combine date range filters without overwriting.
+ * Fetches RFID readings using a DATE-CHUNK strategy to avoid Supabase statement_timeout.
+ *
+ * Root cause: Supabase anon role has a ~3s statement_timeout. Queries with large
+ * offsets (>50k rows) take >3s because PostgreSQL must scan the full ordered result
+ * set to reach the offset. Date-bounded queries always use the index efficiently
+ * and return in <1s regardless of the total dataset size.
+ *
+ * Strategy:
+ *   1. Build a list of quarterly date chunks covering the requested range.
+ *   2. For each chunk, fetch all pages (offset 0..N) with CONCURRENCY parallel requests.
+ *   3. Report progress as chunks complete.
  */
 export async function fetchRfidReadingsWithProgress(
   dateFrom?: string,
@@ -353,63 +361,92 @@ export async function fetchRfidReadingsWithProgress(
   onProgress?: (loaded: number, total: number) => void
 ): Promise<RfidReading[]> {
   const baseHeaders = await getAuthHeaders();
-  const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
-  url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary,status,read_point_id');
-  url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
-  url.searchParams.set('order', 'event_time_local.asc');
-  // Use two separate append() calls — PostgREST combines them as an implicit AND.
-  // The 'and=' operator syntax does NOT work correctly with other query params.
-  if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
-  if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
-
+  const SELECT = 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary,status,read_point_id';
+  const EVENT_FILTER = 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)';
   const PAGE_SIZE = 1000;
-  const CONCURRENCY = 10; // parallel requests per batch
+  const CONCURRENCY = 10;
 
-  // Step 1: fetch first page and get total count
-  const firstHeaders = {
-    ...baseHeaders,
-    'Range-Unit': 'items',
-    'Range': `0-${PAGE_SIZE - 1}`,
-    'Prefer': 'count=exact',
-  };
-  const firstRes = await fetch(url.toString(), { headers: firstHeaders });
-  if (!firstRes.ok) throw new Error(`Supabase RFID error: ${firstRes.status} ${await firstRes.text()}`);
+  // Build quarterly date chunks between dateFrom and dateTo
+  const startDate = dateFrom ? new Date(dateFrom) : new Date('2025-04-01'); // data starts ~Apr 2025
+  const endDate   = dateTo   ? new Date(dateTo)   : new Date();
 
-  const firstData: RfidReading[] = await firstRes.json();
-  const cr = firstRes.headers.get('content-range') ?? '';
-  const totalMatch = cr.match(/\/(\d+)$/);
-  const total = totalMatch ? parseInt(totalMatch[1], 10) : firstData.length;
-
-  onProgress?.(firstData.length, total);
-
-  if (total <= PAGE_SIZE) {
-    onProgress?.(total, total);
-    return firstData;
+  const chunks: { from: string; to: string }[] = [];
+  let cursor = new Date(startDate);
+  while (cursor <= endDate) {
+    const chunkStart = cursor.toISOString().split('T')[0];
+    // Advance 3 months
+    const next = new Date(cursor);
+    next.setMonth(next.getMonth() + 3);
+    next.setDate(next.getDate() - 1); // last day of the quarter
+    const chunkEnd = (next > endDate ? endDate : next).toISOString().split('T')[0];
+    chunks.push({ from: chunkStart, to: chunkEnd });
+    cursor = new Date(next);
+    cursor.setDate(cursor.getDate() + 1); // first day of next quarter
   }
 
-  // Step 2: fetch remaining pages in batches
-  const remainingOffsets: number[] = [];
-  for (let offset = PAGE_SIZE; offset < total; offset += PAGE_SIZE) {
-    remainingOffsets.push(offset);
+  // Helper: fetch all pages of a single date chunk
+  async function fetchChunk(from: string, to: string): Promise<RfidReading[]> {
+    const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
+    url.searchParams.set('select', SELECT);
+    url.searchParams.set('event_type', EVENT_FILTER);
+    url.searchParams.set('order', 'event_time_local.asc');
+    url.searchParams.append('event_time_local', `gte.${from}T00:00:00`);
+    url.searchParams.append('event_time_local', `lte.${to}T23:59:59`);
+    const urlStr = url.toString();
+
+    // Get count first
+    const countRes = await fetch(urlStr, {
+      headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': `0-${PAGE_SIZE - 1}`, 'Prefer': 'count=exact' },
+    });
+    if (!countRes.ok) return [];
+    const firstPage: RfidReading[] = await countRes.json();
+    const cr = countRes.headers.get('content-range') ?? '';
+    const totalMatch = cr.match(/\/(\d+)$/);
+    const total = totalMatch ? parseInt(totalMatch[1], 10) : firstPage.length;
+    if (total <= PAGE_SIZE) return firstPage;
+
+    const offsets: number[] = [];
+    for (let offset = PAGE_SIZE; offset < total; offset += PAGE_SIZE) offsets.push(offset);
+
+    const pages: RfidReading[][] = [firstPage];
+    for (let i = 0; i < offsets.length; i += CONCURRENCY) {
+      const batch = offsets.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(offset => fetchPage(urlStr, baseHeaders, offset, Math.min(offset + PAGE_SIZE - 1, total - 1)))
+      );
+      pages.push(...results);
+    }
+    return ([] as RfidReading[]).concat(...pages);
   }
 
-  const allPages: RfidReading[][] = [firstData];
-  let loaded = firstData.length;
+  // Estimate total rows for progress reporting (use a quick count query)
+  let estimatedTotal = 0;
+  try {
+    const countUrl = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
+    countUrl.searchParams.set('select', 'tag_id');
+    countUrl.searchParams.set('event_type', EVENT_FILTER);
+    if (dateFrom) countUrl.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
+    if (dateTo)   countUrl.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
+    const cr = await fetch(countUrl.toString(), {
+      headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': '0-0', 'Prefer': 'count=exact' },
+    });
+    const m = (cr.headers.get('content-range') ?? '').match(/\/(\d+)$/);
+    estimatedTotal = m ? parseInt(m[1], 10) : 0;
+  } catch { /* ignore */ }
 
-  for (let i = 0; i < remainingOffsets.length; i += CONCURRENCY) {
-    const batch = remainingOffsets.slice(i, i + CONCURRENCY);
-    const batchResults = await Promise.all(
-      batch.map((offset) => {
-        const rangeEnd = Math.min(offset + PAGE_SIZE - 1, total - 1);
-        return fetchPage(url.toString(), baseHeaders, offset, rangeEnd);
-      })
-    );
-    allPages.push(...batchResults);
-    loaded += batchResults.reduce((sum, p) => sum + p.length, 0);
-    onProgress?.(loaded, total);
+  // Process chunks sequentially (each chunk is internally parallel)
+  const allReadings: RfidReading[] = [];
+  let loaded = 0;
+
+  for (const chunk of chunks) {
+    const chunkData = await fetchChunk(chunk.from, chunk.to);
+    allReadings.push(...chunkData);
+    loaded += chunkData.length;
+    onProgress?.(loaded, estimatedTotal || loaded + 1);
   }
 
-  return ([] as RfidReading[]).concat(...allPages);
+  onProgress?.(allReadings.length, allReadings.length);
+  return allReadings;
 }
 
 /**

@@ -596,7 +596,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
         setBackgroundLoading(true);
 
         fetchRfidReadingsWithProgress(
-          '2024-01-01',  // anchor start date — avoids full-table scan timeout
+          '2025-04-01',  // data starts ~Apr 2025; date-chunk strategy handles timeout
           olderTo,
           (loaded, total) => {
             if (!cancelled) setBackgroundProgress({ loaded, total });
