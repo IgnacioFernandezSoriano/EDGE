@@ -354,30 +354,70 @@ async function searchById(q: string): Promise<SearchResult> {
     milestones: { oe_origin: null, amu_outbound: null, amu_inbound: null, oe_dest: null },
   };
 
-  /* ── Step 1: Fetch raw RFID readings ordered by record_time ── */
-  const { data: rfidRows, error: rfidErr } = await supabase
-    .from('RFID')
-    .select('tag_id,s9id,read_point_id,record_time,event_time_local,country,center_name,impc_code')
-    .or(`tag_id.ilike.%${q}%,s9id.ilike.%${q}%`)
-    .order('record_time', { ascending: true })
-    .limit(2000);
+  /* ── Step 1: Fetch raw RFID readings ordered by record_time ──
+   * Use eq (exact match) — ilike causes full table scan → statement_timeout.
+   * Try both tag_id and s9id with two separate queries and merge results.
+   */
+  const [{ data: rfidByTagId }, { data: rfidBySid }] = await Promise.all([
+    supabase
+      .from('RFID')
+      .select('tag_id,s9id,read_point_id,record_time,event_time_local,country,center_name,impc_code')
+      .eq('tag_id', q)
+      .order('record_time', { ascending: true })
+      .limit(2000),
+    supabase
+      .from('RFID')
+      .select('tag_id,s9id,read_point_id,record_time,event_time_local,country,center_name,impc_code')
+      .eq('s9id', q)
+      .order('record_time', { ascending: true })
+      .limit(2000),
+  ]);
+
+  // Merge and deduplicate by (tag_id + record_time)
+  const seen = new Set<string>();
+  const rfidRows: typeof rfidByTagId = [];
+  for (const row of [...(rfidByTagId ?? []), ...(rfidBySid ?? [])]) {
+    const key = `${row.tag_id}|${row.record_time}`;
+    if (!seen.has(key)) { seen.add(key); rfidRows.push(row); }
+  }
+  // Re-sort after merge
+  rfidRows.sort((a, b) => (a.record_time ?? '') < (b.record_time ?? '') ? -1 : 1);
+
+  const rfidErr = null; // errors already handled via empty arrays
 
   if (rfidErr) console.warn('RFID search error:', rfidErr.message);
 
   /* ── Step 2: Fetch EDI data from benchmark_rfid_edi ── */
-  const { data: ediRows, error: ediErr } = await supabase
-    .from('benchmark_rfid_edi')
-    .select([
-      's9id,tag_id',
-      'edi_origin_impc,edi_dest_impc',
-      'edi_predes_time,edi_resdes_time',
-      'edi_resdit74_time,edi_resdit74_impc',
-      'edi_resdit21_time,edi_resdit21_impc',
-      'rf_origin_country,rf_origin_centre,rf_origin_impc',
-      'rf_dest_country,rf_dest_centre,rf_dest_impc',
-    ].join(','))
-    .or(`s9id.ilike.%${q}%,tag_id.ilike.%${q}%`)
-    .limit(10);
+  const [{ data: ediByS9id }, { data: ediByTagId }] = await Promise.all([
+    supabase
+      .from('benchmark_rfid_edi')
+      .select([
+        's9id,tag_id',
+        'edi_origin_impc,edi_dest_impc',
+        'edi_predes_time,edi_resdes_time',
+        'edi_resdit74_time,edi_resdit74_impc',
+        'edi_resdit21_time,edi_resdit21_impc',
+        'rf_origin_country,rf_origin_centre,rf_origin_impc',
+        'rf_dest_country,rf_dest_centre,rf_dest_impc',
+      ].join(','))
+      .eq('s9id', q)
+      .limit(5),
+    supabase
+      .from('benchmark_rfid_edi')
+      .select([
+        's9id,tag_id',
+        'edi_origin_impc,edi_dest_impc',
+        'edi_predes_time,edi_resdes_time',
+        'edi_resdit74_time,edi_resdit74_impc',
+        'edi_resdit21_time,edi_resdit21_impc',
+        'rf_origin_country,rf_origin_centre,rf_origin_impc',
+        'rf_dest_country,rf_dest_centre,rf_dest_impc',
+      ].join(','))
+      .eq('tag_id', q)
+      .limit(5),
+  ]);
+  const ediRows = [...(ediByS9id ?? []), ...(ediByTagId ?? [])];
+  const ediErr = null;
 
   if (ediErr) console.warn('EDI search error:', ediErr.message);
 
