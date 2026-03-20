@@ -1278,98 +1278,75 @@ export default function Home() {
                 <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
 
-                  <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-5">
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-5">
                     <KpiCard
-                      title="Matched Tags"
-                      value={matchedTagsData != null ? matchedTagsData.count.toLocaleString() : '—'}
-                      subtitle={matchedTagsData?.minDate && matchedTagsData?.maxDate
-                        ? `${matchedTagsData.minDate} → ${matchedTagsData.maxDate}`
-                        : 'records in ID Relation table'}
-                      badge={{ label: 'id-match', color: 'blue' }}
-                      tooltip="Total records in the ID Relation table for the selected date and country filters. Represents receptacles for which a tag ID ↔ s9id mapping exists."
-                    />
-                    <KpiCard
-                      title="Total ID Receptacles"
+                      title="Total Tags"
                       value={epcis.stats.kpiTotalTags.toLocaleString()}
-                      subtitle="unique tag IDs in RFID table"
+                      subtitle="Total RFID Tags for selected period and countries"
                       badge={{ label: 'rfid', color: 'blue' }}
-                      tooltip="Total unique tag IDs in the RFID table for the selected date and country filters. Shows last 30 days immediately, then updates with full history."
+                      tooltip="Total unique tag IDs in the RFID table for the selected date and country filters."
                     />
                     <KpiCard
-                      title="RFID Departures"
+                      title="Tags OE Origin"
                       value={epcis.stats.kpiRfidDepartures.toLocaleString()}
-                      subtitle="unique tag IDs with ORIGIN event"
+                      subtitle="First site RFID Tags (Usually OE)"
                       badge={{ label: 'origin', color: 'blue' }}
-                      tooltip="Unique tag IDs with event_type = ORIGIN: first reading at the dispatch centre (intra-country). Represents receptacles identified at the sending centre before international dispatch."
+                      tooltip="Unique tag IDs with event_type = ORIGIN: first reading at the dispatch centre (intra-country). Usually the Origin OE (Office of Exchange)."
                     />
                     <KpiCard
-                      title="RFID Outbound"
+                      title="Tags AMU Outbound"
                       value={epcis.stats.kpiRfPredes.toLocaleString()}
-                      subtitle="unique tag IDs with DEPARTURE event"
+                      subtitle="OUTBOUND site RFID Tags"
                       badge={{ label: 'departure', color: 'indigo' }}
-                      tooltip="Unique tag IDs with event_type = DEPARTURE: last RFID reading before crossing an international border. RFID Outbound is the physical equivalent of the EDI PREDES message."
+                      tooltip="Unique tag IDs with event_type = DEPARTURE: last RFID reading at the outbound AMU before crossing an international border. Physical equivalent of the EDI PREDES message."
                     />
                     <KpiCard
-                      title="RF E2E"
+                      title="Tags Leg2"
                       value={epcis.stats.kpiRfE2e.toLocaleString()}
-                      subtitle="tag IDs with RFID Outbound and RFID Inbound"
+                      subtitle="Tags captured in INBOUND and OUTBOUND"
                       badge={{ label: 'e2e', color: 'amber' }}
-                      tooltip="Unique tag IDs with both a DEPARTURE event (RFID Outbound) and an ARRIVAL event (RFID Inbound). These are the receptacles for which a complete international RFID transit can be measured and compared against EDI."
+                      tooltip="Unique tag IDs with both a DEPARTURE event (AMU Outbound) and an ARRIVAL event (AMU Inbound). Receptacles for which a complete international RFID transit can be measured."
                     />
                     <KpiCard
-                      title="RFID Inbound"
+                      title="Tags AMU Inbound"
                       value={epcis.stats.kpiRfResdes.toLocaleString()}
-                      subtitle="unique tag IDs with ARRIVAL event"
+                      subtitle="INBOUND site RFID Tags"
                       badge={{ label: 'arrival', color: 'green' }}
-                      tooltip="Unique tag IDs with event_type = ARRIVAL: first RFID reading after crossing an international border. RFID Inbound is the physical equivalent of the EDI RESDES message."
+                      tooltip="Unique tag IDs with event_type = ARRIVAL: first RFID reading at the inbound AMU after crossing an international border. Physical equivalent of the EDI RESDES message."
                     />
                     <KpiCard
-                      title="RFID Arrivals"
+                      title="Tags OE Destination"
                       value={epcis.stats.kpiRfidArrivals.toLocaleString()}
-                      subtitle="unique tag IDs with DESTINATION event"
+                      subtitle="Last site RFID Tags"
                       badge={{ label: 'dest', color: 'teal' }}
-                      tooltip="Unique tag IDs with event_type = DESTINATION: last reading at the delivery centre (intra-country). Represents receptacles identified at the receiving centre after international arrival."
+                      tooltip="Unique tag IDs with event_type = DESTINATION: last reading at the delivery centre (intra-country). Usually the Destination OE (Office of Exchange)."
                     />
                   </div>
 
                 </div>
 
-                {/* ── DEPARTURES + ARRIVALS in parallel columns ── */}
+                {/* ── ORIGIN & OUTBOUND + INBOUND & DESTINATION in parallel columns ── */}
                 <div className="mt-6 grid md:grid-cols-2 gap-8">
 
-                {/* ── LEFT: DEPARTURES ── */}
+                {/* ── LEFT: ORIGIN & OUTBOUND ── */}
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4">Departures</h3>
+                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4">Origin &amp; Outbound</h3>
 
                   {/* KPIs */}
                   <div className="grid grid-cols-2 gap-4 mb-5">
-                    <KpiCard
-                      title="Total RFID Departures"
-                      value={epcis.stats.withOriginReading.toLocaleString()}
-                      subtitle="receptacles with RFID reading at origin centre"
-                      badge={{ label: 'departures', color: 'blue' }}
-                      tooltip="Receptacles with rfid_origin_impc set from RFID table (BOTH + ORIGIN_ONLY cases)."
-                    />
                     <KpiCard
                       title="Origin Countries"
                       value={epcis.stats.uniqueOrigins.toLocaleString()}
                       subtitle="distinct origin countries"
                       badge={{ label: 'countries', color: 'blue' }}
-                      tooltip="Number of distinct rfid_origin_country values from RFID table."
+                      tooltip="Number of distinct origin countries with RFID readings in the selected period."
                     />
                     <KpiCard
                       title="Origin Centres"
                       value={epcis.stats.byOriginCentre.length.toLocaleString()}
                       subtitle="distinct origin postal centres"
                       badge={{ label: 'centres', color: 'blue' }}
-                      tooltip="Number of distinct rfid_origin_centre values from RFID table."
-                    />
-                    <KpiCard
-                      title="Avg RFID Transit"
-                      value={epcis.stats.avgTransitHours != null ? `${epcis.stats.avgTransitHours}h` : '—'}
-                      subtitle="avg rfid_transit_hours (e2e pairs)"
-                      badge={{ label: 'transit', color: 'amber' }}
-                      tooltip="Median rfid_transit_hours from RFID table for end-to-end pairs."
+                      tooltip="Number of distinct origin postal centres with RFID readings in the selected period."
                     />
                   </div>
 
@@ -1415,39 +1392,25 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* ── RIGHT: ARRIVALS ── */}
+                {/* ── RIGHT: INBOUND & DESTINATION ── */}
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4">Arrivals</h3>
+                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4">Inbound &amp; Destination</h3>
 
                   {/* KPIs */}
                   <div className="grid grid-cols-2 gap-4 mb-5">
-                    <KpiCard
-                      title="Total RFID Arrivals"
-                      value={epcis.stats.withDestReading.toLocaleString()}
-                      subtitle="receptacles with RFID reading at destination centre"
-                      badge={{ label: 'arrivals', color: 'green' }}
-                      tooltip="Receptacles with rfid_dest_impc set from RFID table (BOTH + DEST_ONLY cases)."
-                    />
                     <KpiCard
                       title="Destination Countries"
                       value={epcis.stats.uniqueDestinations.toLocaleString()}
                       subtitle="distinct destination countries"
                       badge={{ label: 'countries', color: 'green' }}
-                      tooltip="Number of distinct rfid_dest_country values from RFID table."
+                      tooltip="Number of distinct destination countries with RFID readings in the selected period."
                     />
                     <KpiCard
                       title="Destination Centres"
                       value={epcis.stats.byDestCentre.length.toLocaleString()}
                       subtitle="distinct destination postal centres"
                       badge={{ label: 'centres', color: 'green' }}
-                      tooltip="Number of distinct rfid_dest_centre values from RFID table."
-                    />
-                    <KpiCard
-                      title="End-to-End Coverage"
-                      value={`${epcis.stats.endToEndPct}%`}
-                      subtitle={`${epcis.stats.endToEndPairs.toLocaleString()} of ${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles`}
-                      badge={{ label: 'e2e', color: 'amber' }}
-                      tooltip="Percentage of RFID receptacles with rfid_dest_impc ≠ rfid_origin_impc from RFID table."
+                      tooltip="Number of distinct destination postal centres with RFID readings in the selected period."
                     />
                   </div>
 
