@@ -771,5 +771,8 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     journeys: filteredJourneys,
     allOriginCountries,
     allDestCountries,
+    // Raw data for in-memory search (SearchID)
+    allReadings,
+    readerMap,
   };
 }

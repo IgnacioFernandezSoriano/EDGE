@@ -1196,8 +1196,12 @@ export default function Home() {
         {/* ════════════════════ RFID (PURE EPCIS) ════════════════════ */}
         {activeTab === 'RFID' && (
           <>
-          <Section title="Search ID" subtitle="Look up any Tag ID or Receptacle ID to see its full journey — RFID readings and EDI messages ordered by timestamp">
-            <SearchID />
+          <Section title="Search ID" subtitle="Look up any Tag ID to see its full journey — milestones classified by the Regla de Selección de Eventos del Trayecto">
+            <SearchID
+              allReadings={epcis.allReadings}
+              readerMap={epcis.readerMap}
+              dataLoading={epcis.backgroundLoading}
+            />
           </Section>
           {/* ── RFID tab filters ── */}
           <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
