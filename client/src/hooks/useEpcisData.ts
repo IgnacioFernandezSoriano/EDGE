@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { fetchRfidReadings, fetchRfidReadingsWithProgress, fetchRfidEventCounts } from '@/lib/supabase';
+import { fetchRfidReadings, fetchRfidReadingsWithProgress } from '@/lib/supabase';
 import type { RfidReading } from '@/lib/supabase';
 
 // ── Re-exported types (kept for backward compatibility with EpcisDataTable) ──
@@ -511,8 +511,6 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [backgroundProgress, setBackgroundProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [rfidCounts, setRfidCounts] = useState<{ totalTags: number; rfidDepartures: number; rfPredes: number; rfResdes: number; rfidArrivals: number; rfE2e: number } | null>(null);
-  const [rfidCountsLoading, setRfidCountsLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -627,52 +625,6 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     // Re-fetch when date or country filters change
   }, [filters.dateFrom, filters.dateTo, filters.originCountry, filters.destCountry]);
 
-  // Fetch direct RFID event counts with progressive loading:
-  // Step 1 — show last 30 days immediately
-  // Step 2 — update with full historical range in background (when no explicit date filter)
-  useEffect(() => {
-    let cancelled = false;
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const originArg = filters.originCountry !== 'ALL' ? filters.originCountry : undefined;
-    const destArg   = filters.destCountry   !== 'ALL' ? filters.destCountry   : undefined;
-
-    // If explicit date filters are set, just fetch that range directly (no progressive loading)
-    if (filters.dateFrom || filters.dateTo) {
-      setRfidCountsLoading(false);
-      fetchRfidEventCounts(filters.dateFrom, filters.dateTo, originArg, destArg)
-        .then(counts => { if (!cancelled) setRfidCounts(counts); })
-        .catch(() => {});
-      return () => { cancelled = true; };
-    }
-
-    // No explicit date filter — progressive: 30 days first, then full history
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(today.getDate() - 30);
-    const recentFrom = thirtyDaysAgo.toISOString().split('T')[0];
-
-    // Step 1: last 30 days immediately
-    fetchRfidEventCounts(recentFrom, todayStr, originArg, destArg)
-      .then(recentCounts => {
-        if (cancelled) return;
-        setRfidCounts(recentCounts);
-        // Step 2: full history in background
-        setRfidCountsLoading(true);
-        // Use a wide range covering all data (from 2024-01-01 to avoid full-table scan timeout)
-        fetchRfidEventCounts('2024-01-01', todayStr, originArg, destArg)
-          .then(fullCounts => {
-            if (!cancelled) {
-              setRfidCounts(fullCounts);
-              setRfidCountsLoading(false);
-            }
-          })
-          .catch(() => { if (!cancelled) setRfidCountsLoading(false); });
-      })
-      .catch(() => { if (!cancelled) setRfidCountsLoading(false); });
-
-    return () => { cancelled = true; };
-  }, [filters.dateFrom, filters.dateTo, filters.originCountry, filters.destCountry]);
-
   // Build journeys from all readings
   const allJourneys = useMemo(() => {
     const journeys = readingsToJourneys(allReadings);
@@ -739,10 +691,8 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     loading,
     backgroundLoading,
     backgroundProgress,
-    rfidCountsLoading,
     error,
     stats,
-    rfidCounts,
     journeys: filteredJourneys,
     allOriginCountries,
     allDestCountries,
