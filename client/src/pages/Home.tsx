@@ -1256,11 +1256,14 @@ export default function Home() {
                     <div className="w-3.5 h-3.5 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
                     <span>
                       ⚠ Showing last 30 days only — loading full history in background
-                      {epcis.backgroundProgress && (
+                      {epcis.backgroundProgress && epcis.backgroundProgress.total > 0 && (
                         <span className="ml-1 font-normal opacity-75">
                           ({Math.round(epcis.backgroundProgress.loaded / epcis.backgroundProgress.total * 100)}%
-                           — {epcis.backgroundProgress.loaded.toLocaleString()} / {epcis.backgroundProgress.total.toLocaleString()} events)
+                           — {epcis.backgroundProgress.loaded.toLocaleString()} / {epcis.backgroundProgress.total.toLocaleString()} events)
                         </span>
+                      )}
+                      {epcis.backgroundProgress && epcis.backgroundProgress.total === 0 && (
+                        <span className="ml-1 font-normal opacity-75">(loading historical data…)</span>
                       )}
                     </span>
                   </>

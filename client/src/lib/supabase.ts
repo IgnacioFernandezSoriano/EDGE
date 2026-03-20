@@ -347,77 +347,40 @@ export async function fetchRfidReadings(
 }
 
 /**
- * Like fetchRfidReadings but reports progress via a callback after each batch.
- * Used for background loading of older data.
+ * Fetches historical RFID readings via the rfid_all_readings RPC function.
+ * The RPC uses SET LOCAL statement_timeout = '60s' to bypass Supabase's
+ * default short timeout that causes failures when fetching large datasets.
+ * Progress is reported via onProgress callback (indeterminate — no total count available).
  */
 export async function fetchRfidReadingsWithProgress(
   dateFrom?: string,
   dateTo?: string,
   onProgress?: (loaded: number, total: number) => void
 ): Promise<RfidReading[]> {
-  const baseHeaders = await getAuthHeaders();
-  const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
-  url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary,status');
-  // No status filter — status is used per-KPI in the hook (only Leg2 and Transit require COMPLETE)
-  url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
-  url.searchParams.set('order', 'event_time_local.asc');
-  // Use PostgREST 'and' operator to combine date range filters correctly.
-  if (dateFrom && dateTo) {
-    url.searchParams.set('and', `(event_time_local.gte.${dateFrom}T00:00:00,event_time_local.lte.${dateTo}T23:59:59)`);
-  } else if (dateFrom) {
-    url.searchParams.set('event_time_local', `gte.${dateFrom}T00:00:00`);
-  } else if (dateTo) {
-    url.searchParams.set('event_time_local', `lte.${dateTo}T23:59:59`);
-  }
+  const headers = await getAuthHeaders();
 
-  const PAGE_SIZE = 1000;
-  const CONCURRENCY = 10;
+  // Signal loading started (total=0 means indeterminate)
+  onProgress?.(0, 0);
 
-  // Step 1: get first page + total count
-  console.log('[RFID Step2] URL:', url.toString());
-  const firstRes = await fetch(url.toString(), {
-    headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': `0-${PAGE_SIZE - 1}`, 'Prefer': 'count=exact' },
+  const body: Record<string, string> = {};
+  if (dateFrom) body['p_date_from'] = `${dateFrom}T00:00:00`;
+  if (dateTo)   body['p_date_to']   = `${dateTo}T23:59:59`;
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/rfid_all_readings`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
-  if (!firstRes.ok) {
-    const errText = await firstRes.text();
-    console.error('[RFID Step2] Error:', firstRes.status, errText);
-    throw new Error(`Supabase RFID error: ${firstRes.status}`);
-  }
-  const firstData: RfidReading[] = await firstRes.json();
-  const cr = firstRes.headers.get('content-range') ?? '';
-  console.log('[RFID Step2] content-range:', cr, '| firstData.length:', firstData.length);
-  const totalMatch = cr.match(/\/(\d+)$/);
-  const total = totalMatch ? parseInt(totalMatch[1], 10) : firstData.length;
-  console.log('[RFID Step2] total:', total);
 
-  if (total <= PAGE_SIZE) {
-    console.log('[RFID Step2] total <= PAGE_SIZE, returning firstData only');
-    return firstData;
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('[RFID RPC] rfid_all_readings error:', res.status, errText);
+    throw new Error(`Supabase RFID RPC error: ${res.status}`);
   }
 
-  const remainingOffsets: number[] = [];
-  for (let offset = PAGE_SIZE; offset < total; offset += PAGE_SIZE) {
-    remainingOffsets.push(offset);
-  }
-
-  const allPages: RfidReading[][] = [firstData];
-  let loaded = PAGE_SIZE;
-  onProgress?.(loaded, total);
-
-  for (let i = 0; i < remainingOffsets.length; i += CONCURRENCY) {
-    const batch = remainingOffsets.slice(i, i + CONCURRENCY);
-    const batchResults = await Promise.all(
-      batch.map((offset) => {
-        const rangeEnd = Math.min(offset + PAGE_SIZE - 1, total - 1);
-        return fetchPage(url.toString(), baseHeaders, offset, rangeEnd);
-      })
-    );
-    allPages.push(...batchResults);
-    loaded += batch.length * PAGE_SIZE;
-    onProgress?.(Math.min(loaded, total), total);
-  }
-
-  return ([] as RfidReading[]).concat(...allPages);
+  const data: RfidReading[] = await res.json();
+  onProgress?.(data.length, data.length);
+  return data;
 }
 
 /**
