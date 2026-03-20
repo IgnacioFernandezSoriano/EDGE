@@ -55,6 +55,7 @@ interface ReaderMaster {
   impc_code:     string;
   country:       string | null;
   center_name:   string | null;
+  td_reader:     boolean | null;  // true = AMU/border reader, false = internal OE centre
 }
 
 interface EnrichedReading {
@@ -69,6 +70,7 @@ interface EnrichedReading {
   s9id:               string | null;
   country:            string;
   center_name:        string | null;
+  td_reader:          boolean;  // true = AMU/border reader, false = internal OE centre
   sort_time:          number;
 }
 
@@ -282,9 +284,10 @@ async function fase2Transformacion(
       continue; // Descartar — no procesar con fallback
     }
 
+    // Regla de Selección de Eventos del Trayecto: ordenar por record_time (tiempo de captura)
     let sortTime = 0;
     try {
-      sortTime = new Date(row.event_time_local ?? row.record_time ?? "").getTime();
+      sortTime = new Date(row.record_time ?? row.event_time_local ?? "").getTime();
       if (isNaN(sortTime)) sortTime = 0;
     } catch { sortTime = 0; }
 
@@ -300,6 +303,7 @@ async function fase2Transformacion(
       s9id:              row.s9id              ?? null,
       country:           master.country        ?? "",
       center_name:       master.center_name    ?? null,
+      td_reader:         master.td_reader      ?? false,
       sort_time:         sortTime,
     });
   }
@@ -357,16 +361,27 @@ async function fase2Transformacion(
     eventTypes.get(lastReading.document_id)!.push("DESTINATION");
 
     // Paso 2f: Detectar cambios de país → DEPARTURE / ARRIVAL
+    // Regla de Selección de Eventos del Trayecto:
+    // - DEPARTURE: última lectura del bloque de origen (último bloque antes del cambio de país)
+    //   Si td_reader=true en ese bloque → es el AMU Outbound
+    // - ARRIVAL: primera lectura del primer bloque en el país de destino
+    //   Si td_reader=true en ese bloque → es el AMU Inbound
     for (let i = 0; i < centreBlocks.length - 1; i++) {
       const currentCountry = centreBlocks[i][0].country;
       const nextCountry    = centreBlocks[i + 1][0].country;
       if (currentCountry !== nextCountry) {
+        // DEPARTURE: última lectura del bloque origen (last reading of origin block)
         const departureReading = centreBlocks[i][centreBlocks[i].length - 1];
+        // ARRIVAL: primera lectura del bloque destino (first reading of dest block)
         const arrivalReading   = centreBlocks[i + 1][0];
         eventTypes.get(departureReading.document_id)!.push("DEPARTURE");
         eventTypes.get(arrivalReading.document_id)!.push("ARRIVAL");
         intlBoundary.add(departureReading.document_id);
         intlBoundary.add(arrivalReading.document_id);
+        // Log td_reader classification for traceability
+        const depTdReader = departureReading.td_reader ? "AMU_OUTBOUND" : "OE_ORIGIN";
+        const arrTdReader = arrivalReading.td_reader   ? "AMU_INBOUND"  : "OE_DESTINATION";
+        console.log(`  [${tagId}] Country change ${currentCountry}→${nextCountry}: DEPARTURE(${depTdReader}) ARRIVAL(${arrTdReader})`);
       }
     }
 
