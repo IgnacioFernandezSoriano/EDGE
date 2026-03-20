@@ -343,17 +343,17 @@ export async function fetchRfidReadings(
 }
 
 /**
- * Fetches RFID readings using a DATE-CHUNK strategy to avoid Supabase statement_timeout.
+ * Fetches RFID readings using a MONTHLY DATE-CHUNK strategy to avoid Supabase statement_timeout.
  *
- * Root cause: Supabase anon role has a ~3s statement_timeout. Queries with large
- * offsets (>50k rows) take >3s because PostgreSQL must scan the full ordered result
- * set to reach the offset. Date-bounded queries always use the index efficiently
- * and return in <1s regardless of the total dataset size.
+ * Root cause: Supabase anon role has a ~3s statement_timeout.
+ *   - Large offset queries (>50k rows) timeout because PostgreSQL scans the full ordered result.
+ *   - Even `Prefer: count=exact` on large date ranges (>50k rows) causes timeout.
  *
- * Strategy:
- *   1. Build a list of quarterly date chunks covering the requested range.
- *   2. For each chunk, fetch all pages (offset 0..N) with CONCURRENCY parallel requests.
- *   3. Report progress as chunks complete.
+ * Solution:
+ *   1. Split the date range into MONTHLY chunks (max ~20k rows each — always <1s).
+ *   2. For each chunk, paginate WITHOUT count=exact: fetch pages until a page returns <PAGE_SIZE rows.
+ *   3. Pages within a chunk are fetched with CONCURRENCY parallel requests.
+ *   4. Report progress as chunks complete.
  */
 export async function fetchRfidReadingsWithProgress(
   dateFrom?: string,
@@ -364,27 +364,27 @@ export async function fetchRfidReadingsWithProgress(
   const SELECT = 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary,status,read_point_id';
   const EVENT_FILTER = 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)';
   const PAGE_SIZE = 1000;
-  const CONCURRENCY = 10;
+  const CONCURRENCY = 5; // conservative to avoid hitting connection limits per chunk
 
-  // Build quarterly date chunks between dateFrom and dateTo
-  const startDate = dateFrom ? new Date(dateFrom) : new Date('2025-04-01'); // data starts ~Apr 2025
+  // Build MONTHLY date chunks between dateFrom and dateTo
+  const startDate = dateFrom ? new Date(dateFrom) : new Date('2025-05-01'); // data starts ~May 2025
   const endDate   = dateTo   ? new Date(dateTo)   : new Date();
 
   const chunks: { from: string; to: string }[] = [];
   let cursor = new Date(startDate);
+  cursor.setDate(1); // always start at the 1st of the month
   while (cursor <= endDate) {
     const chunkStart = cursor.toISOString().split('T')[0];
-    // Advance 3 months
-    const next = new Date(cursor);
-    next.setMonth(next.getMonth() + 3);
-    next.setDate(next.getDate() - 1); // last day of the quarter
-    const chunkEnd = (next > endDate ? endDate : next).toISOString().split('T')[0];
+    // Last day of this month
+    const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const chunkEnd = (lastDay > endDate ? endDate : lastDay).toISOString().split('T')[0];
     chunks.push({ from: chunkStart, to: chunkEnd });
-    cursor = new Date(next);
-    cursor.setDate(cursor.getDate() + 1); // first day of next quarter
+    // Advance to 1st of next month
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
   }
 
-  // Helper: fetch all pages of a single date chunk
+  // Helper: fetch all pages of a single monthly chunk WITHOUT count=exact
+  // Paginate until a page returns fewer than PAGE_SIZE rows (signals end of data).
   async function fetchChunk(from: string, to: string): Promise<RfidReading[]> {
     const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
     url.searchParams.set('select', SELECT);
@@ -394,45 +394,42 @@ export async function fetchRfidReadingsWithProgress(
     url.searchParams.append('event_time_local', `lte.${to}T23:59:59`);
     const urlStr = url.toString();
 
-    // Get count first
-    const countRes = await fetch(urlStr, {
-      headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': `0-${PAGE_SIZE - 1}`, 'Prefer': 'count=exact' },
-    });
-    if (!countRes.ok) return [];
-    const firstPage: RfidReading[] = await countRes.json();
-    const cr = countRes.headers.get('content-range') ?? '';
-    const totalMatch = cr.match(/\/(\d+)$/);
-    const total = totalMatch ? parseInt(totalMatch[1], 10) : firstPage.length;
-    if (total <= PAGE_SIZE) return firstPage;
+    const pages: RfidReading[][] = [];
+    let offset = 0;
 
-    const offsets: number[] = [];
-    for (let offset = PAGE_SIZE; offset < total; offset += PAGE_SIZE) offsets.push(offset);
+    // Fetch pages sequentially until we get a partial page (end of data)
+    while (true) {
+      const pageRows = await fetchPage(urlStr, baseHeaders, offset, offset + PAGE_SIZE - 1);
+      if (pageRows.length === 0) break;
+      pages.push(pageRows);
+      if (pageRows.length < PAGE_SIZE) break; // last page
+      offset += PAGE_SIZE;
 
-    const pages: RfidReading[][] = [firstPage];
-    for (let i = 0; i < offsets.length; i += CONCURRENCY) {
-      const batch = offsets.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(offset => fetchPage(urlStr, baseHeaders, offset, Math.min(offset + PAGE_SIZE - 1, total - 1)))
-      );
-      pages.push(...results);
+      // If there are more pages, fetch the next batch in parallel
+      // Peek ahead: try CONCURRENCY pages at once
+      const batchOffsets: number[] = [];
+      for (let k = 1; k < CONCURRENCY; k++) batchOffsets.push(offset + (k - 1) * PAGE_SIZE);
+      if (batchOffsets.length > 0) {
+        const batchResults = await Promise.all(
+          batchOffsets.map(o => fetchPage(urlStr, baseHeaders, o, o + PAGE_SIZE - 1))
+        );
+        let done = false;
+        for (const batch of batchResults) {
+          if (batch.length === 0) { done = true; break; }
+          pages.push(batch);
+          if (batch.length < PAGE_SIZE) { done = true; break; }
+        }
+        offset += batchOffsets.length * PAGE_SIZE;
+        if (done) break;
+      }
     }
+
     return ([] as RfidReading[]).concat(...pages);
   }
 
-  // Estimate total rows for progress reporting (use a quick count query)
-  let estimatedTotal = 0;
-  try {
-    const countUrl = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
-    countUrl.searchParams.set('select', 'tag_id');
-    countUrl.searchParams.set('event_type', EVENT_FILTER);
-    if (dateFrom) countUrl.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
-    if (dateTo)   countUrl.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
-    const cr = await fetch(countUrl.toString(), {
-      headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': '0-0', 'Prefer': 'count=exact' },
-    });
-    const m = (cr.headers.get('content-range') ?? '').match(/\/(\d+)$/);
-    estimatedTotal = m ? parseInt(m[1], 10) : 0;
-  } catch { /* ignore */ }
+  // Estimated total for progress bar: use a known approximate count
+  // (169k total rows / 11 months ≈ 15k/month; we use chunks.length * 15000 as rough estimate)
+  const estimatedTotal = chunks.length * 15000;
 
   // Process chunks sequentially (each chunk is internally parallel)
   const allReadings: RfidReading[] = [];
@@ -442,7 +439,7 @@ export async function fetchRfidReadingsWithProgress(
     const chunkData = await fetchChunk(chunk.from, chunk.to);
     allReadings.push(...chunkData);
     loaded += chunkData.length;
-    onProgress?.(loaded, estimatedTotal || loaded + 1);
+    onProgress?.(loaded, Math.max(estimatedTotal, loaded + 1));
   }
 
   onProgress?.(allReadings.length, allReadings.length);
