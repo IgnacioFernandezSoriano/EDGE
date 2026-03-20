@@ -290,8 +290,15 @@ export async function fetchRfidReadings(
   // Fetch all event types relevant for journey reconstruction (no status filter — applied per-KPI in the hook)
   url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
   url.searchParams.set('order', 'event_time_local.asc');
-  if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
-  if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
+  // Use PostgREST 'and' operator to combine date range filters correctly.
+  // Using two separate 'event_time_local' params can cause the second to overwrite the first.
+  if (dateFrom && dateTo) {
+    url.searchParams.set('and', `(event_time_local.gte.${dateFrom}T00:00:00,event_time_local.lte.${dateTo}T23:59:59)`);
+  } else if (dateFrom) {
+    url.searchParams.set('event_time_local', `gte.${dateFrom}T00:00:00`);
+  } else if (dateTo) {
+    url.searchParams.set('event_time_local', `lte.${dateTo}T23:59:59`);
+  }
 
   // Supabase PostgREST enforces max-rows=1000 per request.
   // Strategy: fetch page 0 to get total count, then fetch remaining pages
@@ -354,8 +361,14 @@ export async function fetchRfidReadingsWithProgress(
   // No status filter — status is used per-KPI in the hook (only Leg2 and Transit require COMPLETE)
   url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
   url.searchParams.set('order', 'event_time_local.asc');
-  if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
-  if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
+  // Use PostgREST 'and' operator to combine date range filters correctly.
+  if (dateFrom && dateTo) {
+    url.searchParams.set('and', `(event_time_local.gte.${dateFrom}T00:00:00,event_time_local.lte.${dateTo}T23:59:59)`);
+  } else if (dateFrom) {
+    url.searchParams.set('event_time_local', `gte.${dateFrom}T00:00:00`);
+  } else if (dateTo) {
+    url.searchParams.set('event_time_local', `lte.${dateTo}T23:59:59`);
+  }
 
   const PAGE_SIZE = 1000;
   const CONCURRENCY = 10;
