@@ -249,6 +249,7 @@ export interface RfidReading {
   center_name: string | null;
   is_international_boundary: boolean | null;
   status: string | null;  // 'COMPLETE' | 'PENDING' | null
+  read_point_id: string | null;
 }
 
 // Helper: fetch a single page with up to MAX_RETRIES retries on failure
@@ -286,25 +287,20 @@ export async function fetchRfidReadings(
   const baseHeaders = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
   // Only fetch fields needed by readingsToJourneys — reduces payload ~60%
-  url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary,status');
+  url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary,status,read_point_id');
   // Fetch all event types relevant for journey reconstruction (no status filter — applied per-KPI in the hook)
   url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
   url.searchParams.set('order', 'event_time_local.asc');
-  // Use PostgREST 'and' operator to combine date range filters correctly.
-  // Using two separate 'event_time_local' params can cause the second to overwrite the first.
-  if (dateFrom && dateTo) {
-    url.searchParams.set('and', `(event_time_local.gte.${dateFrom}T00:00:00,event_time_local.lte.${dateTo}T23:59:59)`);
-  } else if (dateFrom) {
-    url.searchParams.set('event_time_local', `gte.${dateFrom}T00:00:00`);
-  } else if (dateTo) {
-    url.searchParams.set('event_time_local', `lte.${dateTo}T23:59:59`);
-  }
+  // Use two separate append() calls — PostgREST combines them as an implicit AND.
+  // The 'and=' operator syntax does NOT work correctly with other query params.
+  if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
 
   // Supabase PostgREST enforces max-rows=1000 per request.
   // Strategy: fetch page 0 to get total count, then fetch remaining pages
   // in batches of CONCURRENCY to avoid HTTP/2 connection limits on Supabase.
   const PAGE_SIZE = 1000;
-  const CONCURRENCY = 5; // reduced to avoid ERR_HTTP2_PROTOCOL_ERROR
+  const CONCURRENCY = 10; // parallel requests per batch
 
   // Step 1: fetch first page and get total count from content-range header
   const firstHeaders = {
@@ -358,21 +354,16 @@ export async function fetchRfidReadingsWithProgress(
 ): Promise<RfidReading[]> {
   const baseHeaders = await getAuthHeaders();
   const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('RFID')}`);
-  url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary,status');
+  url.searchParams.set('select', 'tag_id,event_type,location,impc_code,s9id,event_time_local,record_time,country,center_name,is_international_boundary,status,read_point_id');
   url.searchParams.set('event_type', 'in.(ORIGIN,DESTINATION,DEPARTURE,ARRIVAL,DEPARTURE_FROM_CENTRE,ARRIVAL_AT_CENTRE)');
   url.searchParams.set('order', 'event_time_local.asc');
-
-  // Use PostgREST 'and' operator to combine date range filters correctly
-  if (dateFrom && dateTo) {
-    url.searchParams.set('and', `(event_time_local.gte.${dateFrom}T00:00:00,event_time_local.lte.${dateTo}T23:59:59)`);
-  } else if (dateFrom) {
-    url.searchParams.set('event_time_local', `gte.${dateFrom}T00:00:00`);
-  } else if (dateTo) {
-    url.searchParams.set('event_time_local', `lte.${dateTo}T23:59:59`);
-  }
+  // Use two separate append() calls — PostgREST combines them as an implicit AND.
+  // The 'and=' operator syntax does NOT work correctly with other query params.
+  if (dateFrom) url.searchParams.append('event_time_local', `gte.${dateFrom}T00:00:00`);
+  if (dateTo)   url.searchParams.append('event_time_local', `lte.${dateTo}T23:59:59`);
 
   const PAGE_SIZE = 1000;
-  const CONCURRENCY = 5;
+  const CONCURRENCY = 10; // parallel requests per batch
 
   // Step 1: fetch first page and get total count
   const firstHeaders = {
@@ -460,4 +451,43 @@ export async function fetchRfidEventCounts(
     rfidArrivals:   Number(row?.rfid_arrivals   ?? 0),
     rfE2e:          Number(row?.rf_e2e          ?? 0),
   };
+}
+
+// ── rfid_readers_master ────────────────────────────────────────────────────
+
+export interface RfidReaderMaster {
+  read_point_id: string;
+  impc_code: string | null;
+  country: string | null;
+  center_name: string | null;
+}
+
+/**
+ * Fetches all rows from rfid_readers_master.
+ * Used to enrich RFID readings with centre names, countries and IMPC codes
+ * via the read_point_id foreign key.
+ */
+export async function fetchRfidReadersMaster(): Promise<RfidReaderMaster[]> {
+  const headers = await getAuthHeaders();
+  const url = new URL(`${SUPABASE_URL}/rest/v1/rfid_readers_master`);
+  url.searchParams.set('select', 'read_point_id,impc_code,country,center_name');
+  url.searchParams.set('order', 'read_point_id.asc');
+
+  let all: RfidReaderMaster[] = [];
+  let offset = 0;
+  const PAGE_SIZE = 1000;
+
+  while (true) {
+    const pageUrl = new URL(url.toString());
+    pageUrl.searchParams.set('offset', String(offset));
+    pageUrl.searchParams.set('limit', String(PAGE_SIZE));
+    const res = await fetch(pageUrl.toString(), { headers });
+    if (!res.ok) break;
+    const data: RfidReaderMaster[] = await res.json();
+    all = all.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  return all;
 }
