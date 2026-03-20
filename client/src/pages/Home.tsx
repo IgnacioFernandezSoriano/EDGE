@@ -1592,8 +1592,45 @@ export default function Home() {
         {activeTab === 'Tracking' && (
           <Section
             title="Tracking"
-            subtitle={`${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles — one row per unique tag_id`}
+            subtitle={`${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles — one row per unique tag_id${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
           >
+            {/* Data load progress banner — same as RFID tab */}
+            {!epcis.loading && (
+              <div className={`flex items-center gap-3 px-4 py-2.5 mb-4 rounded-lg border text-xs font-medium ${
+                epcis.backgroundLoading
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              }`}>
+                {epcis.backgroundLoading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
+                    <span>
+                      ⚠ Showing last 30 days only — loading full history in background
+                      {epcis.backgroundProgress && epcis.backgroundProgress.total > 0 && (
+                        <>
+                          <span className="ml-1 font-normal opacity-75">
+                            ({Math.round(epcis.backgroundProgress.loaded / epcis.backgroundProgress.total * 100)}%
+                             — {epcis.backgroundProgress.loaded.toLocaleString()} / {epcis.backgroundProgress.total.toLocaleString()} events)
+                          </span>
+                          <span className="ml-2 inline-block w-24 h-1.5 bg-amber-200 rounded-full overflow-hidden align-middle">
+                            <span className="block h-full bg-amber-500 rounded-full transition-all duration-300"
+                              style={{ width: `${Math.round(epcis.backgroundProgress.loaded / epcis.backgroundProgress.total * 100)}%` }} />
+                          </span>
+                        </>
+                      )}
+                      {(!epcis.backgroundProgress || epcis.backgroundProgress.total === 0) && (
+                        <span className="ml-1 font-normal opacity-75">(loading historical data…)</span>
+                      )}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-emerald-600 text-sm">✓</span>
+                    <span>Complete dataset loaded — all {epcis.stats.kpiTotalTags.toLocaleString()} receptacles</span>
+                  </>
+                )}
+              </div>
+            )}
             <EpcisDataTable journeys={epcis.journeys} dateLabel={dateLabel} />
           </Section>
         )}
