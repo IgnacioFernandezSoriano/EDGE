@@ -71,7 +71,7 @@ export interface RfidJourney {
   has_origin: boolean;                   // has real ORIGIN event (not fallback)
   has_destination: boolean;
   has_international: boolean;             // has DEPARTURE + ARRIVAL pair
-  is_complete: boolean;                   // all events in this journey have status=COMPLETE (for Leg2 and Transit)
+  is_complete: boolean;                   // all events in this journey have status=COMPLETE (informational only)
   is_both_rfid: boolean;
   centres_visited: string[];
 }
@@ -305,8 +305,8 @@ function readingsToJourneys(readings: RfidReading[]): RfidJourney[] {
 /* ─── Compute stats from journeys ─── */
 function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   // endToEnd: journeys with DEPARTURE + ARRIVAL (international transit measured)
-  // Transit analysis requires status=COMPLETE to ensure the journey is fully classified
-  const endToEnd = journeys.filter(j => j.has_international && j.is_complete);
+  // Transit analysis: all journeys with both DEPARTURE and ARRIVAL events
+  const endToEnd = journeys.filter(j => j.has_international);
   const bothRfid  = journeys.filter(j => j.is_both_rfid);
   // KPI transit values: use DEPARTURE→ARRIVAL (international_transit_hours) only
   const transitValues = endToEnd
@@ -444,14 +444,13 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const withDestReading = journeys.filter(j => j.dest_time !== null || j.arrival_time !== null).length;
 
   // Overview KPI counts — unique tag_ids per event_type
-  // NOTE: Total/Origin/Outbound/Inbound/Destination count ALL records (no status filter)
-  //       Leg2 (Tags Leg2) counts only status=COMPLETE journeys with DEPARTURE+ARRIVAL
+  // NOTE: All KPIs count ALL records regardless of status
   const kpiTotalTags      = new Set(journeys.map(j => j.tag_id)).size;
   const kpiRfidDepartures = new Set(journeys.filter(j => j.has_origin).map(j => j.tag_id)).size;                                               // ORIGIN (all statuses)
   const kpiRfPredes       = new Set(journeys.filter(j => j.departure_time !== null).map(j => j.tag_id)).size;                                  // DEPARTURE (all statuses)
   const kpiRfResdes       = new Set(journeys.filter(j => j.arrival_time !== null).map(j => j.tag_id)).size;                                    // ARRIVAL (all statuses)
   const kpiRfidArrivals   = new Set(journeys.filter(j => j.dest_time !== null).map(j => j.tag_id)).size;                                       // DESTINATION (all statuses)
-  const kpiRfE2e          = new Set(journeys.filter(j => j.has_international && j.is_complete).map(j => j.tag_id)).size;                       // Leg2: DEPARTURE+ARRIVAL, status=COMPLETE only
+  const kpiRfE2e          = new Set(journeys.filter(j => j.has_international).map(j => j.tag_id)).size;                                        // Leg2: DEPARTURE+ARRIVAL (all statuses)
 
   return {
     totalReadings,
