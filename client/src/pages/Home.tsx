@@ -1257,12 +1257,18 @@ export default function Home() {
                     <span>
                       ⚠ Showing last 30 days only — loading full history in background
                       {epcis.backgroundProgress && epcis.backgroundProgress.total > 0 && (
-                        <span className="ml-1 font-normal opacity-75">
-                          ({Math.round(epcis.backgroundProgress.loaded / epcis.backgroundProgress.total * 100)}%
-                           — {epcis.backgroundProgress.loaded.toLocaleString()} / {epcis.backgroundProgress.total.toLocaleString()} events)
-                        </span>
+                        <>
+                          <span className="ml-1 font-normal opacity-75">
+                            ({Math.round(epcis.backgroundProgress.loaded / epcis.backgroundProgress.total * 100)}%
+                             — {epcis.backgroundProgress.loaded.toLocaleString()} / {epcis.backgroundProgress.total.toLocaleString()} events)
+                          </span>
+                          <span className="ml-2 inline-block w-24 h-1.5 bg-amber-200 rounded-full overflow-hidden align-middle">
+                            <span className="block h-full bg-amber-500 rounded-full transition-all duration-300"
+                              style={{ width: `${Math.round(epcis.backgroundProgress.loaded / epcis.backgroundProgress.total * 100)}%` }} />
+                          </span>
+                        </>
                       )}
-                      {epcis.backgroundProgress && epcis.backgroundProgress.total === 0 && (
+                      {(!epcis.backgroundProgress || epcis.backgroundProgress.total === 0) && (
                         <span className="ml-1 font-normal opacity-75">(loading historical data…)</span>
                       )}
                     </span>
