@@ -646,7 +646,7 @@ export default function Home() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center space-y-4">
           <div className="w-10 h-10 rounded-full mx-auto animate-spin" style={{ border: '3px solid #e2e8f0', borderTopColor: '#4F46E5' }} />
-          <p className="text-sm text-slate-500 font-medium">Loading tracking data from Supabase…</p>
+          <p className="text-sm font-semibold text-indigo-600 uppercase tracking-wide">Loading last 30 days…</p>
           <p className="text-xs text-slate-400">RFID · {new Date().toLocaleDateString('en-GB')}</p>
         </div>
       </div>
@@ -1254,7 +1254,7 @@ export default function Home() {
                       ? `Loading complete dataset for ${rfidOriginCountry}…`
                       : rfidDestCountry && rfidDestCountry !== 'ALL'
                         ? `Loading complete dataset for destination ${rfidDestCountry}…`
-                        : 'Loading tracking data from Supabase…'}
+                        : 'Loading last 30 days…'}
                   </span>
                   {epcis.backgroundProgress && (
                     <span className="ml-2 text-xs text-slate-400">
