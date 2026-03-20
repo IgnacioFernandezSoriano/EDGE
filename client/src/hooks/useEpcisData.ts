@@ -327,7 +327,8 @@ function readingsToJourneys(
 
     const refRow = sorted[0];
     const tag_id = refRow.tag_id || tagKey;
-    const s9id   = (refRow.s9id && refRow.s9id !== tag_id) ? refRow.s9id : tag_id;
+    // s9id is null when the receptacle has no linked barcode — do NOT fall back to tag_id
+    const s9id = (refRow.s9id && refRow.s9id !== tag_id) ? refRow.s9id : null;
 
     journeys.push({
       s9id,

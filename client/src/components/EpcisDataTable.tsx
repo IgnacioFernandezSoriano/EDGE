@@ -280,33 +280,54 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
               </tr>
             ) : pageData.map((j, i) => (
               <tr
-                key={j.s9id}
+                key={j.tag_id}
                 className={`border-b border-slate-100 hover:bg-slate-50/60 transition-colors ${i % 2 === 0 ? '' : 'bg-slate-50/30'}`}
               >
-                {/* Identity */}
-                <td className="px-3 py-2 font-mono text-slate-700 whitespace-nowrap" title={j.s9id}>{j.s9id}</td>
+                {/* Identity: s9id blank when null, tag_id always shown */}
+                <td className="px-3 py-2 font-mono text-slate-700 whitespace-nowrap" title={j.s9id ?? ''}>
+                  {j.s9id ?? ''}
+                </td>
                 <td className="px-3 py-2 font-mono text-slate-400 whitespace-nowrap border-r border-slate-200" title={j.tag_id || ''}>{j.tag_id || '—'}</td>
                 {/* Origin */}
                 <td className="px-3 py-2 text-slate-700 bg-indigo-50/20">{j.origin_country || '—'}</td>
-                <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate bg-indigo-50/20" title={j.origin_centre}>{j.origin_centre || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate bg-indigo-50/20" title={j.origin_centre ?? ''}>{j.origin_centre || '—'}</td>
                 <td className="px-3 py-2 font-mono text-slate-500 bg-indigo-50/20">{j.origin_impc || '—'}</td>
                 <td className="px-3 py-2 font-mono text-slate-500 bg-indigo-50/20 whitespace-nowrap">{formatTime(j.origin_time)}</td>
                 <td className="px-3 py-2 text-right font-mono text-indigo-600 bg-indigo-50/20 border-r border-indigo-200">{j.origin_readings}</td>
-                {/* Destination */}
-                <td className="px-3 py-2 text-slate-700 bg-emerald-50/20">{j.dest_country || '—'}</td>
-                <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate bg-emerald-50/20" title={j.dest_centre || ''}>{j.dest_centre || '—'}</td>
-                <td className="px-3 py-2 font-mono text-slate-500 bg-emerald-50/20">{j.dest_impc || '—'}</td>
-                <td className="px-3 py-2 font-mono text-slate-500 bg-emerald-50/20 whitespace-nowrap">{formatTime(j.dest_time)}</td>
-                <td className="px-3 py-2 text-right font-mono text-emerald-600 bg-emerald-50/20 border-r border-emerald-200">
-                  {j.dest_readings > 0 ? j.dest_readings : '—'}
-                </td>
-                {/* Transit */}
-                <td className={`px-3 py-2 text-right font-mono font-medium ${j.transit_hours !== null ? 'text-slate-700' : 'text-slate-300'}`}>
-                  {formatTransit(j.transit_hours)}
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-slate-500">
-                  {j.transit_hours !== null ? (j.transit_hours / 24).toFixed(1) + 'd' : '—'}
-                </td>
+                {/* Destination: use OE Dest if available, fallback to AMU Inbound (arrival) */}
+                {(() => {
+                  const dc  = j.dest_country  ?? j.arrival_country  ?? null;
+                  const dce = j.dest_centre   ?? j.arrival_centre   ?? null;
+                  const di  = j.dest_impc     ?? j.arrival_impc     ?? null;
+                  const dt  = j.dest_time     ?? j.arrival_time     ?? null;
+                  const dr  = j.dest_readings > 0 ? j.dest_readings : (j.arrival_time ? 1 : 0);
+                  const hasD = !!dc;
+                  return (
+                    <>
+                      <td className="px-3 py-2 text-slate-700 bg-emerald-50/20">{dc || '—'}</td>
+                      <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate bg-emerald-50/20" title={dce ?? ''}>{dce || '—'}</td>
+                      <td className="px-3 py-2 font-mono text-slate-500 bg-emerald-50/20">{di || '—'}</td>
+                      <td className="px-3 py-2 font-mono text-slate-500 bg-emerald-50/20 whitespace-nowrap">{formatTime(dt)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-emerald-600 bg-emerald-50/20 border-r border-emerald-200">
+                        {dr > 0 ? dr : '—'}
+                      </td>
+                    </>
+                  );
+                })()}
+                {/* Transit: prefer full journey (transit_hours), fallback to international (international_transit_hours) */}
+                {(() => {
+                  const h = j.transit_hours ?? j.international_transit_hours ?? null;
+                  return (
+                    <>
+                      <td className={`px-3 py-2 text-right font-mono font-medium ${h !== null ? 'text-slate-700' : 'text-slate-300'}`}>
+                        {formatTransit(h)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-500">
+                        {h !== null ? (h / 24).toFixed(1) + 'd' : '—'}
+                      </td>
+                    </>
+                  );
+                })()}
               </tr>
             ))}
           </tbody>
