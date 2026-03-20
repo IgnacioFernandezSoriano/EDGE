@@ -374,16 +374,26 @@ export async function fetchRfidReadingsWithProgress(
   const CONCURRENCY = 10;
 
   // Step 1: get first page + total count
+  console.log('[RFID Step2] URL:', url.toString());
   const firstRes = await fetch(url.toString(), {
     headers: { ...baseHeaders, 'Range-Unit': 'items', 'Range': `0-${PAGE_SIZE - 1}`, 'Prefer': 'count=exact' },
   });
-  if (!firstRes.ok) throw new Error(`Supabase RFID error: ${firstRes.status}`);
+  if (!firstRes.ok) {
+    const errText = await firstRes.text();
+    console.error('[RFID Step2] Error:', firstRes.status, errText);
+    throw new Error(`Supabase RFID error: ${firstRes.status}`);
+  }
   const firstData: RfidReading[] = await firstRes.json();
   const cr = firstRes.headers.get('content-range') ?? '';
+  console.log('[RFID Step2] content-range:', cr, '| firstData.length:', firstData.length);
   const totalMatch = cr.match(/\/(\d+)$/);
   const total = totalMatch ? parseInt(totalMatch[1], 10) : firstData.length;
+  console.log('[RFID Step2] total:', total);
 
-  if (total <= PAGE_SIZE) return firstData;
+  if (total <= PAGE_SIZE) {
+    console.log('[RFID Step2] total <= PAGE_SIZE, returning firstData only');
+    return firstData;
+  }
 
   const remainingOffsets: number[] = [];
   for (let offset = PAGE_SIZE; offset < total; offset += PAGE_SIZE) {
