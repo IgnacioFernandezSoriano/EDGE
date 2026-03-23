@@ -613,39 +613,8 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       return () => { cancelled = true; };
     }
 
-    // If a country filter is active, load the complete dataset at once so that
-    // dropdowns and KPIs are always accurate (older data like G.1UPU India→Japan
-    // would be missed in a 30-day window).
-    const hasCountryFilter = (filters.originCountry && filters.originCountry !== 'ALL') ||
-                             (filters.destCountry   && filters.destCountry   !== 'ALL');
-
-    if (hasCountryFilter) {
-      setBackgroundProgress(null);
-      fetchRfidReadingsWithProgress(
-        undefined,
-        undefined,
-        (loaded, total) => {
-          if (!cancelled) setBackgroundProgress({ loaded, total });
-        }
-      )
-        .then(data => {
-          if (!cancelled) {
-            setAllReadings(data);
-            setLoading(false);
-            setBackgroundLoading(false);
-            setBackgroundProgress(null);
-          }
-        })
-        .catch(err => {
-          if (!cancelled) {
-            setError(err.message ?? 'Error al cargar datos RFID');
-            setLoading(false);
-          }
-        });
-      return () => { cancelled = true; };
-    }
-
-    // No country filter: progressive loading strategy.
+    // Country filters are applied in-memory on allJourneys — no reload needed.
+    // Progressive loading strategy:
     // Step 1 — fetch last 30 days immediately so the UI is usable fast.
     // Step 2 — load the full history in background using batches of 10 pages.
     //           A progress indicator shows how many pages have been loaded.
@@ -698,8 +667,9 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       });
 
     return () => { cancelled = true; };
-    // Re-fetch when date or country filters change
-  }, [filters.dateFrom, filters.dateTo, filters.originCountry, filters.destCountry]);
+    // Re-fetch only when date filters change — country filters applied in-memory
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.dateFrom, filters.dateTo]);
 
   // Build journeys from all readings using the Regla de Selección de Eventos del Trayecto
   const allJourneys = useMemo(() => {
