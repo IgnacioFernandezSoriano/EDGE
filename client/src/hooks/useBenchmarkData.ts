@@ -247,7 +247,7 @@ function buildBenchmarkRows(
       missing_resdit21: edi?.missing_resdit21 ?? true, missing_resdes: edi?.missing_resdes ?? true,
       has_edi_transit: !!(edi?.edi_predes_time && edi?.edi_resdes_time),
       delta_predes_hours: diffHours(edi?.edi_predes_time ?? null, rfDep),
-      delta_resdes_hours: diffHours(edi?.edi_resdes_time ?? null, rfArr),
+      delta_resdes_hours: diffHours(rfArr, edi?.edi_resdes_time ?? null),
     });
   }
   return rows;
