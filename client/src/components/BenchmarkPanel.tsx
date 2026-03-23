@@ -538,9 +538,11 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
             RFID physical readings complement EDI declared events. Where EDI events are missing, RFID provides the only evidence of the receptacle's location.
           </p>
           <ChainBar label="PREDES"        present={stats.hasEdiPredes}   total={stats.totalPairs} />
-          <ChainBar label="RESDES"        present={stats.hasEdiResdes}   total={stats.totalPairs} />
+          <ChainBar label="RFID Outbound" present={stats.hasRfPredes}    total={stats.totalPairs} rfid />
+          <ChainBar label="RESDIT74"       present={stats.hasEdiResdit74} total={stats.totalPairs} />
+          <ChainBar label="RESDIT21"       present={stats.hasEdiResdit21} total={stats.totalPairs} />
           <ChainBar label="RFID Inbound"  present={stats.hasRfResdes}    total={stats.totalPairs} rfid />
-          <ChainBar label="RESDIT"        present={stats.hasEdiResdit74} total={stats.totalPairs} />
+          <ChainBar label="RESDES"        present={stats.hasEdiResdes}   total={stats.totalPairs} />
         </div>
 
         {/* Gap by route */}
