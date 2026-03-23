@@ -94,6 +94,7 @@ export interface EpcisStats {
   byOriginCountry: { country: string; count: number; endToEnd: number; pct: number }[];
   byDestCountry:   { country: string; count: number }[];
   byOriginCentre:  { centre: string; country: string; count: number; endToEnd: number }[];
+  departureVolumeByAMU: { centre: string; country: string; count: number; hasAMU: boolean }[];
   byDestCentre:    { centre: string; country: string; count: number }[];
   departureByCentre: { centre: string; country: string; n: number; avgH: number; p50H: number; p25H: number; p75H: number }[];
   arrivalByCentre:   { centre: string; country: string; n: number; avgH: number; p50H: number; p25H: number; p75H: number }[];
@@ -424,6 +425,25 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count, endToEnd: v.endToEnd }))
     .sort((a, b) => b.count - a.count);
 
+  // Departure Volume by AMU:
+  // Primary: tags with AMU Outbound reading → grouped by departure_centre (hasAMU=true)
+  // Secondary: tags WITHOUT AMU Outbound → grouped by origin_centre (OE only, hasAMU=false)
+  const depVolAMUMap = new Map<string, { country: string; count: number; hasAMU: boolean }>();
+  for (const j of journeys) {
+    const hasAMU = j.departure_centre !== null;
+    const key     = hasAMU ? (j.departure_centre!) : (j.origin_centre || 'Unknown');
+    const country = hasAMU ? (j.departure_country || j.origin_country) : j.origin_country;
+    if (!depVolAMUMap.has(key)) depVolAMUMap.set(key, { country, count: 0, hasAMU });
+    depVolAMUMap.get(key)!.count++;
+  }
+  const departureVolumeByAMU = Array.from(depVolAMUMap.entries())
+    .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: v.hasAMU }))
+    .sort((a, b) => {
+      // AMU entries first, then OE-only; within each group sort by count desc
+      if (a.hasAMU !== b.hasAMU) return a.hasAMU ? -1 : 1;
+      return b.count - a.count;
+    });
+
   // By dest centre — use arrival_centre for international journeys
   const destCentreMap = new Map<string, { country: string; count: number }>();
   for (const j of endToEnd) {
@@ -544,6 +564,7 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     byOriginCountry,
     byDestCountry,
     byOriginCentre,
+    departureVolumeByAMU,
     byDestCentre,
     departureByCentre,
     arrivalByCentre,

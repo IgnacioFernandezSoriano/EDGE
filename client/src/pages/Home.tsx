@@ -1422,16 +1422,31 @@ export default function Home() {
                   <div className="mt-4 grid grid-cols-1 gap-4">
                     <ChartCard
                       title="Departure Volume by Origin Centre"
-                      subtitle="Receptacles with RFID last scan at origin centre"
-                      tooltip="Number of receptacles with a valid RFID departure reading at each origin postal centre. Sorted by volume."
+                      subtitle="AMU Outbound detections + OE-only (no AMU scan)"
+                      tooltip="Receptacles with AMU Outbound reading are grouped by their AMU departure centre (blue). Receptacles with no AMU scan are grouped by their OE origin centre (amber) — these left without AMU confirmation."
                     >
-                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byOriginCentre.length * 34)}>
-                        <BarChart data={epcis.stats.byOriginCentre.map(x => ({ centre: x.centre, n: x.count }))} layout="vertical" margin={{ left: 0, right: 50, top: 0, bottom: 0 }}>
+                      {/* Legend */}
+                      <div className="flex gap-4 mb-3 text-xs text-slate-500">
+                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: C.indigo }} />AMU Outbound</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#F59E0B' }} />OE only (no AMU scan)</span>
+                      </div>
+                      <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.departureVolumeByAMU.length * 34)}>
+                        <BarChart
+                          data={epcis.stats.departureVolumeByAMU.map(x => ({ centre: x.centre, n: x.count, hasAMU: x.hasAMU }))}
+                          layout="vertical"
+                          margin={{ left: 0, right: 50, top: 0, bottom: 0 }}
+                        >
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
                           <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="n" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
+                          <Bar dataKey="n" name="Receptacles" radius={[0, 3, 3, 0]}
+                            fill={C.indigo}
+                            shape={(props: any) => {
+                              const { x, y, width, height, hasAMU } = props;
+                              return <rect x={x} y={y} width={width} height={height} fill={hasAMU ? C.indigo : '#F59E0B'} rx={3} ry={3} />;
+                            }}
+                          >
                             <LabelList dataKey="n" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
                           </Bar>
                         </BarChart>
