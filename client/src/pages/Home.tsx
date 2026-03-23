@@ -854,11 +854,6 @@ export default function Home() {
                 </div>
               )}
             </div>
-            <BackgroundLoadingBanner
-              loading={epcis.backgroundLoading}
-              progress={epcis.backgroundProgress ?? null}
-              totalLabel="receptacles"
-            />
             <BenchmarkPanel
               journeys={epcis.journeys}
               rfidBackgroundLoading={epcis.backgroundLoading}
