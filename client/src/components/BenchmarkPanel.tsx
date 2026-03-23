@@ -239,7 +239,7 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
         <table className="w-full text-xs">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold text-slate-600">Receptacle (s9id)</th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-600">Receptacle Cod 21</th>
               {view !== 'arrival' && (
                 <>
                   <th className="px-3 py-2 text-left font-semibold text-slate-600">EDI PREDES</th>
@@ -249,7 +249,7 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
               )}
               {view !== 'departure' && (
                 <>
-                  <th className="px-3 py-2 text-left font-semibold text-slate-600">EDI RESDES</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-600">EDI Inbound</th>
                   <th className="px-3 py-2 text-left font-semibold text-indigo-600">RFID Inbound</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-600">Δ Inbound</th>
                 </>
@@ -262,7 +262,7 @@ function DetailTable({ rows, view }: { rows: BenchmarkRow[]; view: DetailView })
                 </>
               )}
               <th className="px-3 py-2 text-left font-semibold text-slate-600">Route</th>
-              <th className="px-3 py-2 text-center font-semibold text-amber-600">Missing EDI</th>
+              <th className="px-3 py-2 text-center font-semibold text-amber-600">Tracking All</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -459,26 +459,26 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
 
       {/* ── 2. RFID Inbound vs EDI RESDES ── */}
       <Section
-        title="RFID AMU Inbound"
-        subtitle={`RFID AMU Inbound readings — ${stats.arrivalPairs} pairs`}
+        title="AMU Inbound + RESDES"
+        subtitle={`RFID AMU Inbound matched with EDI RESDES — ${stats.arrivalPairs} pairs`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="RFID Inbound readings" value={stats.arrivalPairs} color="indigo" />
-          <KPI label="Inbound-only (no Outbound)" value={stats.arrivalOnlyPairs} sub="Arrived without prior RFID departure" color="amber" />
-          <KPI label="Avg RESDES advance/delay vs RFID Inbound" value={fmtH(stats.avgDeltaResdesH)} sub="RFID Inbound minus EDI RESDES (+ = RFID later)" color={stats.avgDeltaResdesH !== null && stats.avgDeltaResdesH >= 0 ? 'green' : 'rose'} />
-          <KPI label="RFID Inbound coverage" value={pct(stats.arrivalPairs, stats.totalPairs)} sub={`${stats.arrivalPairs} / ${stats.totalPairs}`} color="green" />
+          <KPI label="RFID Inbound pairs with RESDES" value={stats.hasRfResdes} color="indigo" />
+          <KPI label="Avg RESDES advance/delay vs RFID Inbound" value={fmtH(stats.avgDeltaResdesH)} sub="EDI RESDES minus RFID Inbound (+ = RESDES later)" color={stats.avgDeltaResdesH !== null && stats.avgDeltaResdesH >= 0 ? 'green' : 'rose'} />
+          <KPI label="EDI RESDES coverage" value={pct(stats.hasEdiResdes, stats.totalPairs)} sub={`${stats.hasEdiResdes} / ${stats.totalPairs}`} color="slate" />
+          <KPI label="RFID Inbound coverage" value={pct(stats.hasRfResdes, stats.totalPairs)} sub={`${stats.hasRfResdes} / ${stats.totalPairs}`} color="green" />
         </div>
 
         <p className="text-[11px] text-slate-500 mb-2 italic">
-          Δ = RFID Inbound minus EDI RESDES (hours). Negative = RESDES declared <strong>after</strong> RFID reads; positive = RESDES declared <strong>before</strong>.
-          Green = RESDES in advance · Red = RESDES delayed.
+          Δ = EDI RESDES minus RFID Inbound (hours). Positive = RESDES declared <strong>after</strong> RFID reads; negative = RESDES declared <strong>before</strong>.
+          Green = RESDES declared after RFID · Red = RESDES declared before RFID.
         </p>
         <CentreTable data={stats.byDestCentre} label="Δ" />
       </Section>
 
       {/* ── 4. Transit time comparison ── */}
       <Section
-        title="Transit Times (AMU's + EDI)"
+        title="Transit Times (AMUs + EDI)"
         subtitle={`RFID AMU Outbound → AMU Inbound vs EDI PREDES → RESDES — ${stats.transitPairs} international pairs`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -591,8 +591,8 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
                   ? 'bg-indigo-600 text-white border-indigo-600'
                   : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
               }`}>
-              {v === 'departure' ? `Receptacles (${stats.departurePairs})`
-               : v === 'arrival' ? `Predes (${stats.arrivalPairs})`
+              {v === 'departure' ? `OUTBOUND (${stats.departurePairs})`
+               : v === 'arrival' ? `INBOUND (${stats.arrivalPairs})`
                : `Transit (${stats.transitPairs})`}
             </button>
           ))}
