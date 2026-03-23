@@ -476,14 +476,14 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
 
       {/* ── 2. RFID Inbound vs EDI RESDES ── */}
       <Section
-        title="AMU Inbound + EDI RESDES"
-        subtitle={`RFID AMU Inbound — ${stats.arrivalPairs} pairs (${stats.arrivalOnlyPairs} Inbound-only, no Outbound)`}
+        title="RFID AMU Inbound"
+        subtitle={`RFID AMU Inbound readings — ${stats.arrivalPairs} pairs`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <KPI label="RFID Inbound pairs with RESDES" value={stats.hasRfResdes} color="indigo" />
+          <KPI label="RFID Inbound readings" value={stats.arrivalPairs} color="indigo" />
+          <KPI label="Inbound-only (no Outbound)" value={stats.arrivalOnlyPairs} sub="Arrived without prior RFID departure" color="amber" />
           <KPI label="Avg RESDES advance/delay vs RFID Inbound" value={fmtH(stats.avgDeltaResdesH)} sub="RFID Inbound minus EDI RESDES (+ = RFID later)" color={stats.avgDeltaResdesH !== null && stats.avgDeltaResdesH >= 0 ? 'green' : 'rose'} />
-          <KPI label="EDI RESDES coverage" value={pct(stats.hasEdiResdes, stats.totalPairs)} sub={`${stats.hasEdiResdes} / ${stats.totalPairs}`} color="slate" />
-          <KPI label="RFID Inbound coverage" value={pct(stats.hasRfResdes, stats.totalPairs)} sub={`${stats.hasRfResdes} / ${stats.totalPairs}`} color="green" />
+          <KPI label="RFID Inbound coverage" value={pct(stats.arrivalPairs, stats.totalPairs)} sub={`${stats.arrivalPairs} / ${stats.totalPairs}`} color="green" />
         </div>
 
         <p className="text-[11px] text-slate-500 mb-2 italic">
