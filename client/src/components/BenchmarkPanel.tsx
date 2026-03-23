@@ -398,12 +398,16 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
   if (!stats) return null;
 
   /* ── Route chart data ── */
-  const routeChartData = stats.byRoute.slice(0, 12).map(r => ({
-    route:   r.route,
-    rfidAvg: r.avgRfH  ?? 0,
-    ediAvg:  r.avgEdiH ?? 0,
-    count:   r.count,
-  })).filter(r => r.rfidAvg > 0 || r.ediAvg > 0);
+  const routeChartData = stats.byRoute
+    .filter(r => r.transitCount > 0 && (r.avgRfH !== null || r.avgEdiH !== null))
+    .sort((a, b) => b.transitCount - a.transitCount)
+    .slice(0, 12)
+    .map(r => ({
+      route:        r.route,
+      rfidAvg:      r.avgRfH  ?? 0,
+      ediAvg:       r.avgEdiH ?? 0,
+      transitCount: r.transitCount,
+    }));
 
   // Coverage summary counts
   const hasOriginBoth = rows.filter(r => (r.rf_origin_country ?? r.rf_departure_country) && r.edi_origin_impc).length;
