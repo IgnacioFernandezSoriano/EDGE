@@ -545,42 +545,7 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
           <ChainBar label="RESDES"        present={stats.hasEdiResdes}   total={stats.totalPairs} />
         </div>
 
-        {/* Gap by route */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
-            <p className="text-xs font-semibold text-slate-600">Percentage breakdown of EDI matches by route</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold text-slate-600">Route</th>
-                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Pairs</th>
-                  <th className="px-3 py-2 text-center font-semibold text-slate-600">DEP</th>
-                  <th className="px-3 py-2 text-center font-semibold text-slate-600">ARR</th>
-                  <th className="px-3 py-2 text-center font-semibold text-slate-600">Transit</th>
-                  <th className="px-3 py-2 text-center font-semibold text-rose-600">Avg Δ (PREDES)</th>
-                  <th className="px-3 py-2 text-center font-semibold text-amber-600">Avg Δ (RESDES)</th>
-                  <th className="px-3 py-2 text-center font-semibold text-indigo-600">Avg Δ (TRANSIT)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {stats.byRoute.map(r => (
-                  <tr key={r.route} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-semibold text-slate-700">{r.route}</td>
-                    <td className="px-3 py-2 text-center text-slate-500">{r.count}</td>
-                    <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.depCount}</td>
-                    <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.arrCount}</td>
-                    <td className="px-3 py-2 text-center text-indigo-600 font-semibold">{r.transitCount}</td>
-                    <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.avgDeltaPredesH ?? null)}`}>{fmtH(r.avgDeltaPredesH ?? null)}</td>
-                    <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.avgDeltaResdesH ?? null)}`}>{fmtH(r.avgDeltaResdesH ?? null)}</td>
-                    <td className={`px-3 py-2 text-center font-semibold ${deltaColor(r.avgDeltaTransitH ?? null)}`}>{fmtH(r.avgDeltaTransitH ?? null)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+
       </Section>
 
       {/* ── 6. Detail table ── */}
