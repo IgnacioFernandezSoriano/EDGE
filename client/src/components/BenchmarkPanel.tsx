@@ -438,23 +438,6 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
         </div>
       )}
 
-      {/* ── 0. Coverage summary ── */}
-      <Section
-        title="Coverage Summary"
-        subtitle={`Receptacles linked between RFID and EDI via ID Relation — ${stats.totalPairs} total`}
-      >
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
-          <KPI label="Total linked" value={stats.totalPairs} sub="RFID ↔ EDI via s9id" color="indigo" />
-          <KPI label="RFID Outbound" value={hasOriginBoth} sub={`${pct(hasOriginBoth, stats.totalPairs)} have RFID outbound`} color="green" />
-          <KPI label="RFID Inbound"   value={hasDestBoth}   sub={`${pct(hasDestBoth, stats.totalPairs)} have RFID inbound`}   color="green" />
-          <KPI label="Full transit"       value={hasFullBoth}   sub={`${pct(hasFullBoth, stats.totalPairs)} have both sides`}       color="amber" />
-        </div>
-        <p className="text-[11px] text-slate-500 italic">
-          Only receptacles with a match in the ID Relation table (tag_id ↔ s9id) are included.
-          Domestic movements (same origin and destination country) are excluded.
-        </p>
-      </Section>
-
       {/* ── 1. RFID Outbound vs EDI PREDES ── */}
       <Section
         title="AMU Outbound + PREDES"
