@@ -740,6 +740,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     error,
     stats,
     journeys: filteredJourneys,
+    allJourneys,
     allOriginCountries,
     allDestCountries,
     // Raw data for in-memory search (SearchID)

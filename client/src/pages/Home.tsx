@@ -1641,7 +1641,13 @@ export default function Home() {
                 )}
               </div>
             )}
-            <EpcisDataTable journeys={epcis.journeys} dateLabel={dateLabel} />
+            <EpcisDataTable
+              journeys={epcis.allJourneys}
+              dateLabel={dateLabel}
+              showFilters={true}
+              allOriginCountries={epcis.allOriginCountries}
+              allDestCountries={epcis.allDestCountries}
+            />
           </Section>
         )}
 

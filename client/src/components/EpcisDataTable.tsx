@@ -96,21 +96,48 @@ function sortJourneys(data: RfidJourney[], col: SortKey, dir: 'asc' | 'desc'): R
 interface EpcisDataTableProps {
   journeys: RfidJourney[];
   dateLabel?: string;
+  // Optional in-table filters (used by Tracking tab for independent filtering)
+  showFilters?: boolean;
+  allOriginCountries?: string[];
+  allDestCountries?: string[];
 }
 
-export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
+export function EpcisDataTable({ journeys, dateLabel, showFilters, allOriginCountries = [], allDestCountries = [] }: EpcisDataTableProps) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [filterE2E, setFilterE2E] = useState<'ALL' | 'E2E' | 'ORIGIN_ONLY' | 'DEST_ONLY'>('ALL');
   const [sortCol, setSortCol] = useState<SortKey>('origin_time');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  // In-table country & date filters (only active when showFilters=true)
+  const [filterOrigin, setFilterOrigin] = useState<string>('');
+  const [filterDest, setFilterDest] = useState<string>('');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
   const PAGE_SIZE = 20;
 
   const filtered = useMemo(() => {
     let data = journeys;
-    if (filterE2E === 'E2E') data = data.filter(j => j.has_international);  // DEPARTURE + ARRIVAL (international transit)
-    if (filterE2E === 'ORIGIN_ONLY') data = data.filter(j => (!!j.origin_time || !!j.departure_time) && !j.arrival_time && !j.dest_time);  // origin-side only, no destination data
-    if (filterE2E === 'DEST_ONLY') data = data.filter(j => !!j.arrival_time || !!j.dest_time);  // any ARRIVAL or DESTINATION event
+    // Country filters (in-table, only when showFilters=true)
+    if (showFilters && filterOrigin) data = data.filter(j => (j.origin_country || '') === filterOrigin);
+    if (showFilters && filterDest)   data = data.filter(j => (j.dest_country || j.arrival_country || '') === filterDest);
+    // Date filters (in-table)
+    if (showFilters && filterDateFrom) {
+      const from = new Date(filterDateFrom).getTime();
+      data = data.filter(j => {
+        const t = j.origin_time || j.departure_time;
+        return t ? new Date(t).getTime() >= from : true;
+      });
+    }
+    if (showFilters && filterDateTo) {
+      const to = new Date(filterDateTo + 'T23:59:59Z').getTime();
+      data = data.filter(j => {
+        const t = j.origin_time || j.departure_time;
+        return t ? new Date(t).getTime() <= to : true;
+      });
+    }
+    if (filterE2E === 'E2E') data = data.filter(j => j.has_international);
+    if (filterE2E === 'ORIGIN_ONLY') data = data.filter(j => (!!j.origin_time || !!j.departure_time) && !j.arrival_time && !j.dest_time);
+    if (filterE2E === 'DEST_ONLY') data = data.filter(j => !!j.arrival_time || !!j.dest_time);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       data = data.filter(j =>
@@ -125,7 +152,7 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
       );
     }
     return sortJourneys(data, sortCol, sortDir);
-  }, [journeys, search, filterE2E, sortCol, sortDir]);
+  }, [journeys, search, filterE2E, sortCol, sortDir, showFilters, filterOrigin, filterDest, filterDateFrom, filterDateTo]);
 
   // Reset page to 0 whenever the filtered dataset changes to avoid being on a non-existent page
   useEffect(() => { setPage(0); }, [filtered]);
@@ -144,9 +171,11 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
     return <span className="text-indigo-500 ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>;
   }
 
-  const e2eCount = journeys.filter(j => j.has_international).length;  // DEPARTURE + ARRIVAL
-  const originOnlyCount = journeys.filter(j => (!!j.origin_time || !!j.departure_time) && !j.arrival_time && !j.dest_time).length;  // origin only
-  const destOnlyCount = journeys.filter(j => !!j.arrival_time || !!j.dest_time).length;  // any destination-side event
+  const hasActiveFilters = showFilters && (filterOrigin || filterDest || filterDateFrom || filterDateTo);
+
+  const e2eCount = journeys.filter(j => j.has_international).length;
+  const originOnlyCount = journeys.filter(j => (!!j.origin_time || !!j.departure_time) && !j.arrival_time && !j.dest_time).length;
+  const destOnlyCount = journeys.filter(j => !!j.arrival_time || !!j.dest_time).length;
 
   return (
     <div className="space-y-3">
@@ -196,7 +225,53 @@ export function EpcisDataTable({ journeys, dateLabel }: EpcisDataTableProps) {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* In-table country & date filters — only shown in Tracking tab */}
+          {showFilters && (
+            <>
+              <select
+                value={filterOrigin}
+                onChange={e => setFilterOrigin(e.target.value)}
+                className="h-8 px-2 text-xs rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              >
+                <option value="">All origins</option>
+                {allOriginCountries.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select
+                value={filterDest}
+                onChange={e => setFilterDest(e.target.value)}
+                className="h-8 px-2 text-xs rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              >
+                <option value="">All destinations</option>
+                {allDestCountries.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={e => setFilterDateFrom(e.target.value)}
+                className="h-8 px-2 text-xs rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                title="From date (origin time)"
+              />
+              <span className="text-slate-400 text-xs">–</span>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={e => setFilterDateTo(e.target.value)}
+                className="h-8 px-2 text-xs rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                title="To date (origin time)"
+              />
+              {hasActiveFilters && (
+                <button
+                  onClick={() => { setFilterOrigin(''); setFilterDest(''); setFilterDateFrom(''); setFilterDateTo(''); }}
+                  className="h-8 px-2 text-xs rounded-md border border-slate-200 bg-white text-slate-500 hover:text-red-500 hover:border-red-300 transition-all duration-150"
+                  title="Clear filters"
+                >
+                  × Clear
+                </button>
+              )}
+              <span className="text-slate-300 text-xs">|</span>
+            </>
+          )}
           <input
             type="search"
             placeholder="Search s9id, tag, country, centre…"
