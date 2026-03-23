@@ -1289,7 +1289,7 @@ export default function Home() {
                 {epcis.backgroundLoading ? (
                   <>
                     <div className="w-3.5 h-3.5 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
-                    <span>
+                    <span className="flex-1">
                       ⚠ Showing last 30 days only — loading full history in background
                       {epcis.backgroundProgress && epcis.backgroundProgress.total > 0 && (
                         <>
@@ -1305,6 +1305,11 @@ export default function Home() {
                       )}
                       {(!epcis.backgroundProgress || epcis.backgroundProgress.total === 0) && (
                         <span className="ml-1 font-normal opacity-75">(loading historical data…)</span>
+                      )}
+                      {(rfidDateFrom || rfidDateTo) && (
+                        <span className="ml-3 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-semibold">
+                          ⏳ Date filter results may be incomplete — wait for full history load
+                        </span>
                       )}
                     </span>
                   </>
