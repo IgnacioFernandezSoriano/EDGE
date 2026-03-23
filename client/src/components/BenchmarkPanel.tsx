@@ -477,7 +477,7 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
       {/* ── 2. RFID Inbound vs EDI RESDES ── */}
       <Section
         title="AMU Inbound + EDI RESDES"
-        subtitle={`RFID AMU Inbound matched with EDI RESDES — ${stats.arrivalPairs} pairs`}
+        subtitle={`RFID AMU Inbound — ${stats.arrivalPairs} pairs (${stats.arrivalOnlyPairs} Inbound-only, no Outbound)`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <KPI label="RFID Inbound pairs with RESDES" value={stats.hasRfResdes} color="indigo" />

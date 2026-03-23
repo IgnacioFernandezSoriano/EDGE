@@ -81,7 +81,7 @@ export interface RouteStats {
   avgDeltaPredesH: number | null; avgDeltaResdesH: number | null; avgDeltaTransitH: number | null;
 }
 export interface BenchmarkStats {
-  totalPairs: number; departurePairs: number; arrivalPairs: number; transitPairs: number;
+  totalPairs: number; departurePairs: number; arrivalPairs: number; arrivalOnlyPairs: number; transitPairs: number;
   hasEdiPredes: number; hasEdiCardit: number; hasEdiResdit74: number; hasEdiResdit21: number; hasEdiResdes: number;
   hasRfPredes: number; hasRfResdes: number;
   avgRfTransitH: number | null; avgEdiTransitH: number | null; medRfTransitH: number | null; medEdiTransitH: number | null;
@@ -300,7 +300,9 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   })).sort((a, b) => b.count - a.count);
   return {
     totalPairs: rows.length, departurePairs: rows.filter(r => r.has_rf_departure).length,
-    arrivalPairs: rows.filter(r => r.has_rf_arrival).length, transitPairs: rows.filter(r => r.has_rf_transit && r.has_edi_transit).length,
+    arrivalPairs: rows.filter(r => r.has_rf_arrival).length,
+    arrivalOnlyPairs: rows.filter(r => r.has_rf_arrival && !r.has_rf_departure).length,
+    transitPairs: rows.filter(r => r.has_rf_transit && r.has_edi_transit).length,
     hasEdiPredes: rows.filter(r => r.edi_predes_time).length, hasEdiCardit: rows.filter(r => r.edi_cardit_time).length,
     hasEdiResdit74: rows.filter(r => r.edi_resdit74_time).length, hasEdiResdit21: rows.filter(r => r.edi_resdit21_time).length,
     hasEdiResdes: rows.filter(r => r.edi_resdes_time).length,
