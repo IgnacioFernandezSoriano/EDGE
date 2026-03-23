@@ -26,6 +26,7 @@ import { OverviewAnalysis, DepartureAnalysis, ArrivalAnalysis, TransitAnalysis }
 import { BenchmarkPanel } from '@/components/BenchmarkPanel';
 import { SearchID } from '@/components/SearchID';
 import { BackgroundLoadingBanner } from '@/components/BackgroundLoadingBanner';
+import DrillDownModal from '@/components/DrillDownModal';
 
 const EDGE_LOGO = 'https://d2xsxph8kpxj0f.cloudfront.net/108732851/5NdCdX6TpQ4zqErLoimWrK/edge-logo_ae84570f.png';
 
@@ -582,6 +583,8 @@ export default function Home() {
   const [benchDateRange,       setBenchDateRange]       = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
   const [benchOriginCountry,   setBenchOriginCountry]   = useState<string | null>(null);
   const [benchDestCountry,     setBenchDestCountry]     = useState<string | null>(null);
+  // ── Drill-down modal ───────────────────────────────────────────────────────
+  const [drill, setDrill] = useState<{ title: string; subtitle?: string; journeys: import('@/hooks/useEpcisData').RfidJourney[] } | null>(null);
 
   /* Matched Tags count from ID Relation table */
   const [matchedTagsData, setMatchedTagsData] = useState<{ count: number; minDate: string | null; maxDate: string | null } | null>(null);
@@ -694,6 +697,7 @@ export default function Home() {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-slate-50">
 
       {/* ─── Header ─── */}
@@ -1403,10 +1407,21 @@ export default function Home() {
                   <ChartCard
                     title="Departures by Origin Country"
                     subtitle="All RFID receptacles by origin country"
-                    tooltip="Number of receptacles with an RFID origin reading, grouped by origin country."
+                    tooltip="Number of receptacles with an RFID origin reading, grouped by origin country. Click a bar to see the receptacle list."
                   >
                     <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byOriginCountry.length * 34)}>
-                      <BarChart data={epcis.stats.byOriginCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                      <BarChart
+                        data={epcis.stats.byOriginCountry}
+                        layout="vertical"
+                        margin={{ left: 8, right: 50, top: 4, bottom: 4 }}
+                        onClick={(data: any) => {
+                          const country = data?.activePayload?.[0]?.payload?.country;
+                          if (!country) return;
+                          const rows = epcis.journeys.filter(j => j.origin_country === country);
+                          setDrill({ title: `Origin: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                         <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
@@ -1435,6 +1450,16 @@ export default function Home() {
                           data={epcis.stats.departureVolumeByAMU.map(x => ({ centre: x.centre, n: x.count, hasAMU: x.hasAMU }))}
                           layout="vertical"
                           margin={{ left: 0, right: 50, top: 0, bottom: 0 }}
+                          onClick={(data: any) => {
+                            const item = data?.activePayload?.[0]?.payload;
+                            if (!item) return;
+                            const rows = item.hasAMU
+                              ? epcis.journeys.filter(j => j.departure_centre === item.centre)
+                              : epcis.journeys.filter(j => !j.departure_centre && j.origin_centre === item.centre);
+                            const label = item.hasAMU ? `AMU Outbound: ${item.centre}` : `OE only (no AMU): ${item.centre}`;
+                            setDrill({ title: label, subtitle: `${rows.length} receptacles`, journeys: rows });
+                          }}
+                          style={{ cursor: 'pointer' }}
                         >
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
@@ -1483,10 +1508,21 @@ export default function Home() {
                   <ChartCard
                     title="Arrivals by Destination Country"
                     subtitle="End-to-end RFID pairs by destination country"
-                    tooltip="Number of receptacles with RFID readings at both origin and destination, grouped by destination country."
+                    tooltip="Number of receptacles with RFID readings at both origin and destination, grouped by destination country. Click a bar to see the receptacle list."
                   >
                     <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byDestCountry.length * 34)}>
-                      <BarChart data={epcis.stats.byDestCountry} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
+                      <BarChart
+                        data={epcis.stats.byDestCountry}
+                        layout="vertical"
+                        margin={{ left: 8, right: 50, top: 4, bottom: 4 }}
+                        onClick={(data: any) => {
+                          const country = data?.activePayload?.[0]?.payload?.country;
+                          if (!country) return;
+                          const rows = epcis.journeys.filter(j => (j.arrival_country || j.dest_country) === country);
+                          setDrill({ title: `Destination: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                         <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
@@ -1515,6 +1551,16 @@ export default function Home() {
                           data={epcis.stats.arrivalVolumeByAMU.map(x => ({ centre: x.centre, n: x.count, hasAMU: x.hasAMU }))}
                           layout="vertical"
                           margin={{ left: 0, right: 50, top: 0, bottom: 0 }}
+                          onClick={(data: any) => {
+                            const item = data?.activePayload?.[0]?.payload;
+                            if (!item) return;
+                            const rows = item.hasAMU
+                              ? epcis.journeys.filter(j => j.arrival_centre === item.centre)
+                              : epcis.journeys.filter(j => !j.arrival_centre && j.dest_centre === item.centre);
+                            const label = item.hasAMU ? `AMU Inbound: ${item.centre}` : `OE only (no AMU): ${item.centre}`;
+                            setDrill({ title: label, subtitle: `${rows.length} receptacles`, journeys: rows });
+                          }}
+                          style={{ cursor: 'pointer' }}
                         >
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
@@ -1591,7 +1637,16 @@ export default function Home() {
                           </thead>
                           <tbody>
                             {epcis.stats.byRoute.map((r, i) => (
-                              <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                              <tr
+                                key={i}
+                                className="border-b border-slate-50 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                onClick={() => {
+                                  const rows = epcis.journeys.filter(j =>
+                                    j.origin_country === r.origin && (j.arrival_country || j.dest_country) === r.dest && j.has_international
+                                  );
+                                  setDrill({ title: `Transit: ${r.route}`, subtitle: `${rows.length} receptacles`, journeys: rows });
+                                }}
+                              >
                                 <td className="py-2 pr-4 font-medium text-slate-800">{r.route}</td>
                                 <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.count.toLocaleString()}</td>
                                 <td className="py-2 pr-4 text-right">
@@ -1739,5 +1794,15 @@ export default function Home() {
         </div>
       </footer>
     </div>
+
+    {/* ── Drill-down modal ── */}
+    <DrillDownModal
+      open={!!drill}
+      title={drill?.title ?? ''}
+      subtitle={drill?.subtitle}
+      journeys={drill?.journeys ?? []}
+      onClose={() => setDrill(null)}
+    />
+    </>
   );
 }
