@@ -445,8 +445,8 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
           <KPI label="Total linked" value={stats.totalPairs} sub="RFID ↔ EDI via s9id" color="indigo" />
-          <KPI label="Origin comparison" value={hasOriginBoth} sub={`${pct(hasOriginBoth, stats.totalPairs)} have RFID+EDI origin`} color="green" />
-          <KPI label="Dest comparison"   value={hasDestBoth}   sub={`${pct(hasDestBoth, stats.totalPairs)} have RFID+EDI dest`}   color="green" />
+          <KPI label="RFID Outbound" value={hasOriginBoth} sub={`${pct(hasOriginBoth, stats.totalPairs)} have RFID outbound`} color="green" />
+          <KPI label="RFID Inbound"   value={hasDestBoth}   sub={`${pct(hasDestBoth, stats.totalPairs)} have RFID inbound`}   color="green" />
           <KPI label="Full transit"       value={hasFullBoth}   sub={`${pct(hasFullBoth, stats.totalPairs)} have both sides`}       color="amber" />
         </div>
         <p className="text-[11px] text-slate-500 italic">
