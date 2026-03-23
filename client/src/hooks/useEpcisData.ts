@@ -595,25 +595,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     setError(null);
     setAllReadings([]);
 
-    // If explicit date filters are set, just fetch that range directly
-    if (filters.dateFrom || filters.dateTo) {
-      fetchRfidReadings(filters.dateFrom, filters.dateTo)
-        .then(data => {
-          if (!cancelled) {
-            setAllReadings(data);
-            setLoading(false);
-          }
-        })
-        .catch(err => {
-          if (!cancelled) {
-            setError(err.message ?? 'Error al cargar datos RFID');
-            setLoading(false);
-          }
-        });
-      return () => { cancelled = true; };
-    }
-
-    // Country filters are applied in-memory on allJourneys — no reload needed.
+    // Date and country filters are applied in-memory on allJourneys — no reload needed.
     // Progressive loading strategy:
     // Step 1 — fetch last 30 days immediately so the UI is usable fast.
     // Step 2 — load the full history in background using batches of 10 pages.
@@ -667,9 +649,9 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       });
 
     return () => { cancelled = true; };
-    // Re-fetch only when date filters change — country filters applied in-memory
+    // Load once on mount — date and country filters applied in-memory via useMemo
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.dateFrom, filters.dateTo]);
+  }, []);  // no dependencies — load full dataset once
 
   // Build journeys from all readings using the Regla de Selección de Eventos del Trayecto
   const allJourneys = useMemo(() => {
@@ -715,7 +697,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allJourneys, filters.originCountry]);
 
-  // Apply country filters in the browser
+  // Apply country and date filters in the browser (no Supabase reload)
   const filteredJourneys = useMemo(() => {
     let j = allJourneys;
     if (filters.originCountry && filters.originCountry !== 'ALL') {
@@ -724,9 +706,17 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     if (filters.destCountry && filters.destCountry !== 'ALL') {
       j = j.filter(x => effectiveDestCountry(x) === filters.destCountry);
     }
+    if (filters.dateFrom) {
+      const from = filters.dateFrom;
+      j = j.filter(x => (x.origin_time || x.departure_time || '') >= from);
+    }
+    if (filters.dateTo) {
+      const to = filters.dateTo + 'T23:59:59';
+      j = j.filter(x => (x.origin_time || x.departure_time || '') <= to);
+    }
     return j;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allJourneys, filters.originCountry, filters.destCountry]);
+  }, [allJourneys, filters.originCountry, filters.destCountry, filters.dateFrom, filters.dateTo]);
 
   const stats = useMemo(
     () => computeEpcisStats(filteredJourneys),
