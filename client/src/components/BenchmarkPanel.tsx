@@ -402,12 +402,20 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
     .filter(r => r.transitCount > 0 && (r.avgRfH !== null || r.avgEdiH !== null))
     .sort((a, b) => b.transitCount - a.transitCount)
     .slice(0, 12)
-    .map(r => ({
-      route:        r.route,
-      rfidAvg:      r.avgRfH  ?? 0,
-      ediAvg:       r.avgEdiH ?? 0,
-      transitCount: r.transitCount,
-    }));
+    .map(r => {
+      const originLabel = r.originCentre
+        ? `${r.originCentre}${r.originCountry ? ` (${r.originCountry})` : ''}`
+        : r.origin;
+      const destLabel = r.destCentre
+        ? `${r.destCentre}${r.destCountry ? ` (${r.destCountry})` : ''}`
+        : r.dest;
+      return {
+        route:        `${originLabel} → ${destLabel}`,
+        rfidAvg:      r.avgRfH  ?? 0,
+        ediAvg:       r.avgEdiH ?? 0,
+        transitCount: r.transitCount,
+      };
+    });
 
   // Coverage summary counts
   const hasOriginBoth = rows.filter(r => (r.rf_origin_country ?? r.rf_departure_country) && r.edi_origin_impc).length;
@@ -495,15 +503,24 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
         {routeChartData.length > 0 && (
           <div className="bg-white rounded-xl border border-slate-200 p-4 mb-3">
             <p className="text-xs font-semibold text-slate-600 mb-3">Average transit time by route — RFID (AMU Outbound → Inbound) vs EDI (PREDES → RESDES)</p>
-            <ResponsiveContainer width="100%" height={Math.max(220, routeChartData.length * 32)}>
-              <BarChart data={routeChartData} layout="vertical" margin={{ left: 10, right: 60, top: 5, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={Math.max(260, routeChartData.length * 52)}>
+              <BarChart data={routeChartData} layout="vertical"
+                barCategoryGap="30%" barGap={3}
+                margin={{ left: 10, right: 70, top: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`} />
-                <YAxis type="category" dataKey="route" tick={{ fontSize: 10 }} width={140} />
-                <Tooltip formatter={(v: number) => [`${v.toFixed(1)}h (${(v / 24).toFixed(1)}d)`, '']} />
+                <YAxis type="category" dataKey="route" tick={{ fontSize: 10, fill: '#475569' }} width={200} />
+                <Tooltip
+                  formatter={(v: number, name: string) => [`${v.toFixed(1)}h (${(v / 24).toFixed(1)}d)`, name]}
+                  labelFormatter={(label: string, payload) => {
+                    const n = payload?.[0]?.payload?.transitCount ?? '';
+                    return `${label}${n ? ` — ${n} pairs` : ''}`;
+                  }}
+                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Bar dataKey="rfidAvg" name="RFID Transit (h)" fill={C.rfid} radius={[0, 3, 3, 0]} barSize={11} />
-                <Bar dataKey="ediAvg"  name="EDI Transit (h)"  fill={C.edi}  radius={[0, 3, 3, 0]} barSize={11} />
+                <Bar dataKey="rfidAvg" name="RFID Transit (h)" fill={C.rfid} radius={[0, 4, 4, 0]} barSize={13} />
+                <Bar dataKey="ediAvg"  name="EDI Transit (h)"  fill={C.edi}  radius={[0, 4, 4, 0]} barSize={13} />
               </BarChart>
             </ResponsiveContainer>
           </div>

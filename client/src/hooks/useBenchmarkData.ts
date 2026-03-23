@@ -75,6 +75,8 @@ export interface BenchmarkRow {
 export interface CentreStats { centre: string; impc: string; country: string; n: number; mean: number | null; median: number | null; }
 export interface RouteStats {
   route: string; origin: string; dest: string;
+  originCentre: string | null; originCountry: string | null;
+  destCentre: string | null; destCountry: string | null;
   count: number; depCount: number; arrCount: number; transitCount: number;
   avgRfH: number | null; avgEdiH: number | null;
   missingCarditPct: number; missingResdit74Pct: number; missingResdit21Pct: number; missingResdesPct: number;
@@ -270,12 +272,18 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   const ediTransitVals  = rows.filter(r => r.edi_transit_hours !== null).map(r => r.edi_transit_hours!);
   const deltaPredesVals = rows.filter(r => r.delta_predes_hours !== null).map(r => r.delta_predes_hours!);
   const deltaResdesVals = rows.filter(r => r.delta_resdes_hours !== null).map(r => r.delta_resdes_hours!);
-  const routeMap = new Map<string, { origin: string; dest: string; count: number; depCount: number; arrCount: number; transitCount: number; rfH: number[]; ediH: number[]; rows: BenchmarkRow[] }>();
+  const routeMap = new Map<string, { origin: string; dest: string; originCentre: string | null; originCountry: string | null; destCentre: string | null; destCountry: string | null; count: number; depCount: number; arrCount: number; transitCount: number; rfH: number[]; ediH: number[]; rows: BenchmarkRow[] }>();
   for (const r of rows) {
     const origin = r.rf_origin_country ?? r.rf_departure_country ?? r.edi_origin_impc ?? '?';
     const dest   = r.edi_dest_impc ?? r.rf_dest_impc ?? r.rf_arrival_impc ?? r.rf_dest_country ?? r.rf_arrival_country ?? '?';
     const route  = `${origin} → ${dest}`;
-    if (!routeMap.has(route)) routeMap.set(route, { origin, dest, count: 0, depCount: 0, arrCount: 0, transitCount: 0, rfH: [], ediH: [], rows: [] });
+    if (!routeMap.has(route)) {
+      const originCentre  = r.rf_origin_centre   ?? r.rf_departure_centre  ?? null;
+      const originCountry = r.rf_origin_country  ?? r.rf_departure_country ?? null;
+      const destCentre    = r.rf_dest_centre      ?? r.rf_arrival_centre    ?? null;
+      const destCountry   = r.rf_dest_country     ?? r.rf_arrival_country   ?? null;
+      routeMap.set(route, { origin, dest, originCentre, originCountry, destCentre, destCountry, count: 0, depCount: 0, arrCount: 0, transitCount: 0, rfH: [], ediH: [], rows: [] });
+    }
     const v = routeMap.get(route)!;
     v.count++; v.rows.push(r);
     if (r.has_rf_departure) v.depCount++;
@@ -288,6 +296,8 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   }
   const byRoute: RouteStats[] = [...routeMap.entries()].map(([route, v]) => ({
     route, origin: v.origin, dest: v.dest,
+    originCentre: v.originCentre, originCountry: v.originCountry,
+    destCentre: v.destCentre, destCountry: v.destCountry,
     count: v.count, depCount: v.depCount, arrCount: v.arrCount, transitCount: v.transitCount,
     avgRfH: mean(v.rfH), avgEdiH: mean(v.ediH),
     missingCarditPct:   v.count ? Math.round(v.rows.filter(r => r.missing_cardit).length   / v.count * 100) : 0,
