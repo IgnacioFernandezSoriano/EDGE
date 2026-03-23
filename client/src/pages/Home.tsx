@@ -1514,10 +1514,10 @@ export default function Home() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                     <KpiCard
                       title="End-to-End Pairs"
-                      value={epcis.stats.endToEndPairs.toLocaleString()}
-                      subtitle="Full origin→dest RFID"
+                      value={epcis.stats.kpiRfE2e.toLocaleString()}
+                      subtitle="AMU Outbound → AMU Inbound"
                       badge={{ label: 'end-to-end', color: 'blue' }}
-                      tooltip="Receptacles with rfid_dest_impc ≠ rfid_origin_impc from RFID table."
+                      tooltip="Receptacles with both AMU Outbound and AMU Inbound readings (DEPARTURE→ARRIVAL international transit pair)."
                     />
                     <KpiCard
                       title="Avg RFID Transit"
@@ -1589,7 +1589,7 @@ export default function Home() {
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
                       <p className="font-semibold text-amber-800 text-sm mb-1">Limited transit data</p>
                       <p className="text-xs text-amber-700 leading-relaxed">
-                        End-to-end transit measurement requires RFID coverage at both origin and destination. Only {epcis.stats.endToEndPairs} end-to-end pairs were found in the selected date range.
+                        End-to-end transit measurement requires RFID coverage at both AMU Outbound and AMU Inbound readers. Only {epcis.stats.kpiRfE2e} end-to-end pairs were found in the selected date range.
                       </p>
                     </div>
                   )}
