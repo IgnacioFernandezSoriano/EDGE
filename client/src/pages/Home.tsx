@@ -1306,7 +1306,7 @@ export default function Home() {
                       {(!epcis.backgroundProgress || epcis.backgroundProgress.total === 0) && (
                         <span className="ml-1 font-normal opacity-75">(loading historical data…)</span>
                       )}
-                      {(rfidDateFrom || rfidDateTo) && (
+                      {(rfidDateRange.from || rfidDateRange.to) && (
                         <span className="ml-3 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-semibold">
                           ⏳ Date filter results may be incomplete — wait for full history load
                         </span>
