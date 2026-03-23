@@ -273,7 +273,7 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   const routeMap = new Map<string, { origin: string; dest: string; count: number; depCount: number; arrCount: number; transitCount: number; rfH: number[]; ediH: number[]; rows: BenchmarkRow[] }>();
   for (const r of rows) {
     const origin = r.rf_origin_country ?? r.rf_departure_country ?? r.edi_origin_impc ?? '?';
-    const dest   = r.rf_dest_country   ?? r.rf_arrival_country   ?? r.edi_dest_impc   ?? '?';
+    const dest   = r.edi_dest_impc ?? r.rf_dest_impc ?? r.rf_arrival_impc ?? r.rf_dest_country ?? r.rf_arrival_country ?? '?';
     const route  = `${origin} → ${dest}`;
     if (!routeMap.has(route)) routeMap.set(route, { origin, dest, count: 0, depCount: 0, arrCount: 0, transitCount: 0, rfH: [], ediH: [], rows: [] });
     const v = routeMap.get(route)!;
