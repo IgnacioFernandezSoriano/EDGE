@@ -1414,19 +1414,24 @@ export default function Home() {
                         data={epcis.stats.byOriginCountry}
                         layout="vertical"
                         margin={{ left: 8, right: 50, top: 4, bottom: 4 }}
-                        onClick={(data: any) => {
-                          const country = data?.activePayload?.[0]?.payload?.country;
-                          if (!country) return;
-                          const rows = epcis.journeys.filter(j => j.origin_country === country);
-                          setDrill({ title: `Origin: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
-                        }}
-                        style={{ cursor: 'pointer' }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                         <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
                         <Tooltip content={<ChartTooltip />} />
-                        <Bar dataKey="count" name="Receptacles" fill={C.indigo} radius={[0, 3, 3, 0]}>
+                        <Bar
+                          dataKey="count"
+                          name="Receptacles"
+                          fill={C.indigo}
+                          radius={[0, 3, 3, 0]}
+                          style={{ cursor: 'pointer' }}
+                          onClick={(barData: any) => {
+                            const country = barData?.country;
+                            if (!country) return;
+                            const rows = epcis.journeys.filter(j => j.origin_country === country);
+                            setDrill({ title: `Origin: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
+                          }}
+                        >
                           <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
                         </Bar>
                       </BarChart>
@@ -1450,23 +1455,24 @@ export default function Home() {
                           data={epcis.stats.departureVolumeByAMU.map(x => ({ centre: x.centre, n: x.count, hasAMU: x.hasAMU }))}
                           layout="vertical"
                           margin={{ left: 0, right: 50, top: 0, bottom: 0 }}
-                          onClick={(data: any) => {
-                            const item = data?.activePayload?.[0]?.payload;
-                            if (!item) return;
-                            const rows = item.hasAMU
-                              ? epcis.journeys.filter(j => j.departure_centre === item.centre)
-                              : epcis.journeys.filter(j => !j.departure_centre && j.origin_centre === item.centre);
-                            const label = item.hasAMU ? `AMU Outbound: ${item.centre}` : `OE only (no AMU): ${item.centre}`;
-                            setDrill({ title: label, subtitle: `${rows.length} receptacles`, journeys: rows });
-                          }}
-                          style={{ cursor: 'pointer' }}
                         >
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
                           <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="n" name="Receptacles" radius={[0, 3, 3, 0]}
+                          <Bar
+                            dataKey="n"
+                            name="Receptacles"
+                            radius={[0, 3, 3, 0]}
                             fill={C.indigo}
+                            style={{ cursor: 'pointer' }}
+                            onClick={(barData: any) => {
+                              const rows = barData.hasAMU
+                                ? epcis.journeys.filter(j => j.departure_centre === barData.centre)
+                                : epcis.journeys.filter(j => !j.departure_centre && j.origin_centre === barData.centre);
+                              const label = barData.hasAMU ? `AMU Outbound: ${barData.centre}` : `OE only (no AMU): ${barData.centre}`;
+                              setDrill({ title: label, subtitle: `${rows.length} receptacles`, journeys: rows });
+                            }}
                             shape={(props: any) => {
                               const { x, y, width, height, hasAMU } = props;
                               return <rect x={x} y={y} width={width} height={height} fill={hasAMU ? C.indigo : '#F59E0B'} rx={3} ry={3} />;
@@ -1515,19 +1521,24 @@ export default function Home() {
                         data={epcis.stats.byDestCountry}
                         layout="vertical"
                         margin={{ left: 8, right: 50, top: 4, bottom: 4 }}
-                        onClick={(data: any) => {
-                          const country = data?.activePayload?.[0]?.payload?.country;
-                          if (!country) return;
-                          const rows = epcis.journeys.filter(j => (j.arrival_country || j.dest_country) === country);
-                          setDrill({ title: `Destination: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
-                        }}
-                        style={{ cursor: 'pointer' }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                         <YAxis type="category" dataKey="country" tick={{ fontSize: 10, fill: '#64748b' }} width={110} interval={0} />
                         <Tooltip content={<ChartTooltip />} />
-                        <Bar dataKey="count" name="Receptacles" fill={C.emerald} radius={[0, 3, 3, 0]}>
+                        <Bar
+                          dataKey="count"
+                          name="Receptacles"
+                          fill={C.emerald}
+                          radius={[0, 3, 3, 0]}
+                          style={{ cursor: 'pointer' }}
+                          onClick={(barData: any) => {
+                            const country = barData?.country;
+                            if (!country) return;
+                            const rows = epcis.journeys.filter(j => (j.arrival_country || j.dest_country) === country);
+                            setDrill({ title: `Destination: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
+                          }}
+                        >
                           <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
                         </Bar>
                       </BarChart>
@@ -1551,23 +1562,24 @@ export default function Home() {
                           data={epcis.stats.arrivalVolumeByAMU.map(x => ({ centre: x.centre, n: x.count, hasAMU: x.hasAMU }))}
                           layout="vertical"
                           margin={{ left: 0, right: 50, top: 0, bottom: 0 }}
-                          onClick={(data: any) => {
-                            const item = data?.activePayload?.[0]?.payload;
-                            if (!item) return;
-                            const rows = item.hasAMU
-                              ? epcis.journeys.filter(j => j.arrival_centre === item.centre)
-                              : epcis.journeys.filter(j => !j.arrival_centre && j.dest_centre === item.centre);
-                            const label = item.hasAMU ? `AMU Inbound: ${item.centre}` : `OE only (no AMU): ${item.centre}`;
-                            setDrill({ title: label, subtitle: `${rows.length} receptacles`, journeys: rows });
-                          }}
-                          style={{ cursor: 'pointer' }}
                         >
                           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 10 }} />
                           <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={145} interval={0} />
                           <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="n" name="Receptacles" radius={[0, 3, 3, 0]}
+                          <Bar
+                            dataKey="n"
+                            name="Receptacles"
+                            radius={[0, 3, 3, 0]}
                             fill={C.emerald}
+                            style={{ cursor: 'pointer' }}
+                            onClick={(barData: any) => {
+                              const rows = barData.hasAMU
+                                ? epcis.journeys.filter(j => j.arrival_centre === barData.centre)
+                                : epcis.journeys.filter(j => !j.arrival_centre && j.dest_centre === barData.centre);
+                              const label = barData.hasAMU ? `AMU Inbound: ${barData.centre}` : `OE only (no AMU): ${barData.centre}`;
+                              setDrill({ title: label, subtitle: `${rows.length} receptacles`, journeys: rows });
+                            }}
                             shape={(props: any) => {
                               const { x, y, width, height, hasAMU } = props;
                               return <rect x={x} y={y} width={width} height={height} fill={hasAMU ? C.emerald : '#F59E0B'} rx={3} ry={3} />;
