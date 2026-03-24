@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import { useBenchmarkData, BenchmarkRow, RouteStats, CentreStats, BenchmarkFilters } from '@/hooks/useBenchmarkData';
 import type { RfidJourney } from '@/hooks/useEpcisData';
+import BenchmarkDrillModal from '@/components/BenchmarkDrillModal';
 
 /* ── Palette ────────────────────────────────────────────────────────────────── */
 const C = {
@@ -124,7 +125,7 @@ function ChainBar({ label, present, total, rfid = false }: { label: string; pres
 }
 
 /* ── Centre delta table ─────────────────────────────────────────────────────── */
-function CentreTable({ data, label }: { data: CentreStats[]; label: string }) {
+function CentreTable({ data, label, onRowClick }: { data: CentreStats[]; label: string; onRowClick?: (centre: string) => void }) {
   if (!data.length) return <p className="text-xs text-slate-400 italic py-2">No data.</p>;
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -141,7 +142,11 @@ function CentreTable({ data, label }: { data: CentreStats[]; label: string }) {
         </thead>
         <tbody className="divide-y divide-slate-100">
           {data.map(r => (
-            <tr key={r.centre + r.impc} className={`hover:bg-slate-50 ${deltaBg(r.mean)}`}>
+            <tr
+              key={r.centre + r.impc}
+              className={`hover:bg-indigo-50 transition-colors ${deltaBg(r.mean)} ${onRowClick ? 'cursor-pointer' : ''}`}
+              onClick={() => onRowClick?.(r.centre)}
+            >
               <td className="px-3 py-2 font-semibold text-slate-700">{r.centre}</td>
               <td className="px-3 py-2 font-mono text-slate-500">{r.impc}</td>
               <td className="px-3 py-2 text-slate-500">{r.country}</td>
@@ -369,6 +374,7 @@ interface BenchmarkPanelProps {
 export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading = false, rfidBackgroundProgress = null }: BenchmarkPanelProps) {
   const { rows, stats, loading, error, ediProgress, backgroundLoading, backgroundProgress } = useBenchmarkData(journeys, filters, rfidBackgroundLoading, rfidBackgroundProgress);
   const [detailView, setDetailView] = useState<DetailView>('departure');
+  const [drill, setDrill] = useState<{ title: string; subtitle?: string; rows: BenchmarkRow[] } | null>(null);
 
   if (loading) {
     const pctEdi = ediProgress && ediProgress.total > 0 ? Math.round(ediProgress.loaded / ediProgress.total * 100) : null;
@@ -466,7 +472,14 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
           Δ = RFID Outbound minus EDI PREDES (hours). Negative = PREDES declared <strong>after</strong> RFID reads; positive = PREDES declared <strong>before</strong>.
           Green = PREDES in advance · Red = PREDES delayed.
         </p>
-        <CentreTable data={stats.byOriginCentre} label="Δ" />
+        <CentreTable
+          data={stats.byOriginCentre}
+          label="Δ"
+          onRowClick={centre => {
+            const drillRows = rows.filter(r => (r.rf_origin_centre ?? r.rf_departure_centre) === centre);
+            setDrill({ title: `AMU Outbound: ${centre}`, subtitle: `${drillRows.length} receptacles`, rows: drillRows });
+          }}
+        />
       </Section>
 
       {/* ── 2. RFID Inbound vs EDI RESDES ── */}
@@ -485,7 +498,14 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
           Δ = EDI RESDES minus RFID Inbound (hours). Positive = RESDES declared <strong>after</strong> RFID reads; negative = RESDES declared <strong>before</strong>.
           Green = RESDES declared after RFID · Red = RESDES declared before RFID.
         </p>
-        <CentreTable data={stats.byDestCentre} label="Δ" />
+        <CentreTable
+          data={stats.byDestCentre}
+          label="Δ"
+          onRowClick={centre => {
+            const drillRows = rows.filter(r => (r.rf_arrival_centre ?? r.rf_dest_centre) === centre);
+            setDrill({ title: `AMU Inbound: ${centre}`, subtitle: `${drillRows.length} receptacles`, rows: drillRows });
+          }}
+        />
       </Section>
 
       {/* ── 4. Transit time comparison ── */}
@@ -519,8 +539,55 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
                   contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Bar dataKey="rfidAvg" name="RFID Transit (h)" fill={C.rfid} radius={[0, 4, 4, 0]} barSize={13} />
-                <Bar dataKey="ediAvg"  name="EDI Transit (h)"  fill={C.edi}  radius={[0, 4, 4, 0]} barSize={13} />
+                <Bar
+                  dataKey="rfidAvg"
+                  name="RFID Transit (h)"
+                  fill={C.rfid}
+                  radius={[0, 4, 4, 0]}
+                  barSize={13}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(barData: any) => {
+                    const routeLabel = barData?.route;
+                    if (!routeLabel) return;
+                    // Match rows whose route label equals the chart label
+                    const drillRows = rows.filter(r => {
+                      const origin = r.rf_origin_country ?? r.rf_departure_country ?? r.edi_origin_impc ?? '?';
+                      const dest   = r.edi_dest_impc ?? r.rf_dest_impc ?? r.rf_arrival_impc ?? r.rf_dest_country ?? r.rf_arrival_country ?? '?';
+                      const originCentre  = r.rf_origin_centre   ?? r.rf_departure_centre  ?? null;
+                      const originCountry = r.rf_origin_country  ?? r.rf_departure_country ?? null;
+                      const destCentre    = r.rf_dest_centre      ?? r.rf_arrival_centre    ?? null;
+                      const destCountry   = r.rf_dest_country     ?? r.rf_arrival_country   ?? null;
+                      const oLabel = originCentre ? `${originCentre}${originCountry ? ` (${originCountry})` : ''}` : origin;
+                      const dLabel = destCentre   ? `${destCentre}${destCountry ? ` (${destCountry})` : ''}`   : dest;
+                      return `${oLabel} → ${dLabel}` === routeLabel && r.has_rf_transit && r.has_edi_transit;
+                    });
+                    setDrill({ title: `Transit: ${routeLabel}`, subtitle: `${drillRows.length} receptacles (RFID transit)`, rows: drillRows });
+                  }}
+                />
+                <Bar
+                  dataKey="ediAvg"
+                  name="EDI Transit (h)"
+                  fill={C.edi}
+                  radius={[0, 4, 4, 0]}
+                  barSize={13}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(barData: any) => {
+                    const routeLabel = barData?.route;
+                    if (!routeLabel) return;
+                    const drillRows = rows.filter(r => {
+                      const origin = r.rf_origin_country ?? r.rf_departure_country ?? r.edi_origin_impc ?? '?';
+                      const dest   = r.edi_dest_impc ?? r.rf_dest_impc ?? r.rf_arrival_impc ?? r.rf_dest_country ?? r.rf_arrival_country ?? '?';
+                      const originCentre  = r.rf_origin_centre   ?? r.rf_departure_centre  ?? null;
+                      const originCountry = r.rf_origin_country  ?? r.rf_departure_country ?? null;
+                      const destCentre    = r.rf_dest_centre      ?? r.rf_arrival_centre    ?? null;
+                      const destCountry   = r.rf_dest_country     ?? r.rf_arrival_country   ?? null;
+                      const oLabel = originCentre ? `${originCentre}${originCountry ? ` (${originCountry})` : ''}` : origin;
+                      const dLabel = destCentre   ? `${destCentre}${destCountry ? ` (${destCountry})` : ''}`   : dest;
+                      return `${oLabel} → ${dLabel}` === routeLabel && r.has_rf_transit && r.has_edi_transit;
+                    });
+                    setDrill({ title: `Transit: ${routeLabel}`, subtitle: `${drillRows.length} receptacles (EDI transit)`, rows: drillRows });
+                  }}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -588,6 +655,13 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
         <DetailTable rows={rows} view={detailView} />
       </Section>
 
+      <BenchmarkDrillModal
+        open={!!drill}
+        title={drill?.title ?? ''}
+        subtitle={drill?.subtitle}
+        rows={drill?.rows ?? []}
+        onClose={() => setDrill(null)}
+      />
     </div>
   );
 }
