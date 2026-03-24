@@ -426,16 +426,27 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count, endToEnd: v.endToEnd }))
     .sort((a, b) => b.count - a.count);
 
-  // Departure Volume by AMU:
-  // Primary: tags with AMU Outbound reading → grouped by departure_centre (hasAMU=true)
-  // Secondary: tags WITHOUT AMU Outbound → grouped by origin_centre (OE only, hasAMU=false)
+  // Departure Volume by Centre:
+  // Each journey contributes 1 count to EVERY origin-side centre it was detected at.
+  // AMU centres (td_reader=true, departure_centre) shown in blue.
+  // OE centres (td_reader=false, origin_centre with origin_readings>0) shown in amber.
+  // A single receptacle can appear in both an AMU bar and an OE bar.
   const depVolAMUMap = new Map<string, { country: string; count: number; hasAMU: boolean }>();
   for (const j of journeys) {
-    const hasAMU = j.departure_centre !== null;
-    const key     = hasAMU ? (j.departure_centre!) : (j.origin_centre || 'Unknown');
-    const country = hasAMU ? (j.departure_country || j.origin_country) : j.origin_country;
-    if (!depVolAMUMap.has(key)) depVolAMUMap.set(key, { country, count: 0, hasAMU });
-    depVolAMUMap.get(key)!.count++;
+    const centres: Array<{ key: string; country: string; hasAMU: boolean }> = [];
+    if (j.departure_centre) {
+      centres.push({ key: j.departure_centre, country: j.departure_country || j.origin_country, hasAMU: true });
+    }
+    if (j.origin_centre && j.origin_readings > 0) {
+      centres.push({ key: j.origin_centre, country: j.origin_country, hasAMU: false });
+    }
+    if (centres.length === 0) {
+      centres.push({ key: j.origin_centre || 'Unknown', country: j.origin_country, hasAMU: false });
+    }
+    for (const { key, country, hasAMU } of centres) {
+      if (!depVolAMUMap.has(key)) depVolAMUMap.set(key, { country, count: 0, hasAMU });
+      depVolAMUMap.get(key)!.count++;
+    }
   }
   const departureVolumeByAMU = Array.from(depVolAMUMap.entries())
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: v.hasAMU }))
