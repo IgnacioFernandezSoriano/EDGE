@@ -74,6 +74,11 @@ export interface RfidJourney {
   is_complete: boolean;                   // all events in this journey have status=COMPLETE (informational only)
   is_both_rfid: boolean;
   centres_visited: string[];
+  // All OE/AMU centres visited in origin and destination blocks (for KPI and chart alignment)
+  origin_oe_centres:  string[];   // td_reader=false in origin block
+  origin_amu_centres: string[];   // td_reader=true  in origin block
+  dest_oe_centres:    string[];   // td_reader=false in dest block
+  dest_amu_centres:   string[];   // td_reader=true  in dest block
 }
 
 export interface EpcisStats {
@@ -365,6 +370,11 @@ function readingsToJourneys(
       is_complete:        sorted.every(r => r.status === 'COMPLETE'),
       is_both_rfid:       oeOriginEntry !== null && oeDestEntry !== null,
       centres_visited:    centresVisited,
+      // All OE/AMU centres visited per block (unique, for KPI/chart alignment)
+      origin_oe_centres:  [...new Set(originOE.map(v => v.info.centre))],
+      origin_amu_centres: [...new Set(originAMU.map(v => v.info.centre))],
+      dest_oe_centres:    [...new Set(destOE.map(v => v.info.centre))],
+      dest_amu_centres:   [...new Set(destAMU.map(v => v.info.centre))],
     });
   }
 
@@ -427,26 +437,21 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .sort((a, b) => b.count - a.count);
 
   // Departure Volume by Centre:
-  // BLUE bars  (hasAMU=true):  tags with departure_centre !== null → sum = kpiRfPredes (Tags AMU Outbound)
-  // AMBER bars (hasAMU=false): tags with origin_readings > 0       → sum = kpiRfidDepartures (Tags OE Origin)
-  // Two independent series — each sums to its KPI card. A tag can appear in both.
+  // BLUE bars  (hasAMU=true):  each AMU centre in origin block → sum = kpiRfPredes (Tags AMU Outbound)
+  // AMBER bars (hasAMU=false): each OE  centre in origin block → sum = kpiRfidDepartures (Tags OE Origin)
+  // Each tag contributes once per centre it visited. Two independent series.
   const depAMUMap = new Map<string, { country: string; count: number }>();
   const depOEMap  = new Map<string, { country: string; count: number }>();
   for (const j of journeys) {
-    if (j.departure_centre) {
-      const key = j.departure_centre;
-      const country = j.departure_country || j.origin_country;
-      if (!depAMUMap.has(key)) depAMUMap.set(key, { country, count: 0 });
-      depAMUMap.get(key)!.count++;
+    for (const centre of j.origin_amu_centres) {
+      if (!depAMUMap.has(centre)) depAMUMap.set(centre, { country: j.origin_country, count: 0 });
+      depAMUMap.get(centre)!.count++;
     }
-    if (j.origin_readings > 0 && j.origin_centre) {
-      const key = j.origin_centre;
-      if (!depOEMap.has(key)) depOEMap.set(key, { country: j.origin_country, count: 0 });
-      depOEMap.get(key)!.count++;
+    for (const centre of j.origin_oe_centres) {
+      if (!depOEMap.has(centre)) depOEMap.set(centre, { country: j.origin_country, count: 0 });
+      depOEMap.get(centre)!.count++;
     }
   }
-  // Combine into single array: AMU entries (blue) + OE entries (amber).
-  // Use concat to avoid key collisions — each series is independent.
   const departureVolumeByAMU = [
     ...Array.from(depAMUMap.entries()).map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: true  as const })),
     ...Array.from(depOEMap.entries()) .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: false as const })),
@@ -468,25 +473,22 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .sort((a, b) => b.count - a.count);
 
   // Arrival Volume by Centre:
-  // BLUE bars  (hasAMU=true):  tags with arrival_centre !== null → sum = kpiRfResdes (Tags AMU Inbound)
-  // AMBER bars (hasAMU=false): tags with dest_readings > 0        → sum = kpiRfidArrivals (Tags OE Destination)
-  // Two independent series — each sums to its KPI card. A tag can appear in both.
+  // GREEN bars (hasAMU=true):  each AMU centre in dest block → sum = kpiRfResdes (Tags AMU Inbound)
+  // AMBER bars (hasAMU=false): each OE  centre in dest block → sum = kpiRfidArrivals (Tags OE Destination)
+  // Each tag contributes once per centre it visited. Two independent series.
   const arrAMUMap = new Map<string, { country: string; count: number }>();
   const arrOEMap  = new Map<string, { country: string; count: number }>();
   for (const j of journeys) {
-    if (j.arrival_centre) {
-      const key = j.arrival_centre;
+    for (const centre of j.dest_amu_centres) {
       const country = j.arrival_country || j.dest_country || '';
-      if (!arrAMUMap.has(key)) arrAMUMap.set(key, { country, count: 0 });
-      arrAMUMap.get(key)!.count++;
+      if (!arrAMUMap.has(centre)) arrAMUMap.set(centre, { country, count: 0 });
+      arrAMUMap.get(centre)!.count++;
     }
-    if (j.dest_readings > 0 && j.dest_centre) {
-      const key = j.dest_centre;
-      if (!arrOEMap.has(key)) arrOEMap.set(key, { country: j.dest_country || '', count: 0 });
-      arrOEMap.get(key)!.count++;
+    for (const centre of j.dest_oe_centres) {
+      if (!arrOEMap.has(centre)) arrOEMap.set(centre, { country: j.dest_country || '', count: 0 });
+      arrOEMap.get(centre)!.count++;
     }
   }
-  // Use concat to avoid key collisions — each series is independent.
   const arrivalVolumeByAMU = [
     ...Array.from(arrAMUMap.entries()).map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: true  as const })),
     ...Array.from(arrOEMap.entries()) .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: false as const })),
@@ -572,10 +574,14 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   // Overview KPI counts — unique tag_ids per event_type
   // NOTE: All KPIs count ALL records regardless of status
   const kpiTotalTags      = new Set(journeys.map(j => j.tag_id)).size;
-  const kpiRfidDepartures = new Set(journeys.filter(j => j.has_origin).map(j => j.tag_id)).size;                                               // ORIGIN (all statuses)
-  const kpiRfPredes       = new Set(journeys.filter(j => j.departure_time !== null).map(j => j.tag_id)).size;                                  // DEPARTURE (all statuses)
-  const kpiRfResdes       = new Set(journeys.filter(j => j.arrival_time !== null).map(j => j.tag_id)).size;                                    // ARRIVAL (all statuses)
-  const kpiRfidArrivals   = new Set(journeys.filter(j => j.dest_time !== null).map(j => j.tag_id)).size;                                       // DESTINATION (all statuses)
+  // Tags OE Origin:      tags detected at any OE centre in the origin block (td_reader=false)
+  const kpiRfidDepartures = new Set(journeys.filter(j => j.origin_oe_centres.length > 0).map(j => j.tag_id)).size;
+  // Tags AMU Outbound:   tags detected at any AMU centre in the origin block (td_reader=true)
+  const kpiRfPredes       = new Set(journeys.filter(j => j.origin_amu_centres.length > 0).map(j => j.tag_id)).size;
+  // Tags AMU Inbound:    tags detected at any AMU centre in the destination block (td_reader=true)
+  const kpiRfResdes       = new Set(journeys.filter(j => j.dest_amu_centres.length > 0).map(j => j.tag_id)).size;
+  // Tags OE Destination: tags detected at any OE centre in the destination block (td_reader=false)
+  const kpiRfidArrivals   = new Set(journeys.filter(j => j.dest_oe_centres.length > 0).map(j => j.tag_id)).size;
   const kpiRfE2e          = new Set(journeys.filter(j => j.has_international).map(j => j.tag_id)).size;                                        // Leg2: DEPARTURE+ARRIVAL (all statuses)
 
   return {
