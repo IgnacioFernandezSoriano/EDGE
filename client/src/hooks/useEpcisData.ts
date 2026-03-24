@@ -446,17 +446,14 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     }
   }
   // Combine into single array: AMU entries (blue) + OE entries (amber).
-  // OE centre names are always distinct from AMU centre names (different physical readers).
-  const depVolAMUMap = new Map<string, { country: string; count: number; hasAMU: boolean }>();
-  for (const [k, v] of depAMUMap) depVolAMUMap.set(k, { ...v, hasAMU: true });
-  for (const [k, v] of depOEMap)  depVolAMUMap.set(k, { ...v, hasAMU: false });
-  const departureVolumeByAMU = Array.from(depVolAMUMap.entries())
-    .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: v.hasAMU }))
-    .sort((a, b) => {
-      // AMU entries first, then OE-only; within each group sort by count desc
-      if (a.hasAMU !== b.hasAMU) return a.hasAMU ? -1 : 1;
-      return b.count - a.count;
-    });
+  // Use concat to avoid key collisions — each series is independent.
+  const departureVolumeByAMU = [
+    ...Array.from(depAMUMap.entries()).map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: true  as const })),
+    ...Array.from(depOEMap.entries()) .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: false as const })),
+  ].sort((a, b) => {
+    if (a.hasAMU !== b.hasAMU) return a.hasAMU ? -1 : 1;
+    return b.count - a.count;
+  });
 
   // By dest centre — use arrival_centre for international journeys
   const destCentreMap = new Map<string, { country: string; count: number }>();
@@ -489,15 +486,14 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
       arrOEMap.get(key)!.count++;
     }
   }
-  const arrVolAMUMap = new Map<string, { country: string; count: number; hasAMU: boolean }>();
-  for (const [k, v] of arrAMUMap) arrVolAMUMap.set(k, { ...v, hasAMU: true });
-  for (const [k, v] of arrOEMap)  arrVolAMUMap.set(k, { ...v, hasAMU: false });
-  const arrivalVolumeByAMU = Array.from(arrVolAMUMap.entries())
-    .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: v.hasAMU }))
-    .sort((a, b) => {
-      if (a.hasAMU !== b.hasAMU) return a.hasAMU ? -1 : 1;
-      return b.count - a.count;
-    });
+  // Use concat to avoid key collisions — each series is independent.
+  const arrivalVolumeByAMU = [
+    ...Array.from(arrAMUMap.entries()).map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: true  as const })),
+    ...Array.from(arrOEMap.entries()) .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: false as const })),
+  ].sort((a, b) => {
+    if (a.hasAMU !== b.hasAMU) return a.hasAMU ? -1 : 1;
+    return b.count - a.count;
+  });
 
   // Departure by centre — use departure_centre (last centre before border crossing)
   const depCentreMap = new Map<string, { country: string; hours: number[] }>();
