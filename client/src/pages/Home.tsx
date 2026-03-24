@@ -1428,7 +1428,10 @@ export default function Home() {
                           onClick={(barData: any) => {
                             const country = barData?.country;
                             if (!country) return;
-                            const rows = epcis.journeys.filter(j => j.origin_country === country);
+                            // byOriginCountry iterates journeysWithOrigin (origin_readings > 0 || origin_country)
+                            const rows = epcis.journeys.filter(j =>
+                              (j.origin_readings > 0 || j.origin_country) && j.origin_country === country
+                            );
                             setDrill({ title: `Origin: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
                           }}
                         >
@@ -1535,7 +1538,10 @@ export default function Home() {
                           onClick={(barData: any) => {
                             const country = barData?.country;
                             if (!country) return;
-                            const rows = epcis.journeys.filter(j => (j.arrival_country || j.dest_country) === country);
+                            // byDestCountry iterates endToEnd (has_international = true)
+                            const rows = epcis.journeys.filter(j =>
+                              j.has_international && (j.arrival_country || j.dest_country) === country
+                            );
                             setDrill({ title: `Destination: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
                           }}
                         >
