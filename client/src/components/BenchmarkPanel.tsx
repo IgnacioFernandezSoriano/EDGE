@@ -476,7 +476,8 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
           data={stats.byOriginCentre}
           label="Δ"
           onRowClick={centre => {
-            const drillRows = rows.filter(r => (r.rf_origin_centre ?? r.rf_departure_centre) === centre);
+            // Must match buildCentreStats: centreKey='rf_origin_centre', deltaKey='delta_predes_hours' — both must be non-null
+            const drillRows = rows.filter(r => r.rf_origin_centre === centre && r.delta_predes_hours !== null);
             setDrill({ title: `AMU Outbound: ${centre}`, subtitle: `${drillRows.length} receptacles`, rows: drillRows });
           }}
         />
@@ -502,7 +503,8 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
           data={stats.byDestCentre}
           label="Δ"
           onRowClick={centre => {
-            const drillRows = rows.filter(r => (r.rf_arrival_centre ?? r.rf_dest_centre) === centre);
+            // Must match buildCentreStats: centreKey='rf_arrival_centre', deltaKey='delta_resdes_hours' — both must be non-null
+            const drillRows = rows.filter(r => r.rf_arrival_centre === centre && r.delta_resdes_hours !== null);
             setDrill({ title: `AMU Inbound: ${centre}`, subtitle: `${drillRows.length} receptacles`, rows: drillRows });
           }}
         />
