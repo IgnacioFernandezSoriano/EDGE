@@ -427,27 +427,29 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .sort((a, b) => b.count - a.count);
 
   // Departure Volume by Centre:
-  // Each journey contributes 1 count to EVERY origin-side centre it was detected at.
-  // AMU centres (td_reader=true, departure_centre) shown in blue.
-  // OE centres (td_reader=false, origin_centre with origin_readings>0) shown in amber.
-  // A single receptacle can appear in both an AMU bar and an OE bar.
-  const depVolAMUMap = new Map<string, { country: string; count: number; hasAMU: boolean }>();
+  // BLUE bars  (hasAMU=true):  tags with departure_centre !== null → sum = kpiRfPredes (Tags AMU Outbound)
+  // AMBER bars (hasAMU=false): tags with origin_readings > 0       → sum = kpiRfidDepartures (Tags OE Origin)
+  // Two independent series — each sums to its KPI card. A tag can appear in both.
+  const depAMUMap = new Map<string, { country: string; count: number }>();
+  const depOEMap  = new Map<string, { country: string; count: number }>();
   for (const j of journeys) {
-    const centres: Array<{ key: string; country: string; hasAMU: boolean }> = [];
     if (j.departure_centre) {
-      centres.push({ key: j.departure_centre, country: j.departure_country || j.origin_country, hasAMU: true });
+      const key = j.departure_centre;
+      const country = j.departure_country || j.origin_country;
+      if (!depAMUMap.has(key)) depAMUMap.set(key, { country, count: 0 });
+      depAMUMap.get(key)!.count++;
     }
-    if (j.origin_centre && j.origin_readings > 0) {
-      centres.push({ key: j.origin_centre, country: j.origin_country, hasAMU: false });
-    }
-    if (centres.length === 0) {
-      centres.push({ key: j.origin_centre || 'Unknown', country: j.origin_country, hasAMU: false });
-    }
-    for (const { key, country, hasAMU } of centres) {
-      if (!depVolAMUMap.has(key)) depVolAMUMap.set(key, { country, count: 0, hasAMU });
-      depVolAMUMap.get(key)!.count++;
+    if (j.origin_readings > 0 && j.origin_centre) {
+      const key = j.origin_centre;
+      if (!depOEMap.has(key)) depOEMap.set(key, { country: j.origin_country, count: 0 });
+      depOEMap.get(key)!.count++;
     }
   }
+  // Combine into single array: AMU entries (blue) + OE entries (amber).
+  // OE centre names are always distinct from AMU centre names (different physical readers).
+  const depVolAMUMap = new Map<string, { country: string; count: number; hasAMU: boolean }>();
+  for (const [k, v] of depAMUMap) depVolAMUMap.set(k, { ...v, hasAMU: true });
+  for (const [k, v] of depOEMap)  depVolAMUMap.set(k, { ...v, hasAMU: false });
   const departureVolumeByAMU = Array.from(depVolAMUMap.entries())
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: v.hasAMU }))
     .sort((a, b) => {
@@ -468,19 +470,28 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count }))
     .sort((a, b) => b.count - a.count);
 
-  // Arrival Volume by AMU:
-  // Primary: tags with AMU Inbound reading → grouped by arrival_centre (hasAMU=true)
-  // Secondary: tags with OE Destination but NO AMU Inbound → grouped by dest_centre (hasAMU=false)
-  const arrVolAMUMap = new Map<string, { country: string; count: number; hasAMU: boolean }>();
+  // Arrival Volume by Centre:
+  // BLUE bars  (hasAMU=true):  tags with arrival_centre !== null → sum = kpiRfResdes (Tags AMU Inbound)
+  // AMBER bars (hasAMU=false): tags with dest_readings > 0        → sum = kpiRfidArrivals (Tags OE Destination)
+  // Two independent series — each sums to its KPI card. A tag can appear in both.
+  const arrAMUMap = new Map<string, { country: string; count: number }>();
+  const arrOEMap  = new Map<string, { country: string; count: number }>();
   for (const j of journeys) {
-    const hasAMU = j.arrival_centre !== null;
-    const hasDest = j.dest_centre !== null;
-    if (!hasAMU && !hasDest) continue; // no destination reading at all — skip
-    const key     = hasAMU ? j.arrival_centre! : j.dest_centre!;
-    const country = hasAMU ? (j.arrival_country || j.dest_country || '') : (j.dest_country || '');
-    if (!arrVolAMUMap.has(key)) arrVolAMUMap.set(key, { country, count: 0, hasAMU });
-    arrVolAMUMap.get(key)!.count++;
+    if (j.arrival_centre) {
+      const key = j.arrival_centre;
+      const country = j.arrival_country || j.dest_country || '';
+      if (!arrAMUMap.has(key)) arrAMUMap.set(key, { country, count: 0 });
+      arrAMUMap.get(key)!.count++;
+    }
+    if (j.dest_readings > 0 && j.dest_centre) {
+      const key = j.dest_centre;
+      if (!arrOEMap.has(key)) arrOEMap.set(key, { country: j.dest_country || '', count: 0 });
+      arrOEMap.get(key)!.count++;
+    }
   }
+  const arrVolAMUMap = new Map<string, { country: string; count: number; hasAMU: boolean }>();
+  for (const [k, v] of arrAMUMap) arrVolAMUMap.set(k, { ...v, hasAMU: true });
+  for (const [k, v] of arrOEMap)  arrVolAMUMap.set(k, { ...v, hasAMU: false });
   const arrivalVolumeByAMU = Array.from(arrVolAMUMap.entries())
     .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: v.hasAMU }))
     .sort((a, b) => {
