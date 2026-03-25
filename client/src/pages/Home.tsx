@@ -1331,20 +1331,13 @@ export default function Home() {
                 <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
 
-                  <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-5">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
                     <KpiCard
                       title="Total Tags"
                       value={epcis.stats.kpiTotalTags.toLocaleString()}
                       subtitle="Total RFID Tags for selected period and countries"
                       badge={{ label: 'rfid', color: 'blue' }}
                       tooltip="Total unique tag IDs in the RFID table for the selected date and country filters."
-                    />
-                    <KpiCard
-                      title="Tags OE Origin"
-                      value={epcis.stats.kpiRfidDepartures.toLocaleString()}
-                      subtitle="First site RFID Tags (Usually OE)"
-                      badge={{ label: 'origin', color: 'blue' }}
-                      tooltip="Unique tag IDs with event_type = ORIGIN: first reading at the dispatch centre (intra-country). Usually the Origin OE (Office of Exchange)."
                     />
                     <KpiCard
                       title="Tags AMU Outbound"
@@ -1366,13 +1359,6 @@ export default function Home() {
                       subtitle="INBOUND site RFID Tags"
                       badge={{ label: 'arrival', color: 'green' }}
                       tooltip="Unique tag IDs with event_type = ARRIVAL: first RFID reading at the inbound AMU after crossing an international border. Physical equivalent of the EDI RESDES message."
-                    />
-                    <KpiCard
-                      title="Tags OE Destination"
-                      value={epcis.stats.kpiRfidArrivals.toLocaleString()}
-                      subtitle="Last site RFID Tags"
-                      badge={{ label: 'dest', color: 'teal' }}
-                      tooltip="Unique tag IDs with event_type = DESTINATION: last reading at the delivery centre (intra-country). Usually the Destination OE (Office of Exchange)."
                     />
                   </div>
 
