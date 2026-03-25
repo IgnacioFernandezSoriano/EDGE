@@ -526,3 +526,57 @@ export async function fetchRfidReadersMaster(): Promise<RfidReaderMaster[]> {
 
   return all;
 }
+
+/** EDI tag info: origin and destination IMPC codes from "datos EDI" via "ID Relation" */
+export interface EdiTagInfo {
+  origin_impc: string | null;
+  destination_impc: string | null;
+}
+
+/**
+ * Fetches a map of tagid → { origin_impc, destination_impc } by joining
+ * "ID Relation" (tagid → s9id) with "datos EDI" (ean = s9id → origin, destination).
+ * Used to classify single-country RFID tags as Departure or Arrival.
+ */
+export async function fetchEdiTagMap(): Promise<Map<string, EdiTagInfo>> {
+  const headers = await getAuthHeaders();
+  const PAGE_SIZE = 1000;
+  const result = new Map<string, EdiTagInfo>();
+  let offset = 0;
+
+  while (true) {
+    const idRelUrl = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('ID Relation')}`);
+    idRelUrl.searchParams.set('select', 'tagid,s9id');
+    idRelUrl.searchParams.set('limit', String(PAGE_SIZE));
+    idRelUrl.searchParams.set('offset', String(offset));
+    const idRelRes = await fetch(idRelUrl.toString(), { headers });
+    if (!idRelRes.ok) break;
+    const idRelRows: { tagid: string; s9id: string }[] = await idRelRes.json();
+    if (!idRelRows.length) break;
+
+    const s9ids = idRelRows.map(r => r.s9id).filter(Boolean);
+    if (s9ids.length > 0) {
+      const ediUrl = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('datos EDI')}`);
+      ediUrl.searchParams.set('select', 'ean,origin,destination');
+      ediUrl.searchParams.set('ean', `in.(${s9ids.map(s => `"${s}"`).join(',')})`);
+      ediUrl.searchParams.set('limit', String(PAGE_SIZE));
+      const ediRes = await fetch(ediUrl.toString(), { headers });
+      if (ediRes.ok) {
+        const ediRows: { ean: string; origin: string | null; destination: string | null }[] = await ediRes.json();
+        const ediMap = new Map(ediRows.map(e => [e.ean, e]));
+        for (const row of idRelRows) {
+          const edi = ediMap.get(row.s9id);
+          result.set(row.tagid, {
+            origin_impc: edi?.origin ?? null,
+            destination_impc: edi?.destination ?? null,
+          });
+        }
+      }
+    }
+
+    if (idRelRows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  return result;
+}
