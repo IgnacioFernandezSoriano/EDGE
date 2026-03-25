@@ -397,12 +397,13 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const allTimes = [...times, ...destTimes].sort();
   const dateRange = allTimes.length > 0 ? { min: allTimes[0], max: allTimes[allTimes.length - 1] } : null;
 
-  // By origin country — journeys with an ORIGIN event (origin_readings > 0).
-  // Note: impc_code is null for most RFID tags (only G.1UPU tags have it),
-  // so we must NOT filter by origin_impc — that would exclude all J5GJ tags.
+  // By origin country — journeys with AMU Outbound events (same criterion as Tags AMU Outbound KPI).
+  // Uses origin_amu_centres to match the KPI card exactly.
+  const journeysWithAMUOrigin = journeys.filter(j => j.origin_amu_centres.length > 0);
+  // Keep journeysWithOrigin for backward compat (byOriginCentre still uses it)
   const journeysWithOrigin = journeys.filter(j => j.origin_readings > 0 || j.origin_country);
   const originCountryMap = new Map<string, { count: number; endToEnd: number }>();
-  for (const j of journeysWithOrigin) {
+  for (const j of journeysWithAMUOrigin) {
     const c = j.origin_country || 'Unknown';
     if (!originCountryMap.has(c)) originCountryMap.set(c, { count: 0, endToEnd: 0 });
     const v = originCountryMap.get(c)!;
@@ -413,9 +414,10 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .map(([country, v]) => ({ country, count: v.count, endToEnd: v.endToEnd, pct: Math.round(v.endToEnd / v.count * 100) }))
     .sort((a, b) => b.count - a.count);
 
-  // By dest country — use arrival_country for international journeys
+  // By dest country — journeys with AMU Inbound events (same criterion as Tags AMU Inbound KPI).
+  const journeysWithAMUDest = journeys.filter(j => j.dest_amu_centres.length > 0);
   const destCountryMap = new Map<string, number>();
-  for (const j of endToEnd) {
+  for (const j of journeysWithAMUDest) {
     const c = j.arrival_country || j.dest_country || 'Unknown';
     destCountryMap.set(c, (destCountryMap.get(c) || 0) + 1);
   }
