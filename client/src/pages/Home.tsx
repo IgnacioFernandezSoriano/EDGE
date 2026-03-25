@@ -1568,37 +1568,6 @@ export default function Home() {
                 {/* ── TRANSIT ── */}
                 <div className="mt-6">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Transit</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-                    <KpiCard
-                      title="End-to-End Pairs"
-                      value={epcis.stats.kpiRfE2e.toLocaleString()}
-                      subtitle="Departure → Arrival"
-                      badge={{ label: 'end-to-end', color: 'blue' }}
-                      tooltip="Receptacles with both a DEPARTURE event (last scan in origin country) and an ARRIVAL event (first TD scan in destination country). Equivalent to Tags Transit."
-                    />
-                    <KpiCard
-                      title="Avg RFID Transit"
-                      value={epcis.stats.avgTransitHours != null ? `${epcis.stats.avgTransitHours}h / ${(epcis.stats.avgTransitHours / 24).toFixed(1)}d` : '—'}
-                      subtitle="rfid_origin_time → rfid_dest_time"
-                      badge={{ label: 'avg', color: 'blue' }}
-                      tooltip="Median rfid_transit_hours from RFID table for end-to-end pairs."
-                    />
-                    <KpiCard
-                      title="IQR Range"
-                      value={epcis.stats.p25TransitHours != null ? `${epcis.stats.p25TransitHours}h – ${epcis.stats.p75TransitHours}h` : '—'}
-                      subtitle={epcis.stats.p25TransitHours != null ? `${(epcis.stats.p25TransitHours!/24).toFixed(1)}d – ${(epcis.stats.p75TransitHours!/24).toFixed(1)}d` : 'no data'}
-                      badge={{ label: 'IQR', color: 'slate' }}
-                      tooltip="Interquartile Range of rfid_transit_hours from RFID table."
-                    />
-                    <KpiCard
-                      title="Mean RFID Transit"
-                      value={epcis.stats.meanTransitHours != null ? `${epcis.stats.meanTransitHours}h / ${(epcis.stats.meanTransitHours / 24).toFixed(1)}d` : '—'}
-                      subtitle="average transit time"
-                      badge={{ label: 'avg', color: 'amber' }}
-                      tooltip="Mean rfid_transit_hours from RFID table for end-to-end pairs."
-                    />
-                  </div>
-
                   {epcis.stats.byRoute.length > 0 ? (
                     <ChartCard
                       title="RFID Transit by Route"
