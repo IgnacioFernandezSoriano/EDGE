@@ -11,8 +11,8 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { fetchRfidReadings, fetchRfidReadingsWithProgress, fetchRfidReadersMaster } from '@/lib/supabase';
-import type { RfidReading, RfidReaderMaster } from '@/lib/supabase';
+import { fetchRfidReadings, fetchRfidReadingsWithProgress, fetchRfidReadersMaster, fetchEdiTagMap } from '@/lib/supabase';
+import type { RfidReading, RfidReaderMaster, EdiTagInfo } from '@/lib/supabase';
 
 // ── Re-exported types (kept for backward compatibility with EpcisDataTable) ──
 
@@ -177,7 +177,8 @@ function parseLocation(location: string | null): { country: string; centre: stri
  */
 function readingsToJourneys(
   readings: RfidReading[],
-  readerMap: Map<string, RfidReaderMaster>
+  readerMap: Map<string, RfidReaderMaster>,
+  ediTagMap: Map<string, EdiTagInfo> = new Map()
 ): RfidJourney[] {
   // Group by tag_id
   const byTag = new Map<string, RfidReading[]>();
@@ -274,15 +275,40 @@ function readingsToJourneys(
     // CONDICIÓN CLAVE: solo existe evento de salida si el tag tiene lecturas en
     // al menos dos países distintos (destBlock.length > 0). Un tag con lecturas
     // en un único país NO tiene evento de salida internacional.
-    const departureEntry = (allOriginEntries.length > 0 && destBlock.length > 0)
-      ? allOriginEntries.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
-      : null;
+    //
+    // EXCEPCIÓN — Enriquecimiento EDI:
+    // Si el tag solo tiene lecturas en un país (destBlock.length === 0), se consulta
+    // la tabla "datos EDI" (vía ID Relation) para determinar si ese país es el origen
+    // del receptáculo (campo origin). Si el IMPC del lector coincide con origin_impc,
+    // el tag se clasifica como Departure. Si coincide con destination_impc, como Arrival.
+    const ediInfo = ediTagMap.get(tag_id);
+    let departureEntry: typeof allOriginEntries[0] | null = null;
+    let ediArrivalEntry: typeof allOriginEntries[0] | null = null;
+    if (allOriginEntries.length > 0 && destBlock.length > 0) {
+      // Normal case: tag has readings in 2+ countries → last reader in origin block
+      departureEntry = allOriginEntries.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!;
+    } else if (allOriginEntries.length > 0 && destBlock.length === 0 && ediInfo) {
+      // EDI fallback: tag has readings in only one country — use EDI to classify
+      const lastEntry = allOriginEntries.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!;
+      const readerImpc = (lastEntry.info.impc || '').toUpperCase().slice(0, 6);
+      const originImpc = (ediInfo.origin_impc || '').toUpperCase().slice(0, 6);
+      const destImpc   = (ediInfo.destination_impc || '').toUpperCase().slice(0, 6);
+      if (originImpc && readerImpc === originImpc) {
+        // Reader is in the origin country → classify as Departure
+        departureEntry = lastEntry;
+      } else if (destImpc && readerImpc === destImpc) {
+        // Reader is in the destination country → classify as Arrival (EDI-assisted)
+        ediArrivalEntry = lastEntry;
+      }
+    }
 
     // ARRIVAL (entrada al país destino): primera lectura de un lector TD (td_reader=true)
-    // en el bloque destino.
-    const amuInboundEntry = destAMU.length > 0
+    // en el bloque destino. Si no hay bloque destino pero el tag fue clasificado como
+    // Arrival por EDI (ediArrivalEntry), se usa ese lector como arrival.
+    const tdArrivalEntry = destAMU.length > 0
       ? destAMU.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1)[0]
       : null;
+    const amuInboundEntry = tdArrivalEntry ?? ediArrivalEntry ?? null;
 
     // Para compatibilidad con campos legacy (origin_centre, dest_centre, etc.)
     // OE Origin: last of all last-per-centre with td_reader=false in origin block
@@ -638,6 +664,7 @@ export interface EpcisFilters {
 export function useEpcisData(filters: EpcisFilters = {}) {
   const [allReadings, setAllReadings] = useState<RfidReading[]>([]);
   const [readerMap, setReaderMap] = useState<Map<string, RfidReaderMaster>>(new Map());
+  const [ediTagMap, setEdiTagMap] = useState<Map<string, EdiTagInfo>>(new Map());
   const [loading, setLoading] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [backgroundProgress, setBackgroundProgress] = useState<{ loaded: number; total: number } | null>(null);
@@ -650,6 +677,13 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       for (const m of masters) map.set(m.read_point_id, m);
       setReaderMap(map);
     }).catch(() => { /* non-critical — fallback to RFID table fields */ });
+  }, []);
+  // Load EDI tag map once on mount (ID Relation + datos EDI join)
+  // Used to classify single-country tags as Departure or Arrival via EDI data
+  useEffect(() => {
+    fetchEdiTagMap().then(map => {
+      setEdiTagMap(map);
+    }).catch(() => { /* non-critical — tags without EDI data stay unclassified */ });
   }, []);
 
   useEffect(() => {
@@ -719,10 +753,10 @@ export function useEpcisData(filters: EpcisFilters = {}) {
 
   // Build journeys from all readings using the Regla de Selección de Eventos del Trayecto
   const allJourneys = useMemo(() => {
-    const journeys = readingsToJourneys(allReadings, readerMap);
+    const journeys = readingsToJourneys(allReadings, readerMap, ediTagMap);
     console.log(`[EDGE] allReadings: ${allReadings.length} events → ${journeys.length} journeys (readerMap: ${readerMap.size} entries)`);
     return journeys;
-  }, [allReadings, readerMap]);
+  }, [allReadings, readerMap, ediTagMap]);
 
   // Helper: effective destination country for a journey.
   // Priority: DESTINATION event country > ARRIVAL event country.
