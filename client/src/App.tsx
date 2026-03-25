@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import RouteDetailPage from "./pages/RouteDetailPage";
+import TagTrackPage from "./pages/TagTrackPage";
 
 // Guard: redirige al login si el usuario no está autenticado
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -43,6 +44,8 @@ function Router() {
       <Route path={"/admin/audit"} component={() => <ProtectedRoute component={AdminAuditPage} />} />
       {/* Public standalone page — opened in new tab from Transit by Route table */}
       <Route path={"/route-detail"} component={RouteDetailPage} />
+      {/* Public standalone tag tracker — opened in new tab from RouteDetailPage outlier table */}
+      <Route path={"/tag-track"} component={TagTrackPage} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

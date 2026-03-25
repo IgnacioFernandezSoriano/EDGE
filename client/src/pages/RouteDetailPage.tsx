@@ -1,13 +1,15 @@
 /**
- * RouteDetailPage — Standalone page for route-level transit analysis.
+ * RouteDetailPage — Standalone route-level transit analysis page.
  *
- * Opened in a new browser tab by the "Analyse" button in the RFID Transit by Route table.
+ * Opened in a new browser tab via the "Analyse" button in the RFID Transit by Route table.
  * Data is passed via localStorage under the key "route_detail_payload".
  *
- * Contents:
- *  1. Route title + summary stats
- *  2. Histogram of transit hours (bar chart) with cumulative frequency line (red)
- *  3. Outlier table — receptacles outside IQR fence with s9id, tag_id and investigation data
+ * Features:
+ *  1. Sticky header with route title + live-updated KPI strip
+ *  2. Histogram of transit hours (bars) with cumulative % line (red) + Tukey fence reference
+ *  3. Outlier table with:
+ *     - Checkbox to exclude individual records from the calculation (recalculates live)
+ *     - "Track" button that opens /tag-track in a new tab with SearchID data for that tag
  */
 
 import { useEffect, useState, useMemo } from 'react';
@@ -45,10 +47,15 @@ function mean(arr: number[]): number | null {
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
+function r1(v: number | null): number | null {
+  return v === null ? null : Math.round(v * 10) / 10;
+}
+
 function fmt(h: number | null): string {
   if (h === null) return '—';
-  if (h < 24) return `${Math.round(h * 10) / 10}h`;
-  return `${Math.round(h / 24 * 10) / 10}d (${Math.round(h * 10) / 10}h)`;
+  const rounded = Math.round(h * 10) / 10;
+  if (rounded < 24) return `${rounded}h`;
+  return `${Math.round(rounded / 24 * 10) / 10}d (${rounded}h)`;
 }
 
 function fmtDate(iso: string | null): string {
@@ -70,11 +77,10 @@ function buildHistogram(hours: number[], binSizeH: number) {
     const count = hours.filter(h => h >= start && h < end).length;
     bins.push({ label: `${start}–${end}h`, from: start, to: end, count, cumPct: 0 });
   }
-  // Compute cumulative %
   let cum = 0;
   for (const b of bins) {
     cum += b.count;
-    b.cumPct = Math.round((cum / hours.length) * 1000) / 10; // one decimal
+    b.cumPct = Math.round((cum / hours.length) * 1000) / 10;
   }
   return bins;
 }
@@ -102,40 +108,69 @@ function HistoTooltip({ active, payload, label }: any) {
 export default function RouteDetailPage() {
   const [payload, setPayload] = useState<RouteDetailPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set of tag_ids excluded from calculation
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem('route_detail_payload');
-      if (!raw) { setError('No route data found. Please open this page from the Transit by Route table.'); return; }
+      if (!raw) {
+        setError('No route data found. Please open this page from the Transit by Route table.');
+        return;
+      }
       const data = JSON.parse(raw) as RouteDetailPayload;
       setPayload(data);
       document.title = `Route Analysis: ${data.route}`;
-    } catch (e) {
+    } catch {
       setError('Failed to parse route data.');
     }
   }, []);
 
-  /* ── Derived stats ── */
-  const { hours, p25, p75, iqrFence, outliers, histData, binSize } = useMemo(() => {
-    if (!payload) return { hours: [], p25: null, p75: null, iqrFence: null, outliers: [], histData: [], binSize: 6 };
+  /* ── Toggle exclusion ── */
+  const toggleExclude = (tag_id: string) => {
+    setExcluded(prev => {
+      const next = new Set(prev);
+      if (next.has(tag_id)) next.delete(tag_id);
+      else next.add(tag_id);
+      return next;
+    });
+  };
 
-    const hrs = payload.journeys
+  /* ── Derived stats (recalculated when exclusions change) ── */
+  const { hours, p25, p75, iqrFence, lowerFence, outliers, histData, binSize, avgH, p50H } = useMemo(() => {
+    if (!payload) {
+      return { hours: [], p25: null, p75: null, iqrFence: null, lowerFence: null, outliers: [], histData: [], binSize: 6, avgH: null, p50H: null };
+    }
+
+    // Active journeys (not excluded)
+    const active = payload.journeys.filter(j => !excluded.has(j.tag_id));
+
+    const hrs = active
       .map(j => j.international_transit_hours)
       .filter((h): h is number => h !== null && h > 0);
 
     const q1 = percentile(hrs, 25) ?? 0;
     const q3 = percentile(hrs, 75) ?? 0;
     const iqr = q3 - q1;
-    // Standard Tukey fence: 1.5 × IQR
-    const lowerFence = Math.max(0, q1 - 1.5 * iqr);
-    const upperFence = q3 + 1.5 * iqr;
+    const lf = Math.max(0, q1 - 1.5 * iqr);
+    const uf = q3 + 1.5 * iqr;
+
+    // Outliers from the FULL payload (not filtered by excluded), so user can still see and re-include them
+    const allHrs = payload.journeys
+      .map(j => j.international_transit_hours)
+      .filter((h): h is number => h !== null && h > 0);
+    const allQ1 = percentile(allHrs, 25) ?? 0;
+    const allQ3 = percentile(allHrs, 75) ?? 0;
+    const allIqr = allQ3 - allQ1;
+    const allUf = allQ3 + 1.5 * allIqr;
+    const allLf = Math.max(0, allQ1 - 1.5 * allIqr);
 
     const outlierJourneys = payload.journeys.filter(j => {
       const h = j.international_transit_hours;
-      return h !== null && h > 0 && (h < lowerFence || h > upperFence);
+      return h !== null && h > 0 && (h < allLf || h > allUf);
     }).sort((a, b) => (b.international_transit_hours ?? 0) - (a.international_transit_hours ?? 0));
 
-    // Auto bin size: ~20 bins across the range
+    // Auto bin size
     const maxH = hrs.length ? Math.max(...hrs) : 100;
     const rawBin = maxH / 20;
     const niceBins = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 96, 120, 168];
@@ -143,14 +178,26 @@ export default function RouteDetailPage() {
 
     return {
       hours: hrs,
-      p25: q1,
-      p75: q3,
-      iqrFence: upperFence,
+      p25: r1(q1),
+      p75: r1(q3),
+      iqrFence: r1(uf),
+      lowerFence: r1(lf),
       outliers: outlierJourneys,
       histData: buildHistogram(hrs, bs),
       binSize: bs,
+      avgH: r1(mean(hrs)),
+      p50H: r1(percentile(hrs, 50)),
     };
-  }, [payload]);
+  }, [payload, excluded]);
+
+  /* ── Open tag tracker in new tab ── */
+  const openTracker = (j: RfidJourney) => {
+    localStorage.setItem('tag_track_payload', JSON.stringify({
+      tag_id: j.tag_id,
+      s9id: j.s9id,
+    }));
+    window.open('/tag-track', '_blank');
+  };
 
   /* ── Loading / error states ── */
   if (error) {
@@ -175,49 +222,69 @@ export default function RouteDetailPage() {
     );
   }
 
-  const avgH = mean(hours);
-  const p50H = percentile(hours, 50);
-
-  /* ── IQR fence label for reference line ── */
-  const fenceLabel = iqrFence !== null ? `Outlier fence (${Math.round(iqrFence * 10) / 10}h)` : '';
+  const activeCount = payload.journeys.filter(j => !excluded.has(j.tag_id)).length;
+  const fenceLabel = iqrFence !== null ? `Fence: ${iqrFence}h` : '';
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
-      {/* ── Header ── */}
-      <header className="bg-white border-b border-slate-200 px-8 py-5 shadow-sm">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-1">RFID Transit Analysis</p>
-          <h1 className="text-2xl font-bold text-slate-900">{payload.route}</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {payload.count.toLocaleString()} receptacles · {hours.length.toLocaleString()} with transit time data
-          </p>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          STICKY HEADER — fixed at top during scroll
+      ══════════════════════════════════════════════════════════════════════ */}
+      <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-5xl mx-auto px-8 py-4">
+          {/* Title row */}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-0.5">RFID Transit Analysis</p>
+              <h1 className="text-xl font-bold text-slate-900 leading-tight">{payload.route}</h1>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {payload.count.toLocaleString()} receptacles · {hours.length.toLocaleString()} with transit time data
+                {excluded.size > 0 && (
+                  <span className="ml-2 text-amber-600 font-semibold">
+                    · {excluded.size} excluded from calculation
+                    <button
+                      onClick={() => setExcluded(new Set())}
+                      className="ml-1.5 underline hover:no-underline text-amber-700"
+                    >
+                      reset
+                    </button>
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* KPI strip — live updated */}
+          <div className="grid grid-cols-4 gap-3 mt-3">
+            {[
+              { label: 'N (active)', value: activeCount.toLocaleString(), color: 'text-slate-800' },
+              { label: 'Avg transit', value: fmt(avgH), color: 'text-indigo-600' },
+              { label: 'Median (P50)', value: fmt(p50H), color: 'text-emerald-600' },
+              { label: 'IQR (P25–P75)', value: `${fmt(p25)} – ${fmt(p75)}`, color: 'text-slate-700' },
+            ].map(k => (
+              <div key={k.label} className="bg-slate-50 rounded-lg border border-slate-200 px-3 py-2">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{k.label}</p>
+                <p className={`text-base font-bold ${k.color} leading-tight mt-0.5`}>{k.value}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </header>
 
+      {/* ══════════════════════════════════════════════════════════════════════
+          MAIN CONTENT
+      ══════════════════════════════════════════════════════════════════════ */}
       <main className="max-w-5xl mx-auto px-8 py-8 space-y-8">
-
-        {/* ── Summary KPI strip ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { label: 'N (transit pairs)', value: payload.count.toLocaleString(), color: 'text-slate-800' },
-            { label: 'Avg transit', value: fmt(avgH), color: 'text-indigo-600' },
-            { label: 'Median (P50)', value: fmt(p50H), color: 'text-emerald-600' },
-            { label: 'IQR (P25–P75)', value: `${fmt(p25)} – ${fmt(p75)}`, color: 'text-slate-700' },
-          ].map(k => (
-            <div key={k.label} className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
-              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider mb-1">{k.label}</p>
-              <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
-            </div>
-          ))}
-        </div>
 
         {/* ── Histogram ── */}
         <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm">
           <div className="mb-4">
             <h2 className="text-sm font-bold text-slate-800">Transit Time Distribution</h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Frequency histogram (bars, {binSize}h bins) with cumulative percentage line (red).
-              Dashed red line marks the Tukey upper fence (Q3 + 1.5 × IQR) — receptacles to the right are potential outliers.
+              Frequency histogram ({binSize}h bins) with cumulative % line (red).
+              Dashed red line = Tukey upper fence (Q3 + 1.5 × IQR = {iqrFence}h).
+              {excluded.size > 0 && <span className="text-amber-600 font-medium"> Excludes {excluded.size} manually removed record{excluded.size !== 1 ? 's' : ''}.</span>}
             </p>
           </div>
           {histData.length > 0 ? (
@@ -246,10 +313,7 @@ export default function RouteDetailPage() {
                   label={{ value: 'Cumulative %', angle: 90, position: 'insideRight', offset: 10, style: { fontSize: 10, fill: '#ef4444' } }}
                 />
                 <Tooltip content={<HistoTooltip />} />
-                <Legend
-                  wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-                  formatter={(value) => <span className="text-slate-600">{value}</span>}
-                />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
                 <Bar
                   yAxisId="left"
                   dataKey="count"
@@ -267,9 +331,7 @@ export default function RouteDetailPage() {
                   strokeWidth={2}
                   dot={false}
                 />
-                {/* Outlier fence reference line */}
                 {iqrFence !== null && (() => {
-                  // Find the bin index that contains the fence value
                   const fenceBin = histData.find(b => b.from <= iqrFence && b.to > iqrFence);
                   return fenceBin ? (
                     <ReferenceLine
@@ -295,14 +357,24 @@ export default function RouteDetailPage() {
             <div>
               <h2 className="text-sm font-bold text-slate-800">Potential Outliers</h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Receptacles outside the Tukey fence (transit &lt; {Math.round((p25 ?? 0 - 1.5 * ((p75 ?? 0) - (p25 ?? 0))) * 10) / 10}h
-                or &gt; {Math.round((iqrFence ?? 0) * 10) / 10}h).
-                Sorted by transit time descending.
+                Receptacles outside the Tukey fence (&gt; {iqrFence}h or &lt; {lowerFence}h).
+                Check the box to exclude a record from the calculation above.
+                Use the <span className="font-semibold text-indigo-600">Track</span> button to investigate a specific tag.
               </p>
             </div>
-            <span className="flex-shrink-0 inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
-              {outliers.length} outlier{outliers.length !== 1 ? 's' : ''}
-            </span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {excluded.size > 0 && (
+                <button
+                  onClick={() => setExcluded(new Set())}
+                  className="text-xs px-2.5 py-1 rounded-md border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all"
+                >
+                  Reset all ({excluded.size})
+                </button>
+              )}
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+                {outliers.length} outlier{outliers.length !== 1 ? 's' : ''}
+              </span>
+            </div>
           </div>
 
           {outliers.length === 0 ? (
@@ -314,33 +386,54 @@ export default function RouteDetailPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
+                    <th className="py-2.5 px-3 text-slate-500 font-semibold w-8">
+                      <span className="sr-only">Exclude</span>
+                    </th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">S9id</th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Tag ID</th>
-                    <th className="text-right py-2.5 px-3 text-slate-500 font-semibold">Transit (h)</th>
+                    <th className="text-right py-2.5 px-3 text-slate-500 font-semibold">Transit</th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Departure centre</th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Departure time</th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Arrival centre</th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Arrival time</th>
-                    <th className="text-right py-2.5 px-3 text-slate-500 font-semibold">Origin readings</th>
-                    <th className="text-right py-2.5 px-3 text-slate-500 font-semibold">Dest readings</th>
+                    <th className="text-right py-2.5 px-3 text-slate-500 font-semibold">Rdgs O</th>
+                    <th className="text-right py-2.5 px-3 text-slate-500 font-semibold">Rdgs D</th>
+                    <th className="py-2.5 px-3 text-slate-500 font-semibold" />
                   </tr>
                 </thead>
                 <tbody>
                   {outliers.map((j, i) => {
                     const h = j.international_transit_hours ?? 0;
+                    const isExcluded = excluded.has(j.tag_id);
                     const isHigh = iqrFence !== null && h > iqrFence;
                     return (
                       <tr
                         key={i}
-                        className={`border-b border-slate-50 hover:bg-slate-50 transition-colors ${isHigh ? 'bg-red-50/40' : 'bg-amber-50/40'}`}
+                        className={`border-b border-slate-50 transition-colors ${
+                          isExcluded
+                            ? 'opacity-40 bg-slate-50'
+                            : isHigh
+                              ? 'bg-red-50/40 hover:bg-red-50'
+                              : 'bg-amber-50/40 hover:bg-amber-50'
+                        }`}
                       >
+                        {/* Exclude checkbox */}
+                        <td className="py-2 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isExcluded}
+                            onChange={() => toggleExclude(j.tag_id)}
+                            title={isExcluded ? 'Re-include in calculation' : 'Exclude from calculation'}
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 cursor-pointer accent-indigo-600"
+                          />
+                        </td>
                         <td className="py-2 px-3 font-mono text-slate-700 font-medium">{j.s9id || '—'}</td>
                         <td className="py-2 px-3 font-mono text-slate-600">{j.tag_id}</td>
                         <td className="py-2 px-3 text-right">
                           <span className={`font-bold ${isHigh ? 'text-red-600' : 'text-amber-600'}`}>
                             {Math.round(h * 10) / 10}h
                           </span>
-                          <span className="text-slate-400 ml-1">({Math.round(h / 24 * 10) / 10}d)</span>
+                          <span className="text-slate-400 ml-1 text-[10px]">({Math.round(h / 24 * 10) / 10}d)</span>
                         </td>
                         <td className="py-2 px-3 text-slate-600">{j.departure_centre || j.origin_centre || '—'}</td>
                         <td className="py-2 px-3 text-slate-500 whitespace-nowrap">{fmtDate(j.departure_time || j.origin_time)}</td>
@@ -348,6 +441,19 @@ export default function RouteDetailPage() {
                         <td className="py-2 px-3 text-slate-500 whitespace-nowrap">{fmtDate(j.arrival_time || j.dest_time)}</td>
                         <td className="py-2 px-3 text-right text-slate-500">{j.origin_readings}</td>
                         <td className="py-2 px-3 text-right text-slate-500">{j.dest_readings}</td>
+                        {/* Track button */}
+                        <td className="py-2 px-3 text-right">
+                          <button
+                            onClick={() => openTracker(j)}
+                            title="Open tag tracking in new tab"
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-400 transition-all shadow-sm whitespace-nowrap"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                            </svg>
+                            Track
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -359,7 +465,7 @@ export default function RouteDetailPage() {
 
         {/* ── Footer ── */}
         <p className="text-center text-xs text-slate-400 pb-4">
-          EDGE · Route analysis generated {new Date().toLocaleString('en-GB')} · Outlier method: Tukey fence (Q3 + 1.5 × IQR)
+          EDGE · Route analysis · {new Date().toLocaleString('en-GB')} · Outlier method: Tukey fence (Q3 + 1.5 × IQR)
         </p>
       </main>
     </div>
