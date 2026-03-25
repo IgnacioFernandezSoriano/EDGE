@@ -369,22 +369,36 @@ export default function TagTrackPage() {
     try {
       const raw = localStorage.getItem('tag_track_payload');
       if (!raw) { setError('No tag data found. Open this page from the outlier table.'); setLoading(false); return; }
-      const { tag_id, s9id: sid } = JSON.parse(raw) as { tag_id: string; s9id: string | null };
+      const payload = JSON.parse(raw) as {
+        tag_id: string;
+        s9id: string | null;
+        readings?: RfidRow[];
+        readerMap?: [string, ReaderMaster][];
+      };
+      const { tag_id, s9id: sid } = payload;
       setTagId(tag_id);
       setS9id(sid);
       document.title = `Tag Track: ${tag_id}`;
 
-      Promise.all([
-        fetchTagReadings(tag_id, sid),
-        fetchReadersMaster(),
-      ]).then(([readings, rmap]) => {
-        setRows(readings);
-        setReaderMap(rmap);
+      if (payload.readings && payload.readerMap) {
+        // Data already available — no network call needed
+        setRows(payload.readings);
+        setReaderMap(new Map(payload.readerMap));
         setLoading(false);
-      }).catch(e => {
-        setError(`Failed to load data: ${e.message}`);
-        setLoading(false);
-      });
+      } else {
+        // Fallback: fetch from Supabase (e.g. if opened directly)
+        Promise.all([
+          fetchTagReadings(tag_id, sid),
+          fetchReadersMaster(),
+        ]).then(([readings, rmap]) => {
+          setRows(readings);
+          setReaderMap(rmap);
+          setLoading(false);
+        }).catch(e => {
+          setError(`Failed to load data: ${e.message}`);
+          setLoading(false);
+        });
+      }
     } catch {
       setError('Failed to parse tag data.');
       setLoading(false);

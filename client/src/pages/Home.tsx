@@ -1653,6 +1653,14 @@ export default function Home() {
                                       const rows = epcis.journeys.filter(j =>
                                         j.origin_country === r.origin && (j.arrival_country || j.dest_country) === r.dest && j.has_international
                                       );
+                                      // Build a map of tag_id -> filtered readings for instant Track lookup
+                                      const tagIds = new Set(rows.map(j => j.tag_id));
+                                      const routeReadings = epcis.allReadings.filter(rd =>
+                                        (rd.tag_id && tagIds.has(rd.tag_id)) ||
+                                        (rd.s9id   && tagIds.has(rd.s9id))
+                                      );
+                                      // Serialize readerMap as array of [key, value] pairs
+                                      const readerMapArr = Array.from(epcis.readerMap.entries());
                                       localStorage.setItem('route_detail_payload', JSON.stringify({
                                         route: r.route,
                                         origin: r.origin,
@@ -1663,6 +1671,8 @@ export default function Home() {
                                         p75H: r.p75H,
                                         count: r.count,
                                         journeys: rows,
+                                        allReadings: routeReadings,
+                                        readerMap: readerMapArr,
                                       }));
                                       window.open('/route-detail', '_blank');
                                     }}

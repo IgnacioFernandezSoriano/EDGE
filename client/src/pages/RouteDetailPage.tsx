@@ -20,6 +20,28 @@ import {
 import type { RfidJourney } from '@/hooks/useEpcisData';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
+interface RfidReadingRaw {
+  tag_id: string | null;
+  s9id: string | null;
+  event_type: string | null;
+  location: string | null;
+  impc_code: string | null;
+  event_time_local: string | null;
+  record_time: string | null;
+  country: string | null;
+  center_name: string | null;
+  read_point_id: string | null;
+  status: string | null;
+}
+
+interface ReaderMasterRaw {
+  read_point_id: string;
+  impc_code: string | null;
+  country: string | null;
+  center_name: string | null;
+  td_reader: boolean | null;
+}
+
 interface RouteDetailPayload {
   route: string;
   origin: string;
@@ -30,6 +52,9 @@ interface RouteDetailPayload {
   p75H: number | null;
   count: number;
   journeys: RfidJourney[];
+  // Pre-loaded readings + reader master for instant Track lookup
+  allReadings?: RfidReadingRaw[];
+  readerMap?: [string, ReaderMasterRaw][];
 }
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
@@ -192,10 +217,27 @@ export default function RouteDetailPage() {
 
   /* ── Open tag tracker in new tab ── */
   const openTracker = (j: RfidJourney) => {
-    localStorage.setItem('tag_track_payload', JSON.stringify({
-      tag_id: j.tag_id,
-      s9id: j.s9id,
-    }));
+    if (payload?.allReadings && payload?.readerMap) {
+      // Filter only the readings for this specific tag — instant, no network call
+      const tagReadings = payload.allReadings.filter(r =>
+        (r.tag_id && r.tag_id === j.tag_id) ||
+        (r.s9id   && r.s9id   === j.tag_id) ||
+        (j.s9id && r.tag_id === j.s9id) ||
+        (j.s9id && r.s9id   === j.s9id)
+      );
+      localStorage.setItem('tag_track_payload', JSON.stringify({
+        tag_id: j.tag_id,
+        s9id: j.s9id,
+        readings: tagReadings,
+        readerMap: payload.readerMap,
+      }));
+    } else {
+      // Fallback: let TagTrackPage fetch from Supabase
+      localStorage.setItem('tag_track_payload', JSON.stringify({
+        tag_id: j.tag_id,
+        s9id: j.s9id,
+      }));
+    }
     window.open('/tag-track', '_blank');
   };
 
