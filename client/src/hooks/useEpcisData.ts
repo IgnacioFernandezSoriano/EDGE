@@ -271,7 +271,10 @@ function readingsToJourneys(
     // independientemente del tipo de lector (AMU o OE).
     // Se toma el último de todos los last-per-centre del bloque origen.
     const allOriginEntries = [...originLastByCentre.values()];
-    const departureEntry = allOriginEntries.length > 0
+    // CONDICIÓN CLAVE: solo existe evento de salida si el tag tiene lecturas en
+    // al menos dos países distintos (destBlock.length > 0). Un tag con lecturas
+    // en un único país NO tiene evento de salida internacional.
+    const departureEntry = (allOriginEntries.length > 0 && destBlock.length > 0)
       ? allOriginEntries.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
       : null;
 
