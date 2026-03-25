@@ -164,9 +164,9 @@ export default function RouteDetailPage() {
   };
 
   /* ── Derived stats (recalculated when exclusions change) ── */
-  const { hours, p25, p75, iqrFence, lowerFence, outliers, histData, binSize, avgH, p50H } = useMemo(() => {
+  const { hours, p25, p75, iqrFence, lowerFence, outliers, histData, binSize, avgH, p50H, maxHours } = useMemo(() => {
     if (!payload) {
-      return { hours: [], p25: null, p75: null, iqrFence: null, lowerFence: null, outliers: [], histData: [], binSize: 6, avgH: null, p50H: null };
+      return { hours: [], p25: null, p75: null, iqrFence: null, lowerFence: null, outliers: [], histData: [], binSize: 6, avgH: null, p50H: null, maxHours: 1000 };
     }
 
     // Active journeys (not excluded)
