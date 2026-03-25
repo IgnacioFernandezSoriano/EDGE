@@ -358,8 +358,8 @@ export default function RouteDetailPage() {
             </p>
           </div>
           {histData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart data={histData} margin={{ top: 10, right: 50, left: 0, bottom: 40 }}>
+            <ResponsiveContainer width="100%" height={360}>
+              <ComposedChart data={histData} margin={{ top: 60, right: 50, left: 0, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis
                   dataKey="label"
@@ -401,6 +401,7 @@ export default function RouteDetailPage() {
                   strokeWidth={2}
                   dot={false}
                 />
+                {/* Tukey upper fence — red dashed */}
                 {iqrFence !== null && (() => {
                   const fenceBin = histData.find(b => b.from <= iqrFence && b.to > iqrFence);
                   return fenceBin ? (
@@ -410,7 +411,63 @@ export default function RouteDetailPage() {
                       stroke="#ef4444"
                       strokeDasharray="6 3"
                       strokeWidth={1.5}
-                      label={{ value: fenceLabel, position: 'top', fontSize: 10, fill: '#ef4444' }}
+                      label={{ value: `Fence: ${iqrFence}h`, position: 'insideTopRight', fontSize: 9, fill: '#ef4444' }}
+                    />
+                  ) : null;
+                })()}
+                {/* P25 — amber */}
+                {p25 !== null && (() => {
+                  const bin = histData.find(b => b.from <= p25 && b.to > p25) ?? histData[0];
+                  return bin ? (
+                    <ReferenceLine
+                      yAxisId="left"
+                      x={bin.label}
+                      stroke="#f59e0b"
+                      strokeDasharray="4 2"
+                      strokeWidth={1.5}
+                      label={{ value: `P25: ${p25}h`, position: 'insideTopLeft', fontSize: 9, fill: '#d97706', offset: 4 }}
+                    />
+                  ) : null;
+                })()}
+                {/* Median (P50) — emerald */}
+                {p50H !== null && (() => {
+                  const bin = histData.find(b => b.from <= p50H && b.to > p50H) ?? histData[0];
+                  return bin ? (
+                    <ReferenceLine
+                      yAxisId="left"
+                      x={bin.label}
+                      stroke="#10b981"
+                      strokeDasharray="4 2"
+                      strokeWidth={1.5}
+                      label={{ value: `Median: ${p50H}h`, position: 'insideTopLeft', fontSize: 9, fill: '#059669', offset: 4 }}
+                    />
+                  ) : null;
+                })()}
+                {/* Average — indigo */}
+                {avgH !== null && (() => {
+                  const bin = histData.find(b => b.from <= avgH && b.to > avgH) ?? histData[0];
+                  return bin ? (
+                    <ReferenceLine
+                      yAxisId="left"
+                      x={bin.label}
+                      stroke="#6366f1"
+                      strokeDasharray="4 2"
+                      strokeWidth={1.5}
+                      label={{ value: `Avg: ${avgH}h`, position: 'insideTopLeft', fontSize: 9, fill: '#4f46e5', offset: 4 }}
+                    />
+                  ) : null;
+                })()}
+                {/* P75 — orange */}
+                {p75 !== null && (() => {
+                  const bin = histData.find(b => b.from <= p75 && b.to > p75) ?? histData[0];
+                  return bin ? (
+                    <ReferenceLine
+                      yAxisId="left"
+                      x={bin.label}
+                      stroke="#f97316"
+                      strokeDasharray="4 2"
+                      strokeWidth={1.5}
+                      label={{ value: `P75: ${p75}h`, position: 'insideTopLeft', fontSize: 9, fill: '#ea580c', offset: 4 }}
                     />
                   ) : null;
                 })()}
