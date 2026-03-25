@@ -386,7 +386,7 @@ export default function RouteDetailPage() {
             </p>
           </div>
           {histData.length > 0 ? (
-            <>
+            <div>
             <ResponsiveContainer width="100%" height={360}>
               <ComposedChart data={histData} margin={{ top: 60, right: 50, left: 0, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -502,11 +502,7 @@ export default function RouteDetailPage() {
                 })()}
               </ComposedChart>
             </ResponsiveContainer>
-          ) : (
-            <p className="text-sm text-slate-400 py-8 text-center">No transit time data available for this route.</p>
-          )}
-            {/* ── Threshold slider ── */}
-            {histData.length > 0 && (
+              {/* ── Threshold slider ── */}
               <div className="mt-5 px-2">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-semibold text-slate-600">Outlier threshold</span>
@@ -542,8 +538,10 @@ export default function RouteDetailPage() {
                   <span>{Math.round(sliderMax)}h</span>
                 </div>
               </div>
-            )}
-            </>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400 py-8 text-center">No transit time data available for this route.</p>
+          )}
         </div>
 
         {/* ── Outlier table ── */}
