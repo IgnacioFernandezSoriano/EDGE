@@ -178,8 +178,10 @@ function parseLocation(location: string | null): { country: string; centre: stri
 function readingsToJourneys(
   readings: RfidReading[],
   readerMap: Map<string, RfidReaderMaster>,
-  ediTagMap: Map<string, EdiTagInfo> = new Map()
+  ediTagMap: Map<string, EdiTagInfo>
 ): RfidJourney[] {
+  // Defensive: ensure ediTagMap is always a valid Map
+  const safeEdiMap: Map<string, EdiTagInfo> = (ediTagMap instanceof Map) ? ediTagMap : new Map();
   // Group by tag_id
   const byTag = new Map<string, RfidReading[]>();
   for (const r of readings) {
@@ -281,7 +283,7 @@ function readingsToJourneys(
     // la tabla "datos EDI" (vía ID Relation) para determinar si ese país es el origen
     // del receptáculo (campo origin). Si el IMPC del lector coincide con origin_impc,
     // el tag se clasifica como Departure. Si coincide con destination_impc, como Arrival.
-    const ediInfo = ediTagMap.get(tag_id);
+    const ediInfo = safeEdiMap.get(tag_id);
     let departureEntry: typeof allOriginEntries[0] | null = null;
     let ediArrivalEntry: typeof allOriginEntries[0] | null = null;
     if (allOriginEntries.length > 0 && destBlock.length > 0) {
