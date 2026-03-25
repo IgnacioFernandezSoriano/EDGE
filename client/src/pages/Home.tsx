@@ -1613,7 +1613,8 @@ export default function Home() {
                               <th className="text-right py-2 pr-4 text-slate-500 font-medium">N</th>
                               <th className="text-right py-2 pr-4 text-slate-500 font-medium">Avg (h)</th>
                               <th className="text-right py-2 pr-4 text-slate-500 font-medium">P50 / Median (h)</th>
-                              <th className="text-right py-2 text-slate-500 font-medium">IQR P25–P75 (h)</th>
+                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">IQR P25–P75 (h)</th>
+                              <th className="py-2 text-slate-500 font-medium" />
                             </tr>
                           </thead>
                           <tbody>
@@ -1640,10 +1641,38 @@ export default function Home() {
                                     <span className="font-semibold text-emerald-600">{r.p50H}h</span>
                                   ) : <span className="text-slate-300">—</span>}
                                 </td>
-                                <td className="py-2 text-right">
+                                <td className="py-2 pr-4 text-right">
                                   {r.p25H !== null && r.p75H !== null ? (
                                     <span className="text-slate-600">{r.p25H}h – {r.p75H}h</span>
                                   ) : <span className="text-slate-300">—</span>}
+                                </td>
+                                <td className="py-2 text-right" onClick={e => e.stopPropagation()}>
+                                  <button
+                                    title="Open route analysis in new tab"
+                                    onClick={() => {
+                                      const rows = epcis.journeys.filter(j =>
+                                        j.origin_country === r.origin && (j.arrival_country || j.dest_country) === r.dest && j.has_international
+                                      );
+                                      localStorage.setItem('route_detail_payload', JSON.stringify({
+                                        route: r.route,
+                                        origin: r.origin,
+                                        dest: r.dest,
+                                        avgH: r.avgH,
+                                        p50H: r.p50H,
+                                        p25H: r.p25H,
+                                        p75H: r.p75H,
+                                        count: r.count,
+                                        journeys: rows,
+                                      }));
+                                      window.open('/route-detail', '_blank');
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-400 transition-all shadow-sm whitespace-nowrap"
+                                  >
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                    Analyse
+                                  </button>
                                 </td>
                               </tr>
                             ))}
