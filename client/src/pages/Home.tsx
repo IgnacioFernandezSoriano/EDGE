@@ -1331,7 +1331,14 @@ export default function Home() {
                 <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
 
-                  <div className="grid grid-cols-3 gap-4 mb-5">
+                  <div className="grid grid-cols-4 gap-4 mb-5">
+                    <KpiCard
+                      title="Total Tags"
+                      value={matchedTagsData ? matchedTagsData.count.toLocaleString() : '—'}
+                      subtitle="Receptacles in ID Relation for selected filters"
+                      badge={{ label: 'total', color: 'blue' }}
+                      tooltip="TOTAL TAGS: unique receptacles registered in the ID Relation table that match the active date and country filters. This is the universe of receptacles for the selected period — the baseline against which Departure, Transit and Arrival rates are measured. A receptacle appears here if it has a linked tag_id and s9id pair recorded within the filter window, regardless of whether any RFID reading was captured."
+                    />
                     <KpiCard
                       title="Tags Departure"
                       value={epcis.stats.kpiRfPredes.toLocaleString()}
