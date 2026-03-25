@@ -135,6 +135,8 @@ export default function RouteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   // Set of tag_ids excluded from calculation
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  // Manual outlier threshold (null = use Tukey fence)
+  const [customThreshold, setCustomThreshold] = useState<number | null>(null);
 
   useEffect(() => {
     try {
@@ -190,9 +192,10 @@ export default function RouteDetailPage() {
     const allUf = allQ3 + 1.5 * allIqr;
     const allLf = Math.max(0, allQ1 - 1.5 * allIqr);
 
+    const effectiveUf = customThreshold !== null ? customThreshold : allUf;
     const outlierJourneys = payload.journeys.filter(j => {
       const h = j.international_transit_hours;
-      return h !== null && h > 0 && (h < allLf || h > allUf);
+      return h !== null && h > 0 && (h < allLf || h > effectiveUf);
     }).sort((a, b) => (b.international_transit_hours ?? 0) - (a.international_transit_hours ?? 0));
 
     // Auto bin size
@@ -212,8 +215,9 @@ export default function RouteDetailPage() {
       binSize: bs,
       avgH: r1(mean(hrs)),
       p50H: r1(percentile(hrs, 50)),
+      maxHours: hrs.length ? Math.max(...hrs) : 1000,
     };
-  }, [payload, excluded]);
+  }, [payload, excluded, customThreshold]);
 
   /* ── Download CSV of non-excluded outliers ── */
   const downloadOutliersCSV = () => {
@@ -294,6 +298,30 @@ export default function RouteDetailPage() {
 
   const activeCount = payload.journeys.filter(j => !excluded.has(j.tag_id)).length;
   const fenceLabel = iqrFence !== null ? `Fence: ${iqrFence}h` : '';
+  // Effective threshold for the slider display
+  const effectiveThreshold = customThreshold !== null ? customThreshold : (iqrFence ?? 0);
+  const sliderMax = (maxHours ?? 1000);
+  // Select-all / deselect-all logic
+  const allOutlierIds = outliers.map(j => j.tag_id);
+  const allExcluded = allOutlierIds.length > 0 && allOutlierIds.every(id => excluded.has(id));
+  const someExcluded = allOutlierIds.some(id => excluded.has(id));
+  const toggleSelectAll = () => {
+    if (allExcluded) {
+      // deselect all
+      setExcluded(prev => {
+        const next = new Set(prev);
+        allOutlierIds.forEach(id => next.delete(id));
+        return next;
+      });
+    } else {
+      // select all
+      setExcluded(prev => {
+        const next = new Set(prev);
+        allOutlierIds.forEach(id => next.add(id));
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -358,6 +386,7 @@ export default function RouteDetailPage() {
             </p>
           </div>
           {histData.length > 0 ? (
+            <>
             <ResponsiveContainer width="100%" height={360}>
               <ComposedChart data={histData} margin={{ top: 60, right: 50, left: 0, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -476,6 +505,45 @@ export default function RouteDetailPage() {
           ) : (
             <p className="text-sm text-slate-400 py-8 text-center">No transit time data available for this route.</p>
           )}
+            {/* ── Threshold slider ── */}
+            {histData.length > 0 && (
+              <div className="mt-5 px-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-semibold text-slate-600">Outlier threshold</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-indigo-700">{Math.round(effectiveThreshold)}h ({(effectiveThreshold / 24).toFixed(1)}d)</span>
+                    {customThreshold !== null && (
+                      <button
+                        onClick={() => setCustomThreshold(null)}
+                        className="text-[10px] px-2 py-0.5 rounded border border-slate-300 text-slate-500 hover:bg-slate-100 transition-all"
+                      >
+                        Reset to Tukey ({iqrFence}h)
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={sliderMax}
+                  step={Math.max(1, Math.round(sliderMax / 200))}
+                  value={Math.round(effectiveThreshold)}
+                  onChange={e => setCustomThreshold(Number(e.target.value))}
+                  className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                  style={{
+                    background: `linear-gradient(to right, #6366f1 0%, #6366f1 ${(effectiveThreshold / sliderMax) * 100}%, #e2e8f0 ${(effectiveThreshold / sliderMax) * 100}%, #e2e8f0 100%)`,
+                  }}
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                  <span>0h</span>
+                  {iqrFence !== null && (
+                    <span className="text-red-400">Tukey: {iqrFence}h</span>
+                  )}
+                  <span>{Math.round(sliderMax)}h</span>
+                </div>
+              </div>
+            )}
+            </>
         </div>
 
         {/* ── Outlier table ── */}
@@ -484,7 +552,7 @@ export default function RouteDetailPage() {
             <div>
               <h2 className="text-sm font-bold text-slate-800">Potential Outliers</h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Receptacles outside the Tukey fence (&gt; {iqrFence}h or &lt; {lowerFence}h).
+                Receptacles above threshold ({Math.round(effectiveThreshold)}h) or below lower fence ({lowerFence}h).
                 Check the box to exclude a record from the calculation above.
                 Use the <span className="font-semibold text-indigo-600">Track</span> button to investigate a specific tag.
               </p>
@@ -524,8 +592,15 @@ export default function RouteDetailPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="py-2.5 px-3 text-slate-500 font-semibold w-8">
-                      <span className="sr-only">Exclude</span>
+                    <th className="py-2.5 px-3 text-center w-8">
+                      <input
+                        type="checkbox"
+                        checked={allExcluded}
+                        ref={el => { if (el) el.indeterminate = someExcluded && !allExcluded; }}
+                        onChange={toggleSelectAll}
+                        title={allExcluded ? 'Re-include all' : 'Exclude all'}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 cursor-pointer accent-indigo-600"
+                      />
                     </th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">S9id</th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Tag ID</th>
