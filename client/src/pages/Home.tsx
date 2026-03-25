@@ -1342,9 +1342,9 @@ export default function Home() {
                     <KpiCard
                       title="Tags AMU Outbound"
                       value={epcis.stats.kpiRfPredes.toLocaleString()}
-                      subtitle="Last outbound scan before border crossing"
+                      subtitle="OUTBOUND site RFID Tags"
                       badge={{ label: 'departure', color: 'indigo' }}
-                      tooltip="Unique tags with at least one reading in the origin block. The departure event is the last reading chronologically in the origin country, regardless of reader type (AMU or OE). Equivalent to the EDI PREDES message."
+                      tooltip="Unique tag IDs with event_type = DEPARTURE: last RFID reading at the outbound AMU before crossing an international border. Physical equivalent of the EDI PREDES message."
                     />
                     <KpiCard
                       title="Tags Leg2"
@@ -1356,9 +1356,9 @@ export default function Home() {
                     <KpiCard
                       title="Tags AMU Inbound"
                       value={epcis.stats.kpiRfResdes.toLocaleString()}
-                      subtitle="First TD scan after border crossing"
+                      subtitle="INBOUND site RFID Tags"
                       badge={{ label: 'arrival', color: 'green' }}
-                      tooltip="Unique tags with at least one reading at a TD reader (td_reader=true) in the destination block. The arrival event is the first TD reading after crossing an international border. Equivalent to the EDI RESDES message."
+                      tooltip="Unique tag IDs with event_type = ARRIVAL: first RFID reading at the inbound AMU after crossing an international border. Physical equivalent of the EDI RESDES message."
                     />
                   </div>
 
@@ -1376,24 +1376,24 @@ export default function Home() {
                     <KpiCard
                       title="Origin Countries"
                       value={epcis.stats.uniqueOrigins.toLocaleString()}
-                      subtitle="distinct countries with outbound tags"
+                      subtitle="distinct origin countries"
                       badge={{ label: 'countries', color: 'blue' }}
-                      tooltip="Number of distinct origin countries for tags with a departure event (last reading in origin block). Matches the Departures by Origin Country chart."
+                      tooltip="Number of distinct origin countries with RFID readings in the selected period."
                     />
                     <KpiCard
-                      title="Departure Centres"
-                      value={epcis.stats.departureVolumeByAMU.length.toLocaleString()}
-                      subtitle="distinct departure centres"
+                      title="Origin Centres"
+                      value={epcis.stats.byOriginCentre.length.toLocaleString()}
+                      subtitle="distinct origin postal centres"
                       badge={{ label: 'centres', color: 'blue' }}
-                      tooltip="Number of distinct centres where the last outbound scan occurred before border crossing. Matches the Departure Volume by Origin Centre chart."
+                      tooltip="Number of distinct origin postal centres with RFID readings in the selected period."
                     />
                   </div>
 
                   {/* By country */}
                   <ChartCard
                     title="Departures by Origin Country"
-                    subtitle="Tags AMU Outbound by origin country"
-                    tooltip="Number of tags with a departure event (last reading in origin block), grouped by origin country. Matches the Tags AMU Outbound KPI. Click a bar to see the receptacle list."
+                    subtitle="All RFID receptacles by origin country"
+                    tooltip="Number of receptacles with an RFID origin reading, grouped by origin country. Click a bar to see the receptacle list."
                   >
                     <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byOriginCountry.length * 34)}>
                       <BarChart
@@ -1414,11 +1414,11 @@ export default function Home() {
                           onClick={(barData: any) => {
                             const country = barData?.country;
                             if (!country) return;
-                            // byOriginCountry = journeys with departure_centre != null
+                            // byOriginCountry iterates journeysWithOrigin (origin_readings > 0 || origin_country)
                             const rows = epcis.journeys.filter(j =>
-                              j.departure_centre !== null && j.origin_country === country
+                              (j.origin_readings > 0 || j.origin_country) && j.origin_country === country
                             );
-                            setDrill({ title: `Departures: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
+                            setDrill({ title: `Origin: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
                           }}
                         >
                           <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
@@ -1431,13 +1431,13 @@ export default function Home() {
                   <div className="mt-4 grid grid-cols-1 gap-4">
                     <ChartCard
                       title="Departure Volume by Origin Centre"
-                      subtitle="Last outbound scan per tag, grouped by departure centre"
-                      tooltip="Each bar shows the number of tags whose last scan in the origin country occurred at that centre. Blue = the last reader was TD (AMU); amber = the last reader was non-TD (OE). Sum of all bars = Tags AMU Outbound KPI."
+                      subtitle="AMU Outbound detections + OE-only (no AMU scan)"
+                      tooltip="Receptacles with AMU Outbound reading are grouped by their AMU departure centre (blue). Receptacles with no AMU scan are grouped by their OE origin centre (amber) — these left without AMU confirmation."
                     >
                       {/* Legend */}
                       <div className="flex gap-4 mb-3 text-xs text-slate-500">
-                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: C.indigo }} />Last scan at TD reader (AMU)</span>
-                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#F59E0B' }} />Last scan at non-TD reader (OE)</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: C.indigo }} />AMU Outbound</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#F59E0B' }} />OE only (no AMU scan)</span>
                       </div>
                       <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.departureVolumeByAMU.length * 34)}>
                         <BarChart
@@ -1456,9 +1456,10 @@ export default function Home() {
                             fill={C.indigo}
                             style={{ cursor: 'pointer' }}
                             onClick={(barData: any) => {
-                              // departure_centre = last reading in origin block (any reader type)
-                              const rows = epcis.journeys.filter(j => j.departure_centre === barData.centre);
-                              const label = `Departure Centre: ${barData.centre}`;
+                              const rows = barData.hasAMU
+                                ? epcis.journeys.filter(j => j.departure_centre === barData.centre)
+                                : epcis.journeys.filter(j => !j.departure_centre && j.origin_centre === barData.centre);
+                              const label = barData.hasAMU ? `AMU Outbound: ${barData.centre}` : `OE only (no AMU): ${barData.centre}`;
                               setDrill({ title: label, subtitle: `${rows.length} receptacles`, journeys: rows });
                             }}
                             shape={(props: any) => {
@@ -1485,24 +1486,24 @@ export default function Home() {
                     <KpiCard
                       title="Destination Countries"
                       value={epcis.stats.uniqueDestinations.toLocaleString()}
-                      subtitle="distinct countries with inbound tags"
+                      subtitle="distinct destination countries"
                       badge={{ label: 'countries', color: 'green' }}
-                      tooltip="Number of distinct destination countries for tags with an AMU Inbound event (first TD reader in destination block). Matches the Arrivals by Destination Country chart."
+                      tooltip="Number of distinct destination countries with RFID readings in the selected period."
                     />
                     <KpiCard
-                      title="Arrival Centres"
-                      value={epcis.stats.arrivalVolumeByAMU.filter(x => x.hasAMU).length.toLocaleString()}
-                      subtitle="distinct AMU arrival centres"
+                      title="Destination Centres"
+                      value={epcis.stats.byDestCentre.length.toLocaleString()}
+                      subtitle="distinct destination postal centres"
                       badge={{ label: 'centres', color: 'green' }}
-                      tooltip="Number of distinct TD centres where the first inbound scan occurred after border crossing. Matches the AMU Inbound (green) bars in the Arrival Volume chart."
+                      tooltip="Number of distinct destination postal centres with RFID readings in the selected period."
                     />
                   </div>
 
                   {/* By country */}
                   <ChartCard
                     title="Arrivals by Destination Country"
-                    subtitle="Tags AMU Inbound by destination country"
-                    tooltip="Number of tags with an AMU Inbound event (first TD reader in destination block), grouped by destination country. Matches the Tags AMU Inbound KPI. Click a bar to see the receptacle list."
+                    subtitle="End-to-end RFID pairs by destination country"
+                    tooltip="Number of receptacles with RFID readings at both origin and destination, grouped by destination country. Click a bar to see the receptacle list."
                   >
                     <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.byDestCountry.length * 34)}>
                       <BarChart
@@ -1523,12 +1524,13 @@ export default function Home() {
                           onClick={(barData: any) => {
                             const country = barData?.country;
                             if (!country) return;
-                            // byDestCountry = journeys with dest_amu_centres.length > 0
+                            // byDestCountry iterates endToEnd (has_international = true)
                             const rows = epcis.journeys.filter(j =>
-                              j.dest_amu_centres.length > 0 && (j.arrival_country || j.dest_country) === country
+                              j.has_international && (j.arrival_country || j.dest_country) === country
                             );
-                            setDrill({ title: `Arrivals: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
-                          }}                   >
+                            setDrill({ title: `Destination: ${country}`, subtitle: `${rows.length} receptacles`, journeys: rows });
+                          }}
+                        >
                           <LabelList dataKey="count" position="right" style={{ fontSize: 10, fill: '#64748b' }} />
                         </Bar>
                       </BarChart>
@@ -1539,13 +1541,13 @@ export default function Home() {
                   <div className="mt-4 grid grid-cols-1 gap-4">
                     <ChartCard
                       title="Arrival Volume by Destination Centre"
-                      subtitle="First TD scan per tag, grouped by arrival centre"
-                      tooltip="Each bar shows the number of tags whose first TD scan in the destination country occurred at that centre (green). Tags with no TD reader in destination are shown in amber. Sum of green bars = Tags AMU Inbound KPI."
+                      subtitle="AMU Inbound detections + OE-only (no AMU scan)"
+                      tooltip="Receptacles with AMU Inbound reading are grouped by their AMU arrival centre (green). Receptacles with OE Destination but no AMU scan are grouped by their OE destination centre (amber) — these arrived without AMU confirmation."
                     >
                       {/* Legend */}
                       <div className="flex gap-4 mb-3 text-xs text-slate-500">
-                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: C.emerald }} />First scan at TD reader (AMU Inbound)</span>
-                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#F59E0B' }} />No TD scan (non-TD reader only)</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: C.emerald }} />AMU Inbound</span>
+                        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#F59E0B' }} />OE only (no AMU scan)</span>
                       </div>
                       <ResponsiveContainer width="100%" height={Math.max(220, epcis.stats.arrivalVolumeByAMU.length * 34)}>
                         <BarChart
@@ -1564,12 +1566,10 @@ export default function Home() {
                             fill={C.emerald}
                             style={{ cursor: 'pointer' }}
                             onClick={(barData: any) => {
-                              // Green bars: arrival_centre (first TD reader in dest block)
-                              // Amber bars: dest_oe_centres only (no TD reader in dest)
                               const rows = barData.hasAMU
                                 ? epcis.journeys.filter(j => j.arrival_centre === barData.centre)
-                                : epcis.journeys.filter(j => j.dest_oe_centres.includes(barData.centre) && j.dest_amu_centres.length === 0);
-                              const label = barData.hasAMU ? `AMU Inbound: ${barData.centre}` : `No TD scan: ${barData.centre}`;
+                                : epcis.journeys.filter(j => !j.arrival_centre && j.dest_centre === barData.centre);
+                              const label = barData.hasAMU ? `AMU Inbound: ${barData.centre}` : `OE only (no AMU): ${barData.centre}`;
                               setDrill({ title: label, subtitle: `${rows.length} receptacles`, journeys: rows });
                             }}
                             shape={(props: any) => {
