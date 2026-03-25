@@ -9,7 +9,8 @@
  *   1. Filtra allReadings por tag_id (campo principal) o s9id (complementario).
  *   2. Ordena por record_time ASC.
  *   3. Identifica cambio de país → Bloque Origen / Bloque Destino.
- *   4. Bloque Origen: última lectura por centro → OE Origin (td_reader=false) / AMU Outbound (td_reader=true).
+ *   4. Bloque Origen: última lectura por centro. AMU Outbound = última lectura de todo el bloque origen (sin filtro td_reader).
+ *      OE Origin = última lectura de centros con td_reader=false.
  *   5. Bloque Destino: primera lectura por centro → AMU Inbound (td_reader=true) / OE Destination (td_reader=false).
  *   6. Leg2 = tiene AMU Outbound Y AMU Inbound.
  */
@@ -386,7 +387,9 @@ function searchInMemory(
     (a.r.record_time ?? '') < (b.r.record_time ?? '') ? -1 : 1;
 
   const oeOriginEntry    = originOE.length  > 0 ? [...originOE].sort(byTime).at(-1)!  : null;
-  const amuOutboundEntry = originAMU.length > 0 ? [...originAMU].sort(byTime).at(-1)! : null;
+  // AMU Outbound: last reading in the entire origin block, regardless of td_reader.
+  const allOriginEntries = Array.from(originLastByCentre.values()).map(r => ({ r, info: getInfo(r) }));
+  const amuOutboundEntry = allOriginEntries.length > 0 ? [...allOriginEntries].sort(byTime).at(-1)! : null;
   const amuInboundEntry  = destAMU.length   > 0 ? [...destAMU].sort(byTime)[0]        : null;
   const oeDestEntry      = destOE.length    > 0 ? [...destOE].sort(byTime)[0]         : null;
 
