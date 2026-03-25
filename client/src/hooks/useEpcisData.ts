@@ -266,33 +266,42 @@ function readingsToJourneys(
     }
 
     // Step 4: Select final hito readings
-    // OE Origin: last of all last-per-centre with td_reader=false in origin block
-    const oeOriginEntry = originOE.length > 0
-      ? originOE.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
+    //
+    // DEPARTURE (salida del país): última lectura cronológica del bloque origen,
+    // independientemente del tipo de lector (AMU o OE).
+    // Se toma el último de todos los last-per-centre del bloque origen.
+    const allOriginEntries = [...originLastByCentre.values()];
+    const departureEntry = allOriginEntries.length > 0
+      ? allOriginEntries.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
       : null;
 
-    // AMU Outbound: last of all last-per-centre with td_reader=true in origin block
-    const amuOutboundEntry = originAMU.length > 0
-      ? originAMU.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
-      : null;
-
-    // AMU Inbound: first of all first-per-centre with td_reader=true in dest block
+    // ARRIVAL (entrada al país destino): primera lectura de un lector TD (td_reader=true)
+    // en el bloque destino.
     const amuInboundEntry = destAMU.length > 0
       ? destAMU.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1)[0]
       : null;
 
+    // Para compatibilidad con campos legacy (origin_centre, dest_centre, etc.)
+    // OE Origin: last of all last-per-centre with td_reader=false in origin block
+    const oeOriginEntry = originOE.length > 0
+      ? originOE.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
+      : null;
     // OE Destination: first of all first-per-centre with td_reader=false in dest block
     const oeDestEntry = destOE.length > 0
       ? destOE.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1)[0]
       : null;
+    // AMU Outbound (kept for legacy compatibility)
+    const amuOutboundEntry = originAMU.length > 0
+      ? originAMU.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
+      : null;
 
-    // Step 5: Leg2 = has both AMU Outbound AND AMU Inbound
-    const hasIntl = amuOutboundEntry !== null && amuInboundEntry !== null;
+    // Step 5: Leg2 = has DEPARTURE + ARRIVAL
+    const hasIntl = departureEntry !== null && amuInboundEntry !== null;
 
-    // Step 6: transit_hours = AMU Inbound record_time - AMU Outbound record_time
+    // Step 6: transit_hours = ARRIVAL record_time - DEPARTURE record_time
     let intlTransitHours: number | null = null;
     if (hasIntl) {
-      const depTime = amuOutboundEntry!.reading.record_time || amuOutboundEntry!.reading.event_time_local || null;
+      const depTime = departureEntry!.reading.record_time || departureEntry!.reading.event_time_local || null;
       const arrTime = amuInboundEntry!.reading.record_time  || amuInboundEntry!.reading.event_time_local  || null;
       if (depTime && arrTime) {
         const diffMs = new Date(arrTime).getTime() - new Date(depTime).getTime();
@@ -327,8 +336,9 @@ function readingsToJourneys(
     const originTime  = oeOriginEntry?.reading.record_time || oeOriginEntry?.reading.event_time_local || sorted[0].record_time || sorted[0].event_time_local || '';
     const destInfo    = oeDestEntry?.info      ?? null;
     const destTime    = oeDestEntry?.reading.record_time   || oeDestEntry?.reading.event_time_local   || null;
-    const depInfo     = amuOutboundEntry?.info ?? null;
-    const depTime     = amuOutboundEntry?.reading.record_time || amuOutboundEntry?.reading.event_time_local || null;
+    // departure_* = último lector en bloque origen (nuevo criterio)
+    const depInfo     = departureEntry?.info ?? null;
+    const depTime     = departureEntry?.reading.record_time || departureEntry?.reading.event_time_local || null;
     const arrInfo     = amuInboundEntry?.info  ?? null;
     const arrTime     = amuInboundEntry?.reading.record_time  || amuInboundEntry?.reading.event_time_local  || null;
 
@@ -397,13 +407,13 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
   const allTimes = [...times, ...destTimes].sort();
   const dateRange = allTimes.length > 0 ? { min: allTimes[0], max: allTimes[allTimes.length - 1] } : null;
 
-  // By origin country — journeys with AMU Outbound events (same criterion as Tags AMU Outbound KPI).
-  // Uses origin_amu_centres to match the KPI card exactly.
-  const journeysWithAMUOrigin = journeys.filter(j => j.origin_amu_centres.length > 0);
+  // By origin country — journeys with DEPARTURE event (último lector en bloque origen, sin filtro AMU/OE).
+  // Criterion: departure_centre != null (matches Tags Departure KPI).
+  const journeysWithDeparture = journeys.filter(j => j.departure_centre !== null);
   // Keep journeysWithOrigin for backward compat (byOriginCentre still uses it)
   const journeysWithOrigin = journeys.filter(j => j.origin_readings > 0 || j.origin_country);
   const originCountryMap = new Map<string, { count: number; endToEnd: number }>();
-  for (const j of journeysWithAMUOrigin) {
+  for (const j of journeysWithDeparture) {
     const c = j.origin_country || 'Unknown';
     if (!originCountryMap.has(c)) originCountryMap.set(c, { count: 0, endToEnd: 0 });
     const v = originCountryMap.get(c)!;
@@ -414,10 +424,11 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .map(([country, v]) => ({ country, count: v.count, endToEnd: v.endToEnd, pct: Math.round(v.endToEnd / v.count * 100) }))
     .sort((a, b) => b.count - a.count);
 
-  // By dest country — journeys with AMU Inbound events (same criterion as Tags AMU Inbound KPI).
-  const journeysWithAMUDest = journeys.filter(j => j.dest_amu_centres.length > 0);
+  // By dest country — journeys with ARRIVAL event (primer lector TD en bloque destino).
+  // Criterion: arrival_centre != null (matches Tags Arrival KPI).
+  const journeysWithArrival = journeys.filter(j => j.arrival_centre !== null);
   const destCountryMap = new Map<string, number>();
-  for (const j of journeysWithAMUDest) {
+  for (const j of journeysWithArrival) {
     const c = j.arrival_country || j.dest_country || 'Unknown';
     destCountryMap.set(c, (destCountryMap.get(c) || 0) + 1);
   }
@@ -439,28 +450,19 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .sort((a, b) => b.count - a.count);
 
   // Departure Volume by Centre:
-  // BLUE bars  (hasAMU=true):  each AMU centre in origin block → sum = kpiRfPredes (Tags AMU Outbound)
-  // AMBER bars (hasAMU=false): each OE  centre in origin block → sum = kpiRfidDepartures (Tags OE Origin)
-  // Each tag contributes once per centre it visited. Two independent series.
-  const depAMUMap = new Map<string, { country: string; count: number }>();
-  const depOEMap  = new Map<string, { country: string; count: number }>();
-  for (const j of journeys) {
-    for (const centre of j.origin_amu_centres) {
-      if (!depAMUMap.has(centre)) depAMUMap.set(centre, { country: j.origin_country, count: 0 });
-      depAMUMap.get(centre)!.count++;
-    }
-    for (const centre of j.origin_oe_centres) {
-      if (!depOEMap.has(centre)) depOEMap.set(centre, { country: j.origin_country, count: 0 });
-      depOEMap.get(centre)!.count++;
-    }
+  // Cada tag contribuye UNA VEZ con su departure_centre (último lector en bloque origen).
+  // La suma de todos los centros = kpiRfPredes (Tags Departure).
+  // hasAMU indica si ese lector es TD (true=azul) o no-TD (false=ámbar), solo para colorear.
+  const depCentreVolumeMap = new Map<string, { country: string; count: number; isTD: boolean }>();
+  for (const j of journeysWithDeparture) {
+    const centre = j.departure_centre!;
+    const isTD = j.origin_amu_centres.includes(centre); // TD si ese centro está en origin_amu
+    if (!depCentreVolumeMap.has(centre)) depCentreVolumeMap.set(centre, { country: j.departure_country || j.origin_country, count: 0, isTD });
+    depCentreVolumeMap.get(centre)!.count++;
   }
-  const departureVolumeByAMU = [
-    ...Array.from(depAMUMap.entries()).map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: true  as const })),
-    ...Array.from(depOEMap.entries()) .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: false as const })),
-  ].sort((a, b) => {
-    if (a.hasAMU !== b.hasAMU) return a.hasAMU ? -1 : 1;
-    return b.count - a.count;
-  });
+  const departureVolumeByAMU = Array.from(depCentreVolumeMap.entries())
+    .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: v.isTD }))
+    .sort((a, b) => b.count - a.count);
 
   // By dest centre — use arrival_centre for international journeys
   const destCentreMap = new Map<string, { country: string; count: number }>();
@@ -475,29 +477,19 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
     .sort((a, b) => b.count - a.count);
 
   // Arrival Volume by Centre:
-  // GREEN bars (hasAMU=true):  each AMU centre in dest block → sum = kpiRfResdes (Tags AMU Inbound)
-  // AMBER bars (hasAMU=false): each OE  centre in dest block → sum = kpiRfidArrivals (Tags OE Destination)
-  // Each tag contributes once per centre it visited. Two independent series.
-  const arrAMUMap = new Map<string, { country: string; count: number }>();
-  const arrOEMap  = new Map<string, { country: string; count: number }>();
-  for (const j of journeys) {
-    for (const centre of j.dest_amu_centres) {
-      const country = j.arrival_country || j.dest_country || '';
-      if (!arrAMUMap.has(centre)) arrAMUMap.set(centre, { country, count: 0 });
-      arrAMUMap.get(centre)!.count++;
-    }
-    for (const centre of j.dest_oe_centres) {
-      if (!arrOEMap.has(centre)) arrOEMap.set(centre, { country: j.dest_country || '', count: 0 });
-      arrOEMap.get(centre)!.count++;
-    }
+  // Cada tag contribuye UNA VEZ con su arrival_centre (primer lector TD en bloque destino).
+  // La suma de todos los centros = kpiRfResdes (Tags Arrival).
+  // hasAMU = true siempre (todos son TD por definición del criterio de arrival).
+  const arrCentreVolumeMap = new Map<string, { country: string; count: number }>();
+  for (const j of journeysWithArrival) {
+    const centre = j.arrival_centre!;
+    const country = j.arrival_country || j.dest_country || '';
+    if (!arrCentreVolumeMap.has(centre)) arrCentreVolumeMap.set(centre, { country, count: 0 });
+    arrCentreVolumeMap.get(centre)!.count++;
   }
-  const arrivalVolumeByAMU = [
-    ...Array.from(arrAMUMap.entries()).map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: true  as const })),
-    ...Array.from(arrOEMap.entries()) .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: false as const })),
-  ].sort((a, b) => {
-    if (a.hasAMU !== b.hasAMU) return a.hasAMU ? -1 : 1;
-    return b.count - a.count;
-  });
+  const arrivalVolumeByAMU = Array.from(arrCentreVolumeMap.entries())
+    .map(([centre, v]) => ({ centre, country: v.country, count: v.count, hasAMU: true as const }))
+    .sort((a, b) => b.count - a.count);
 
   // Departure by centre — use departure_centre (last centre before border crossing)
   const depCentreMap = new Map<string, { country: string; hours: number[] }>();
@@ -575,16 +567,16 @@ function computeEpcisStats(journeys: RfidJourney[]): EpcisStats {
 
   // Overview KPI counts — unique tag_ids per event_type
   // NOTE: All KPIs count ALL records regardless of status
-  const kpiTotalTags      = new Set(journeys.map(j => j.tag_id)).size;
-  // Tags OE Origin:      tags detected at any OE centre in the origin block (td_reader=false)
-  const kpiRfidDepartures = new Set(journeys.filter(j => j.origin_oe_centres.length > 0).map(j => j.tag_id)).size;
-  // Tags AMU Outbound:   tags detected at any AMU centre in the origin block (td_reader=true)
-  const kpiRfPredes       = new Set(journeys.filter(j => j.origin_amu_centres.length > 0).map(j => j.tag_id)).size;
-  // Tags AMU Inbound:    tags detected at any AMU centre in the destination block (td_reader=true)
-  const kpiRfResdes       = new Set(journeys.filter(j => j.dest_amu_centres.length > 0).map(j => j.tag_id)).size;
-  // Tags OE Destination: tags detected at any OE centre in the destination block (td_reader=false)
-  const kpiRfidArrivals   = new Set(journeys.filter(j => j.dest_oe_centres.length > 0).map(j => j.tag_id)).size;
-  const kpiRfE2e          = new Set(journeys.filter(j => j.has_international).map(j => j.tag_id)).size;                                        // Leg2: DEPARTURE+ARRIVAL (all statuses)
+  const kpiTotalTags = new Set(journeys.map(j => j.tag_id)).size;
+  // Tags Departure: tags con departure_centre != null (último lector en bloque origen, sin filtro AMU/OE)
+  const kpiRfPredes  = new Set(journeysWithDeparture.map(j => j.tag_id)).size;
+  // Tags Arrival:   tags con arrival_centre != null (primer lector TD en bloque destino)
+  const kpiRfResdes  = new Set(journeysWithArrival.map(j => j.tag_id)).size;
+  // Tags Transit (Leg2): tags con ambos eventos (Departure + Arrival)
+  const kpiRfE2e     = new Set(journeys.filter(j => j.has_international).map(j => j.tag_id)).size;
+  // Kept for backward compatibility (unused in UI)
+  const kpiRfidDepartures = kpiRfPredes;
+  const kpiRfidArrivals   = kpiRfResdes;
 
   return {
     totalReadings,
