@@ -1337,21 +1337,21 @@ export default function Home() {
                       value={epcis.stats.kpiRfPredes.toLocaleString()}
                       subtitle="Last outbound scan in origin country"
                       badge={{ label: 'departure', color: 'indigo' }}
-                      tooltip="Unique tags with a DEPARTURE event: the last RFID reading in the origin country before the tag crosses an international border. Any reader type (AMU or OE) qualifies — only the chronologically last reading in the origin block is counted."
+                      tooltip="DEPARTURE count: unique tag_ids where the last RFID reading in the origin country block is identified. HOW IT IS BUILT: (1) All readings for a tag are sorted chronologically. (2) The origin block is defined as all consecutive readings from the first country detected. (3) The very last reading in that block — regardless of reader type (TD/AMU or non-TD/OE) — is the DEPARTURE event. (4) Each tag contributes exactly once. NOT COUNTED: tags with readings only in the destination country (no origin block); tags whose origin block cannot be determined due to missing country data in the reader master."
                     />
                     <KpiCard
                       title="Tags Transit"
                       value={epcis.stats.kpiRfE2e.toLocaleString()}
                       subtitle="Tags with both Departure and Arrival"
                       badge={{ label: 'transit', color: 'amber' }}
-                      tooltip="Unique tags with both a DEPARTURE event (last scan in origin country) and an ARRIVAL event (first TD reader scan in destination country). These are the tags for which a complete international RFID transit time can be measured."
+                      tooltip="TRANSIT count: unique tag_ids that belong to BOTH the Departure group AND the Arrival group simultaneously — i.e., the intersection of the two sets. HOW IT IS BUILT: a tag is counted here only if it has (1) a valid DEPARTURE event (last scan in origin country) AND (2) a valid ARRIVAL event (first TD reader scan in destination country). NOT COUNTED: tags with only a Departure but no Arrival (left the origin country but no TD reader detected them at destination); tags with only an Arrival but no Departure (destination-only readings, incomplete data); tags with readings in a single country only. NOTE: Transit ≤ min(Departure, Arrival) by definition, since it requires both conditions."
                     />
                     <KpiCard
                       title="Tags Arrival"
                       value={epcis.stats.kpiRfResdes.toLocaleString()}
                       subtitle="First TD scan in destination country"
                       badge={{ label: 'arrival', color: 'green' }}
-                      tooltip="Unique tags with an ARRIVAL event: the first RFID reading by a TD reader (td_reader=true) in the destination country after crossing an international border. Only TD readers define country entry events."
+                      tooltip="ARRIVAL count: unique tag_ids where the first reading by a TD reader (td_reader=true) in the destination country block is identified. HOW IT IS BUILT: (1) All readings for a tag are sorted chronologically. (2) The destination block starts at the first reading in a country different from the origin country. (3) Within that block, only readers with td_reader=true are considered. (4) The very first TD reading in the destination block is the ARRIVAL event. (5) Each tag contributes exactly once. NOT COUNTED: tags with no destination block (origin-only readings); tags whose destination block exists but contains no TD reader — these tags arrived at a centre with only non-TD (OE) readers and therefore cannot be confirmed as having crossed the border via a TD-equipped facility; tags with missing or unresolvable reader master data."
                     />
                   </div>
 
