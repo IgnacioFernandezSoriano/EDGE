@@ -247,27 +247,33 @@ function Leg2Connector({ fromTs, toTs }: { fromTs: string | null; toTs: string |
 /* ─── Milestone summary bar ──────────────────────────────────────────────── */
 
 function MilestoneSummary({ milestones }: { milestones: SearchResult['milestones'] }) {
-  const items: Array<{ key: string; ev: TrackEvent | null; label: string; cls: string }> = [
-    { key: 'oe_origin',    ev: milestones.oe_origin,    label: 'OE Origin',      cls: 'bg-blue-50 border-blue-200 text-blue-700' },
-    { key: 'amu_outbound', ev: milestones.amu_outbound, label: 'AMU Outbound',   cls: 'bg-orange-50 border-orange-200 text-orange-700' },
-    { key: 'amu_inbound',  ev: milestones.amu_inbound,  label: 'AMU Inbound',    cls: 'bg-teal-50 border-teal-200 text-teal-700' },
-    { key: 'oe_dest',      ev: milestones.oe_dest,      label: 'OE Destination', cls: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
-  ];
+  function MCard({ ev, label, cls }: { ev: TrackEvent | null; label: string; cls: string }) {
+    return (
+      <div className={`rounded-lg border p-2.5 flex-1 min-w-0 ${cls}`}>
+        <div className="text-[10px] font-bold uppercase tracking-wide opacity-70 mb-1">{label}</div>
+        {ev ? (
+          <>
+            <div className="text-xs font-semibold truncate">{ev.centre ?? '—'}</div>
+            <div className="text-[11px] font-mono opacity-70 mt-0.5">{fmtTs(ev.timestamp)}</div>
+          </>
+        ) : (
+          <div className="text-xs opacity-50 italic">Not detected</div>
+        )}
+      </div>
+    );
+  }
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
-      {items.map(({ key, ev, label, cls }) => (
-        <div key={key} className={`rounded-lg border p-2.5 ${cls}`}>
-          <div className="text-[10px] font-bold uppercase tracking-wide opacity-70 mb-1">{label}</div>
-          {ev ? (
-            <>
-              <div className="text-xs font-semibold truncate">{ev.centre ?? '—'}</div>
-              <div className="text-[11px] font-mono opacity-70 mt-0.5">{fmtTs(ev.timestamp)}</div>
-            </>
-          ) : (
-            <div className="text-xs opacity-50 italic">Not detected</div>
-          )}
-        </div>
-      ))}
+    <div className="flex items-stretch gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200 flex-wrap sm:flex-nowrap">
+      <MCard ev={milestones.oe_origin}    label="OE Origin"      cls="bg-blue-50 border-blue-200 text-blue-700" />
+      <MCard ev={milestones.amu_outbound} label="AMU Outbound"   cls="bg-orange-50 border-orange-200 text-orange-700" />
+      {/* Plane icon between AMU Outbound and AMU Inbound */}
+      <div className="flex flex-col items-center justify-center gap-0.5 flex-shrink-0 px-0.5">
+        <div className="h-px w-5 bg-violet-300" />
+        <Plane className="w-4 h-4 text-violet-500" />
+        <div className="h-px w-5 bg-violet-300" />
+      </div>
+      <MCard ev={milestones.amu_inbound}  label="AMU Inbound"    cls="bg-teal-50 border-teal-200 text-teal-700" />
+      <MCard ev={milestones.oe_dest}      label="OE Destination" cls="bg-emerald-50 border-emerald-200 text-emerald-700" />
     </div>
   );
 }
