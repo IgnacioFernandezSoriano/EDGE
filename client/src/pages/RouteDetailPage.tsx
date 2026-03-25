@@ -215,6 +215,34 @@ export default function RouteDetailPage() {
     };
   }, [payload, excluded]);
 
+  /* ── Download CSV of non-excluded outliers ── */
+  const downloadOutliersCSV = () => {
+    const active = outliers.filter(j => !excluded.has(j.tag_id));
+    if (!active.length) return;
+    const headers = ['S9id', 'Tag ID', 'Transit (h)', 'Transit (d)', 'Departure centre', 'Departure time', 'Arrival centre', 'Arrival time'];
+    const rows = active.map(j => {
+      const h = j.international_transit_hours ?? 0;
+      return [
+        j.s9id || '',
+        j.tag_id,
+        (Math.round(h * 10) / 10).toString(),
+        (Math.round(h / 24 * 10) / 10).toString(),
+        j.departure_centre || j.origin_centre || '',
+        j.departure_time || j.origin_time || '',
+        j.arrival_centre || j.dest_centre || '',
+        j.arrival_time || j.dest_time || '',
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`);
+    });
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `outliers_${payload?.route?.replace(/[^a-z0-9]/gi, '_') ?? 'route'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   /* ── Open tag tracker in new tab ── */
   const openTracker = (j: RfidJourney) => {
     if (payload?.allReadings && payload?.readerMap) {
@@ -413,6 +441,17 @@ export default function RouteDetailPage() {
                   Reset all ({excluded.size})
                 </button>
               )}
+              {outliers.filter(j => !excluded.has(j.tag_id)).length > 0 && (
+                <button
+                  onClick={downloadOutliersCSV}
+                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-all shadow-sm"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download CSV
+                </button>
+              )}
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
                 {outliers.length} outlier{outliers.length !== 1 ? 's' : ''}
               </span>
@@ -438,8 +477,6 @@ export default function RouteDetailPage() {
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Departure time</th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Arrival centre</th>
                     <th className="text-left py-2.5 px-3 text-slate-500 font-semibold">Arrival time</th>
-                    <th className="text-right py-2.5 px-3 text-slate-500 font-semibold">Rdgs O</th>
-                    <th className="text-right py-2.5 px-3 text-slate-500 font-semibold">Rdgs D</th>
                     <th className="py-2.5 px-3 text-slate-500 font-semibold" />
                   </tr>
                 </thead>
@@ -481,8 +518,6 @@ export default function RouteDetailPage() {
                         <td className="py-2 px-3 text-slate-500 whitespace-nowrap">{fmtDate(j.departure_time || j.origin_time)}</td>
                         <td className="py-2 px-3 text-slate-600">{j.arrival_centre || j.dest_centre || '—'}</td>
                         <td className="py-2 px-3 text-slate-500 whitespace-nowrap">{fmtDate(j.arrival_time || j.dest_time)}</td>
-                        <td className="py-2 px-3 text-right text-slate-500">{j.origin_readings}</td>
-                        <td className="py-2 px-3 text-right text-slate-500">{j.dest_readings}</td>
                         {/* Track button */}
                         <td className="py-2 px-3 text-right">
                           <button
