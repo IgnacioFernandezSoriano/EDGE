@@ -16,11 +16,28 @@
 
 import React, { useState, useCallback } from 'react';
 import type { RfidReading, RfidReaderMaster } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import {
   Search, Package, Plane, MapPin,
   CheckCircle2, Clock, AlertCircle, Loader2, ArrowRight,
   Building2, Globe, ChevronDown, ChevronUp, Timer, LogOut, LogIn, Radio, FileText,
 } from 'lucide-react';
+
+/* ─── EDI data type ─────────────────────────────────────────────────────── */
+
+interface EdiData {
+  s9id: string;
+  origin_impc: string | null;
+  dest_impc: string | null;
+  predes_time: string | null;
+  cardit_time: string | null;
+  resdit74_time: string | null;
+  resdit74_impc: string | null;
+  resdit21_time: string | null;
+  resdit21_impc: string | null;
+  resdes_time: string | null;
+  transit_hours: number | null;
+}
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
@@ -123,6 +140,136 @@ const MILESTONE_STYLE: Record<TrackEvent['milestone'], { badge: string; icon: Re
   AMU_INBOUND:  { badge: 'bg-teal-100 text-teal-700 border-teal-200',     icon: LogIn },
   OE_DEST:      { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
 };
+
+/* ─── EDI event types & card ────────────────────────────────────────────── */
+
+type EdiEventType = 'PREDES' | 'RESDIT74' | 'RESDIT21' | 'RESDES';
+
+interface EdiEvent {
+  id: string;
+  type: EdiEventType;
+  label: string;
+  impc: string | null;
+  timestamp: string | null;
+  segment: Segment;
+}
+
+function buildEdiEvents(edi: EdiData | null): EdiEvent[] {
+  if (!edi) return [];
+  const events: EdiEvent[] = [];
+  if (edi.predes_time)   events.push({ id: 'edi-predes',  type: 'PREDES',   label: 'PREDES',   impc: edi.origin_impc,   timestamp: edi.predes_time,   segment: 'ORIGIN_COUNTRY' });
+  if (edi.resdit74_time) events.push({ id: 'edi-res74',   type: 'RESDIT74', label: 'RESDIT74', impc: edi.resdit74_impc, timestamp: edi.resdit74_time, segment: 'ORIGIN_COUNTRY' });
+  if (edi.resdit21_time) events.push({ id: 'edi-res21',   type: 'RESDIT21', label: 'RESDIT21', impc: edi.resdit21_impc, timestamp: edi.resdit21_time, segment: 'DEST_COUNTRY' });
+  if (edi.resdes_time)   events.push({ id: 'edi-resdes',  type: 'RESDES',   label: 'RESDES',   impc: edi.dest_impc,     timestamp: edi.resdes_time,   segment: 'DEST_COUNTRY' });
+  return events;
+}
+
+const EDI_STYLE: Record<EdiEventType, { badge: string; bg: string; border: string; dot: string }> = {
+  PREDES:   { badge: 'bg-purple-100 text-purple-700 border-purple-200',   bg: 'bg-purple-50',  border: 'border-purple-200',  dot: 'bg-purple-400' },
+  RESDIT74: { badge: 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200', bg: 'bg-fuchsia-50', border: 'border-fuchsia-200', dot: 'bg-fuchsia-400' },
+  RESDIT21: { badge: 'bg-cyan-100 text-cyan-700 border-cyan-200',         bg: 'bg-cyan-50',    border: 'border-cyan-200',    dot: 'bg-cyan-400' },
+  RESDES:   { badge: 'bg-green-100 text-green-700 border-green-200',      bg: 'bg-green-50',   border: 'border-green-200',   dot: 'bg-green-400' },
+};
+
+function EdiEventCard({ ev }: { ev: EdiEvent }) {
+  const st = EDI_STYLE[ev.type];
+  return (
+    <div className={`flex gap-3 px-4 py-3 rounded-xl border ${st.border} ${st.bg} hover:shadow-sm transition-all`}>
+      <div className="flex-shrink-0 flex flex-col items-center gap-1.5 pt-0.5">
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${st.badge}`}>EDI</span>
+        <div className={`w-2 h-2 rounded-full ${st.dot}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5 text-slate-500" />
+            <span className="text-xs font-semibold text-slate-700">{ev.label}</span>
+          </div>
+          <span className="text-[11px] font-mono text-slate-500 whitespace-nowrap">{fmtTs(ev.timestamp)}</span>
+        </div>
+        {ev.impc && (
+          <div className="mt-1">
+            <span className="text-xs font-mono text-slate-500 flex items-center gap-1">
+              <Globe className="w-3 h-3 text-slate-400" />{ev.impc}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Mixed event (RFID + EDI merged by timestamp) ───────────────────────── */
+
+type MixedEvent = { kind: 'rfid'; ev: TrackEvent } | { kind: 'edi'; ev: EdiEvent };
+
+function getMixedTs(m: MixedEvent): number {
+  const ts = m.ev.timestamp;
+  return ts ? new Date(ts).getTime() : 0;
+}
+
+function MixedSegmentBlock({ segment, rfidEvents, ediEvents, label, subtitle }: {
+  segment: Segment;
+  rfidEvents: TrackEvent[];
+  ediEvents: EdiEvent[];
+  label: string;
+  subtitle?: string;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const s = SEG_STYLE[segment];
+  const Icon = s.icon;
+
+  const mixed: MixedEvent[] = [
+    ...rfidEvents.map(ev => ({ kind: 'rfid' as const, ev })),
+    ...ediEvents.map(ev => ({ kind: 'edi' as const, ev })),
+  ].sort((a, b) => getMixedTs(a) - getMixedTs(b));
+
+  if (mixed.length === 0) return null;
+
+  const firstTs = mixed[0].ev.timestamp;
+  const lastTs  = mixed[mixed.length - 1].ev.timestamp;
+  const dur = mixed.length >= 2 ? diffLabel(firstTs, lastTs) : null;
+
+  return (
+    <div className={`rounded-2xl border-2 ${s.border} overflow-hidden`}>
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className={`w-full flex items-center justify-between px-5 py-3 ${s.headerBg} hover:brightness-95 transition-all`}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          <Icon className={`w-4 h-4 ${s.title}`} />
+          <span className={`font-bold text-sm ${s.title}`}>{label}</span>
+          {subtitle && <span className="text-xs text-slate-500 font-normal">{subtitle}</span>}
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.badge}`}>
+            {mixed.length} event{mixed.length !== 1 ? 's' : ''}
+          </span>
+          {dur && (
+            <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-slate-100 text-slate-600 border-slate-200">
+              <Timer className="w-3 h-3" /> {dur}
+            </span>
+          )}
+        </div>
+        {expanded ? <ChevronUp className={`w-4 h-4 ${s.title}`} /> : <ChevronDown className={`w-4 h-4 ${s.title}`} />}
+      </button>
+      {expanded && (
+        <div className="px-4 py-3 bg-white/60 space-y-0">
+          {mixed.map((item, idx) => {
+            const prevTs = idx > 0 ? mixed[idx - 1].ev.timestamp : null;
+            const currTs = item.ev.timestamp;
+            return (
+              <React.Fragment key={item.ev.id}>
+                {idx > 0 && <TransitPill from={prevTs} to={currTs} />}
+                {item.kind === 'rfid'
+                  ? <EventCard ev={item.ev} />
+                  : <EdiEventCard ev={item.ev} />}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ─── Transit pill ───────────────────────────────────────────────────────── */
 
@@ -446,16 +593,67 @@ function searchInMemory(
 
 /* ─── Main component ─────────────────────────────────────────────────────── */
 
+/* ─── EDI fetch (on demand, per tag) ────────────────────────────────────── */
+
+async function fetchEdiForTag(tagId: string, s9idHint: string | null): Promise<EdiData | null> {
+  try {
+    // Step 1: resolve s9id from ID Relation if not already known
+    let s9id = s9idHint;
+    if (!s9id) {
+      const { data: relRows } = await supabase
+        .from('ID Relation')
+        .select('s9id')
+        .eq('tagid', tagId)
+        .limit(1);
+      s9id = relRows?.[0]?.s9id ?? null;
+    }
+    if (!s9id) return null;
+
+    // Step 2: fetch EDI row from datos EDI by ean = s9id
+    const { data: ediRows } = await supabase
+      .from('datos EDI')
+      .select('ean,origin,destination,predes_time,cardit_time,resdit74_time,resdit74_impc,resdit21_time,resdit21_impc,redes_time')
+      .eq('ean', s9id)
+      .limit(1);
+    const row = ediRows?.[0];
+    if (!row) return null;
+
+    const predes = row.predes_time ?? null;
+    const resdes = row.redes_time  ?? null;
+    const transit_hours = predes && resdes
+      ? Math.round(((new Date(resdes).getTime() - new Date(predes).getTime()) / 3_600_000) * 10) / 10
+      : null;
+
+    return {
+      s9id,
+      origin_impc:    row.origin       ?? null,
+      dest_impc:      row.destination  ?? null,
+      predes_time:    predes,
+      cardit_time:    row.cardit_time  ?? null,
+      resdit74_time:  row.resdit74_time ?? null,
+      resdit74_impc:  row.resdit74_impc ?? null,
+      resdit21_time:  row.resdit21_time ?? null,
+      resdit21_impc:  row.resdit21_impc ?? null,
+      resdes_time:    resdes,
+      transit_hours,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function SearchID({ allReadings, readerMap, dataLoading }: SearchIDProps) {
   const [query, setQuery]       = useState('');
   const [result, setResult]     = useState<SearchResult | null>(null);
   const [error, setError]       = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
+  const [ediData, setEdiData]   = useState<EdiData | null>(null);
+  const [ediLoading, setEdiLoading] = useState(false);
 
-  const handleSearch = useCallback((q: string = query) => {
+  const handleSearch = useCallback(async (q: string = query) => {
     const trimmed = q.trim();
     if (!trimmed) return;
-    setError(null); setResult(null); setSearched(true);
+    setError(null); setResult(null); setSearched(true); setEdiData(null);
 
     const res = searchInMemory(trimmed, allReadings, readerMap);
 
@@ -467,6 +665,11 @@ export function SearchID({ allReadings, readerMap, dataLoading }: SearchIDProps)
       }
     } else {
       setResult(res);
+      // Fetch EDI data on demand for this tag
+      setEdiLoading(true);
+      const edi = await fetchEdiForTag(trimmed, res.s9id);
+      setEdiData(edi);
+      setEdiLoading(false);
     }
   }, [query, allReadings, readerMap, dataLoading]);
 
@@ -568,23 +771,46 @@ export function SearchID({ allReadings, readerMap, dataLoading }: SearchIDProps)
           <MilestoneSummary milestones={result.milestones} />
 
           {/* Timeline */}
-          <SegmentBlock
-            segment="ORIGIN_COUNTRY"
-            events={originEvents}
-            label={result.origin_country ? `Origin — ${result.origin_country}` : 'Origin Country'}
-            subtitle="OE Origin · AMU Outbound"
-          />
+          {(() => {
+            const ediEvents = buildEdiEvents(ediLoading ? null : ediData);
+            const ediOrigin = ediEvents.filter(e => e.segment === 'ORIGIN_COUNTRY');
+            const ediDest   = ediEvents.filter(e => e.segment === 'DEST_COUNTRY');
+            return (
+              <>
+                <MixedSegmentBlock
+                  segment="ORIGIN_COUNTRY"
+                  rfidEvents={originEvents}
+                  ediEvents={ediOrigin}
+                  label={result.origin_country ? `Origin — ${result.origin_country}` : 'Origin Country'}
+                  subtitle="OE Origin · AMU Outbound · PREDES · RESDIT74"
+                />
 
-          {result.is_international && originEvents.length > 0 && destEvents.length > 0 && (
-            <Leg2Connector fromTs={lastOriginTs} toTs={firstDestTs} />
-          )}
+                {result.is_international && (originEvents.length > 0 || ediOrigin.length > 0) && (destEvents.length > 0 || ediDest.length > 0) && (
+                  <Leg2Connector fromTs={lastOriginTs} toTs={firstDestTs} />
+                )}
 
-          <SegmentBlock
-            segment="DEST_COUNTRY"
-            events={destEvents}
-            label={result.dest_country ? `Destination — ${result.dest_country}` : 'Destination Country'}
-            subtitle="AMU Inbound · OE Destination"
-          />
+                <MixedSegmentBlock
+                  segment="DEST_COUNTRY"
+                  rfidEvents={destEvents}
+                  ediEvents={ediDest}
+                  label={result.dest_country ? `Destination — ${result.dest_country}` : 'Destination Country'}
+                  subtitle="AMU Inbound · OE Destination · RESDIT21 · RESDES"
+                />
+
+                {ediLoading && (
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                    Loading EDI data...
+                  </div>
+                )}
+                {!ediLoading && ediData === null && result.s9id && (
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                    No EDI data found for this receptacle.
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
