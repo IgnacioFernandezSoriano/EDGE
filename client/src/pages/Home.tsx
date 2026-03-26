@@ -1312,17 +1312,8 @@ export default function Home() {
                 <div className="mb-2">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-3">Overview</h3>
 
-                  {/* TEMPORARY: Total Tags card shown only when a country filter is active — re-enable unconditionally when needed */}
-                  <div className={`grid gap-4 mb-5 ${rfidOriginCountry || rfidDestCountry ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                    {(rfidOriginCountry || rfidDestCountry) && (
-                      <KpiCard
-                        title="Total Tags"
-                        value={epcis.stats.kpiTotalTags.toLocaleString()}
-                        subtitle="Unique tag IDs with RFID readings"
-                        badge={{ label: 'total', color: 'blue' }}
-                        tooltip="TOTAL TAGS: unique tag_ids present in the RFID readings table for the selected date and country filters. This is the universe of receptacles with at least one RFID reading in the selected period — the baseline against which Departure, Transit and Arrival rates are measured."
-                      />
-                    )}
+                  {/* TEMPORARY: Total Tags card disabled — re-enable when needed by restoring the conditional and grid-cols-4 */}
+                  <div className="grid gap-4 mb-5 grid-cols-3">
                     <KpiCard
                       title="Tags Departure"
                       value={epcis.stats.kpiRfPredes.toLocaleString()}
