@@ -771,46 +771,28 @@ export function SearchID({ allReadings, readerMap, dataLoading }: SearchIDProps)
           <MilestoneSummary milestones={result.milestones} />
 
           {/* Timeline */}
-          {(() => {
-            const ediEvents = buildEdiEvents(ediLoading ? null : ediData);
-            const ediOrigin = ediEvents.filter(e => e.segment === 'ORIGIN_COUNTRY');
-            const ediDest   = ediEvents.filter(e => e.segment === 'DEST_COUNTRY');
-            return (
-              <>
-                <MixedSegmentBlock
-                  segment="ORIGIN_COUNTRY"
-                  rfidEvents={originEvents}
-                  ediEvents={ediOrigin}
-                  label={result.origin_country ? `Origin — ${result.origin_country}` : 'Origin Country'}
-                  subtitle="OE Origin · AMU Outbound · PREDES · RESDIT74"
-                />
+          {/* TEMPORARY: EDI events hidden — re-enable when data is validated */}
+          <>
+            <MixedSegmentBlock
+              segment="ORIGIN_COUNTRY"
+              rfidEvents={originEvents}
+              ediEvents={[] /* TEMPORARY: pass [] to hide EDI */}
+              label={result.origin_country ? `Origin — ${result.origin_country}` : 'Origin Country'}
+              subtitle="OE Origin · AMU Outbound"
+            />
 
-                {result.is_international && (originEvents.length > 0 || ediOrigin.length > 0) && (destEvents.length > 0 || ediDest.length > 0) && (
-                  <Leg2Connector fromTs={lastOriginTs} toTs={firstDestTs} />
-                )}
+            {result.is_international && originEvents.length > 0 && destEvents.length > 0 && (
+              <Leg2Connector fromTs={lastOriginTs} toTs={firstDestTs} />
+            )}
 
-                <MixedSegmentBlock
-                  segment="DEST_COUNTRY"
-                  rfidEvents={destEvents}
-                  ediEvents={ediDest}
-                  label={result.dest_country ? `Destination — ${result.dest_country}` : 'Destination Country'}
-                  subtitle="AMU Inbound · OE Destination · RESDIT21 · RESDES"
-                />
-
-                {ediLoading && (
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-                    Loading EDI data...
-                  </div>
-                )}
-                {!ediLoading && ediData === null && result.s9id && (
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-500">
-                    No EDI data found for this receptacle.
-                  </div>
-                )}
-              </>
-            );
-          })()}
+            <MixedSegmentBlock
+              segment="DEST_COUNTRY"
+              rfidEvents={destEvents}
+              ediEvents={[] /* TEMPORARY: pass [] to hide EDI */}
+              label={result.dest_country ? `Destination — ${result.dest_country}` : 'Destination Country'}
+              subtitle="AMU Inbound · OE Destination"
+            />
+          </>
         </div>
       )}
 

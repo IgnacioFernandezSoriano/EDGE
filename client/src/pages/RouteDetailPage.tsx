@@ -195,7 +195,7 @@ export default function RouteDetailPage() {
     const effectiveUf = customThreshold !== null ? customThreshold : allUf;
     const outlierJourneys = payload.journeys.filter(j => {
       const h = j.international_transit_hours;
-      return h !== null && h > 0 && (h < allLf || h > effectiveUf);
+      return h !== null && h > effectiveUf;
     }).sort((a, b) => (b.international_transit_hours ?? 0) - (a.international_transit_hours ?? 0));
 
     // Auto bin size
@@ -550,7 +550,7 @@ export default function RouteDetailPage() {
             <div>
               <h2 className="text-sm font-bold text-slate-800">Potential Outliers</h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Receptacles above threshold ({Math.round(effectiveThreshold)}h) or below lower fence ({lowerFence}h).
+                Receptacles above threshold ({Math.round(effectiveThreshold)}h).
                 Check the box to exclude a record from the calculation above.
                 Use the <span className="font-semibold text-indigo-600">Track</span> button to investigate a specific tag.
               </p>
