@@ -329,8 +329,11 @@ function readingsToJourneys(
     const hasIntl = departureEntry !== null && amuInboundEntry !== null;
 
     // Step 6: transit_hours = ARRIVAL record_time - DEPARTURE record_time
+    // TEMPORARY FILTER: only compute transit for tags present in ID Relation (ediTagMap)
+    // To revert: remove the `inIdRelation` guard and always compute when hasIntl is true.
+    const inIdRelation = safeEdiMap.size === 0 || safeEdiMap.has(tagKey);
     let intlTransitHours: number | null = null;
-    if (hasIntl) {
+    if (hasIntl && inIdRelation) {
       const depTime = departureEntry!.reading.record_time || departureEntry!.reading.event_time_local || null;
       const arrTime = amuInboundEntry!.reading.record_time  || amuInboundEntry!.reading.event_time_local  || null;
       if (depTime && arrTime) {
