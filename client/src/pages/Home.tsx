@@ -1242,7 +1242,7 @@ export default function Home() {
 
           <Section
             title="RFID Analysis"
-            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · RFID Outbound: ${epcis.stats.kpiRfPredes.toLocaleString()} · RFID Inbound: ${epcis.stats.kpiRfResdes.toLocaleString()} · E2E: ${epcis.stats.kpiRfE2e.toLocaleString()}${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
+            subtitle={`RFID data — ${epcis.stats.uniqueReceptacles.toLocaleString()} unique tag IDs · RFID Outbound: ${epcis.stats.kpiRfPredes.toLocaleString()} · RFID Inbound: ${epcis.stats.kpiRfResdes.toLocaleString()} · E2E: ${epcis.stats.kpiRfE2e.toLocaleString()}${epcis.isPartialData && !epcis.backgroundLoading ? ' · last 30 days only' : epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
           >
             {epcis.loading && (
               <div className="flex items-center justify-center py-16">
@@ -1269,13 +1269,15 @@ export default function Home() {
               <div className={`flex items-center gap-3 px-4 py-2.5 mb-4 rounded-lg border text-xs font-medium ${
                 epcis.backgroundLoading
                   ? 'bg-amber-50 border-amber-200 text-amber-800'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : epcis.isPartialData
+                    ? 'bg-sky-50 border-sky-200 text-sky-800'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
               }`}>
                 {epcis.backgroundLoading ? (
                   <>
                     <div className="w-3.5 h-3.5 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
                     <span className="flex-1">
-                      ⚠ Showing last 30 days only — loading full history in background
+                      ⚠ Loading full history…
                       {epcis.backgroundProgress && epcis.backgroundProgress.total > 0 && (
                         <>
                           <span className="ml-1 font-normal opacity-75">
@@ -1289,14 +1291,25 @@ export default function Home() {
                         </>
                       )}
                       {(!epcis.backgroundProgress || epcis.backgroundProgress.total === 0) && (
-                        <span className="ml-1 font-normal opacity-75">(loading historical data…)</span>
-                      )}
-                      {(rfidDateRange.from || rfidDateRange.to) && (
-                        <span className="ml-3 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-semibold">
-                          ⏳ Date filter results may be incomplete — wait for full history load
-                        </span>
+                        <span className="ml-1 font-normal opacity-75">(connecting…)</span>
                       )}
                     </span>
+                  </>
+                ) : epcis.isPartialData ? (
+                  <>
+                    <span className="text-sky-500 text-sm">📅</span>
+                    <span className="flex-1">
+                      Showing last 30 days — {epcis.stats.kpiTotalTags.toLocaleString()} receptacles
+                      {(rfidDateRange.from || rfidDateRange.to) && (
+                        <span className="ml-2 text-sky-600 font-semibold">⚠ Date filter may exclude older records</span>
+                      )}
+                    </span>
+                    <button
+                      onClick={epcis.loadFullHistory}
+                      className="ml-auto flex-shrink-0 px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700 active:scale-95 transition-all shadow-sm"
+                    >
+                      Load full history
+                    </button>
                   </>
                 ) : (
                   <>
@@ -1672,20 +1685,22 @@ export default function Home() {
         {activeTab === 'Tracking' && (
           <Section
             title="Tracking"
-            subtitle={`${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles — one row per unique tag_id${epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
+            subtitle={`${epcis.stats.uniqueReceptacles.toLocaleString()} receptacles — one row per unique tag_id${epcis.isPartialData && !epcis.backgroundLoading ? ' · last 30 days only' : epcis.backgroundLoading ? ' · loading historical data…' : ''}`}
           >
             {/* Data load progress banner — same as RFID tab */}
             {!epcis.loading && (
               <div className={`flex items-center gap-3 px-4 py-2.5 mb-4 rounded-lg border text-xs font-medium ${
                 epcis.backgroundLoading
                   ? 'bg-amber-50 border-amber-200 text-amber-800'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : epcis.isPartialData
+                    ? 'bg-sky-50 border-sky-200 text-sky-800'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
               }`}>
                 {epcis.backgroundLoading ? (
                   <>
                     <div className="w-3.5 h-3.5 rounded-full animate-spin flex-shrink-0" style={{ border: '2px solid #fde68a', borderTopColor: '#F59E0B' }} />
-                    <span>
-                      ⚠ Showing last 30 days only — loading full history in background
+                    <span className="flex-1">
+                      ⚠ Loading full history…
                       {epcis.backgroundProgress && epcis.backgroundProgress.total > 0 && (
                         <>
                           <span className="ml-1 font-normal opacity-75">
@@ -1699,9 +1714,20 @@ export default function Home() {
                         </>
                       )}
                       {(!epcis.backgroundProgress || epcis.backgroundProgress.total === 0) && (
-                        <span className="ml-1 font-normal opacity-75">(loading historical data…)</span>
+                        <span className="ml-1 font-normal opacity-75">(connecting…)</span>
                       )}
                     </span>
+                  </>
+                ) : epcis.isPartialData ? (
+                  <>
+                    <span className="text-sky-500 text-sm">📅</span>
+                    <span className="flex-1">Showing last 30 days — {epcis.stats.kpiTotalTags.toLocaleString()} receptacles</span>
+                    <button
+                      onClick={epcis.loadFullHistory}
+                      className="ml-auto flex-shrink-0 px-3 py-1.5 rounded-lg bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700 active:scale-95 transition-all shadow-sm"
+                    >
+                      Load full history
+                    </button>
                   </>
                 ) : (
                   <>

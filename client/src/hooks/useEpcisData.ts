@@ -10,7 +10,7 @@
  * and builds RfidJourney objects (origin + destination pairs) in the browser.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { fetchRfidReadings, fetchRfidReadingsWithProgress, fetchRfidReadersMaster, fetchEdiTagMap } from '@/lib/supabase';
 import type { RfidReading, RfidReaderMaster, EdiTagInfo } from '@/lib/supabase';
 
@@ -90,6 +90,13 @@ export interface EpcisStats {
   uniqueDestinations: number;
   endToEndPairs: number;
   endToEndPct: number;
+  // Overview KPI counts
+  kpiTotalTags: number;
+  kpiRfidDepartures: number;
+  kpiRfPredes: number;
+  kpiRfResdes: number;
+  kpiRfidArrivals: number;
+  kpiRfE2e: number;
   avgTransitHours: number | null;
   meanTransitHours: number | null;
   p25TransitHours: number | null;
@@ -670,6 +677,8 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [backgroundProgress, setBackgroundProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Whether the user has explicitly requested the full historical dataset
+  const [fullHistoryLoaded, setFullHistoryLoaded] = useState(false);
 
   // Load rfid_readers_master once on mount
   useEffect(() => {
@@ -706,39 +715,16 @@ export function useEpcisData(filters: EpcisFilters = {}) {
 
     setBackgroundProgress(null);
 
+    // EGRESS OPTIMIZATION: Only load the last 30 days automatically.
+    // The full historical dataset is loaded only when the user explicitly requests it
+    // via the loadFullHistory() function exposed by this hook.
     fetchRfidReadings(recentFrom, undefined)
       .then(recentData => {
         if (cancelled) return;
         setAllReadings(recentData);
         setLoading(false); // UI is now usable with recent data
-
-        // Step 2: load older data in background using batched parallel fetches
-        const dayBefore = new Date(thirtyDaysAgo);
-        dayBefore.setDate(dayBefore.getDate() - 1);
-        const olderTo = dayBefore.toISOString().split('T')[0];
-
-        setBackgroundLoading(true);
-
-        fetchRfidReadingsWithProgress(
-          '2025-04-01',  // data starts ~Apr 2025; date-chunk strategy handles timeout
-          olderTo,
-          (loaded, total) => {
-            if (!cancelled) setBackgroundProgress({ loaded, total });
-          }
-        )
-          .then(olderData => {
-            if (!cancelled) {
-              setAllReadings(prev => [...olderData, ...prev]);
-              setBackgroundLoading(false);
-              setBackgroundProgress(null);
-            }
-          })
-          .catch(() => {
-            if (!cancelled) {
-              setBackgroundLoading(false);
-              setBackgroundProgress(null);
-            }
-          });
+        // NOTE: Historical data is NOT loaded automatically anymore.
+        // The user must click "Cargar historial completo" to trigger loadFullHistory().
       })
       .catch(err => {
         if (!cancelled) {
@@ -751,6 +737,40 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     // Load once on mount — date and country filters applied in-memory via useMemo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);  // no dependencies — load full dataset once
+
+  // Explicit function to load the full historical dataset on user request
+  const loadFullHistory = useCallback(() => {
+    if (backgroundLoading || fullHistoryLoaded) return;
+
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    const dayBefore = new Date(thirtyDaysAgo);
+    dayBefore.setDate(dayBefore.getDate() - 1);
+    const olderTo = dayBefore.toISOString().split('T')[0];
+
+    setBackgroundLoading(true);
+    setBackgroundProgress(null);
+
+    fetchRfidReadingsWithProgress(
+      '2025-04-01',  // data starts ~Apr 2025
+      olderTo,
+      (loaded, total) => {
+        setBackgroundProgress({ loaded, total });
+      }
+    )
+      .then(olderData => {
+        setAllReadings(prev => [...olderData, ...prev]);
+        setBackgroundLoading(false);
+        setBackgroundProgress(null);
+        setFullHistoryLoaded(true);
+      })
+      .catch(() => {
+        setBackgroundLoading(false);
+        setBackgroundProgress(null);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backgroundLoading, fullHistoryLoaded]);
 
   // Build journeys from all readings using the Regla de Selección de Eventos del Trayecto
   const allJourneys = useMemo(() => {
@@ -835,5 +855,9 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     // Raw data for in-memory search (SearchID)
     allReadings,
     readerMap,
+    // Whether only the last 30 days are loaded (true = partial dataset)
+    isPartialData: !fullHistoryLoaded,
+    // Function to explicitly load the full historical dataset
+    loadFullHistory,
   };
 }
