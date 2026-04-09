@@ -1081,7 +1081,7 @@ function MasterReviewSection({ user }: { user: { email?: string } }) {
 // ── Componente principal ───────────────────────────────────────────────────
 // ── Componente: Carga RFID ────────────────────────────────────────────────
 // URL de la Supabase Edge Function del ETL RFID
-const EDGE_FUNCTION_URL = 'https://ewyhmmixqcubqokphebh.supabase.co/functions/v1/process-rfid-etl';
+const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-rfid-etl`;
 
 interface EtlResult {
   success: boolean;

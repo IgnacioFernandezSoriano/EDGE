@@ -12,13 +12,12 @@ const __dirname = path.dirname(__filename);
 
 // ── Supabase clients ───────────────────────────────────────────────────────
 // Anon key for audit pipeline (existing)
-const supabaseUrl  = process.env.VITE_SUPABASE_URL  || "https://ewyhmmixqcubqokphebh.supabase.co";
-const supabaseAnon = process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWhtbWl4cWN1YnFva3BoZWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5OTc3MjMsImV4cCI6MjA4ODU3MzcyM30.xMtcrn12c9r0Q_Q0e46Ptsci7Y31YnB5V9MSBHgj20k";
+const supabaseUrl  = process.env.SUPABASE_URL!;
+const supabaseAnon = process.env.SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnon);
 
 // Service role key for ETL RFID (needs write access)
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWhtbWl4cWN1YnFva3BoZWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mjk5NzcyMywiZXhwIjoyMDg4NTczNzIzfQ.7UPBH4yhb2niowAPsVA7xdAf9G89XnzZxo5JO1TBCQk";
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY!;
 
 // ── Script paths ───────────────────────────────────────────────────────────
 const AUDIT_PIPELINE = "/home/ubuntu/edge_analysis/run_audit_pipeline.py";
