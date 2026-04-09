@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import express from "express";
 import { createServer } from "http";
 import path from "path";
@@ -49,8 +50,9 @@ if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
-    cb(null, `rfid_upload_${Date.now()}_${file.originalname}`);
+  filename: (_req, _file, cb) => {
+    // Use a safe generated name — never trust originalname from the client
+    cb(null, `rfid_upload_${Date.now()}_${crypto.randomUUID()}.csv`);
   },
 });
 const upload = multer({
@@ -117,6 +119,14 @@ function runEtlProcess(mode: string, csvFilePath?: string): Promise<void> {
   });
 }
 
+// ── Startup env var validation ─────────────────────────────────────────────
+const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_KEY"];
+const missingVars = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
+if (missingVars.length > 0) {
+  console.error(`[STARTUP] Missing required environment variables: ${missingVars.join(", ")}`);
+  process.exit(1);
+}
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
@@ -140,7 +150,7 @@ async function startServer() {
       res.status(401).json({ error: "Token inválido o caducado" });
       return;
     }
-    const role = user.app_metadata?.role || user.user_metadata?.role;
+    const role = user.app_metadata?.role;
     if (role !== "admin") {
       res.status(403).json({ error: "Acceso denegado: se requiere rol admin" });
       return;
@@ -182,7 +192,10 @@ async function startServer() {
     });
 
     proc.stderr.on("data", (chunk: Buffer) => {
-      chunk.toString().split("\n").filter(Boolean).forEach(line => send("error", { message: line }));
+      chunk.toString().split("\n").filter(Boolean).forEach(line => {
+        console.error(`[AUDIT ERR] ${line}`);
+      });
+      send("error", { message: "El proceso ha reportado un error — consulta los logs del servidor." });
     });
 
     proc.on("close", (code: number | null) => {

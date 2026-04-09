@@ -4,7 +4,8 @@
 
 [build.environment]
   # VITE_ vars are intentionally inlined into the JS bundle by Vite (public anon key)
-  SECRETS_SCAN_OMIT_KEYS  = "VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY,SUPABASE_URL,SUPABASE_ANON_KEY"
+  # Only VITE_ vars are intentionally inlined into the JS bundle by Vite (public anon key)
+  SECRETS_SCAN_OMIT_KEYS  = "VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY"
   SECRETS_SCAN_OMIT_PATHS = "scripts/__pycache__"
 
 [[redirects]]
