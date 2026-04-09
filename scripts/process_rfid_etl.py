@@ -50,14 +50,8 @@ import requests
 
 # ─── Configuración ────────────────────────────────────────────────────────────
 
-SUPABASE_URL = os.environ.get(
-    "SUPABASE_URL",
-    "https://ewyhmmixqcubqokphebh.supabase.co"
-)
-SUPABASE_KEY = os.environ.get(
-    "SUPABASE_SERVICE_KEY",
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWhtbWl4cWN1YnFva3BoZWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mjk5NzcyMywiZXhwIjoyMDg4NTczNzIzfQ.7UPBH4yhb2niowAPsVA7xdAf9G89XnzZxo5JO1TBCQk"
-)
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 
 REST_URL = f"{SUPABASE_URL}/rest/v1"
 BATCH_SIZE = 500  # Número de registros por lote en las operaciones de escritura
