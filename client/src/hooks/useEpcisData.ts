@@ -657,6 +657,8 @@ export interface EpcisFilters {
   dateTo?: string;
   originCountry?: string;
   destCountry?: string;
+  /** When true, only journeys whose tag_id appears in the ID Relation table are included */
+  onlyIdRelation?: boolean;
   /** @deprecated No longer used — data now comes from the RFID table directly */
   allEvents?: unknown[];
   loading?: boolean;
@@ -816,7 +818,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allJourneys, filters.originCountry]);
 
-  // Apply country and date filters in the browser (no Supabase reload)
+  // Apply country, date and ID Relation filters in the browser (no Supabase reload)
   const filteredJourneys = useMemo(() => {
     let j = allJourneys;
     if (filters.originCountry && filters.originCountry !== 'ALL') {
@@ -833,9 +835,13 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       const to = filters.dateTo + 'T23:59:59';
       j = j.filter(x => (x.origin_time || x.departure_time || '') <= to);
     }
+    // ID Relation filter: only journeys whose tag_id has a match in ID Relation (ediTagMap is keyed by tagid)
+    if (filters.onlyIdRelation && ediTagMap.size > 0) {
+      j = j.filter(x => ediTagMap.has(x.tag_id));
+    }
     return j;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allJourneys, filters.originCountry, filters.destCountry, filters.dateFrom, filters.dateTo]);
+  }, [allJourneys, filters.originCountry, filters.destCountry, filters.dateFrom, filters.dateTo, filters.onlyIdRelation, ediTagMap]);
 
   const stats = useMemo(
     () => computeEpcisStats(filteredJourneys),

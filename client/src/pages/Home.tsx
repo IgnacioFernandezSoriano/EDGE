@@ -579,6 +579,7 @@ export default function Home() {
   const [rfidDateRange,        setRfidDateRange]        = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
   const [rfidOriginCountry,    setRfidOriginCountry]    = useState<string | null>(null);
   const [rfidDestCountry,      setRfidDestCountry]      = useState<string | null>(null);
+  const [rfidOnlyIdRelation,   setRfidOnlyIdRelation]   = useState(false);
 
   const [benchDateRange,       setBenchDateRange]       = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
   const [benchOriginCountry,   setBenchOriginCountry]   = useState<string | null>(null);
@@ -619,6 +620,7 @@ export default function Home() {
     dateTo:   rfidDateRange.to   || undefined,
     originCountry: rfidOriginCountry || undefined,
     destCountry:   rfidDestCountry   || undefined,
+    onlyIdRelation: rfidOnlyIdRelation || undefined,
   });
 
   /* Benchmark tab data — uses journeys in memory + ID Relation + EDI pagination (no direct .in() query) */
@@ -1246,12 +1248,22 @@ export default function Home() {
                 {epcis.allDestCountries.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            {(rfidDateRange.from || rfidDateRange.to || rfidOriginCountry || rfidDestCountry) && (
+            {/* ID Relation filter checkbox */}
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rfidOnlyIdRelation}
+                onChange={e => setRfidOnlyIdRelation(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30 cursor-pointer"
+              />
+              <span className="text-[11px] text-slate-600 font-medium whitespace-nowrap">ID Relation only</span>
+            </label>
+            {(rfidDateRange.from || rfidDateRange.to || rfidOriginCountry || rfidDestCountry || rfidOnlyIdRelation) && (
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
                   {epcis.journeys.length.toLocaleString()} receptacles
                 </span>
-                <button onClick={() => { setRfidDateRange({ from: null, to: null }); setRfidOriginCountry(null); setRfidDestCountry(null); }}
+                <button onClick={() => { setRfidDateRange({ from: null, to: null }); setRfidOriginCountry(null); setRfidDestCountry(null); setRfidOnlyIdRelation(false); }}
                   className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 border border-transparent hover:border-rose-200 whitespace-nowrap">
                   ✕ Clear all
                 </button>
