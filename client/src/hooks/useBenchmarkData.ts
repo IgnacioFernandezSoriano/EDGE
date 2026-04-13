@@ -223,7 +223,9 @@ function buildBenchmarkRows(
     if (!s9id) continue;
     const rfDep = j.departure_time ?? null;
     const rfArr = j.arrival_time   ?? null;
-    const rfTransit = j.international_transit_hours ?? null;
+    const rfDest = j.dest_time ?? null;
+    // RF transit: AMU Outbound (departure_time) → OE Destination (dest_time)
+    const rfTransit = diffHours(rfDep, rfDest);
     const edi = ediMap.get(s9id) ?? null;
     const originCountry = j.origin_country ?? j.departure_country ?? null;
     const destCountry   = j.dest_country   ?? j.arrival_country   ?? null;
@@ -239,7 +241,7 @@ function buildBenchmarkRows(
       rf_departure_country: j.departure_country ?? null, rf_departure_centre: j.departure_centre ?? null, rf_departure_impc: j.departure_impc ?? null, rf_departure_time: rfDep,
       rf_arrival_country: j.arrival_country ?? null, rf_arrival_centre: j.arrival_centre ?? null, rf_arrival_impc: j.arrival_impc ?? null, rf_arrival_time: rfArr,
       rf_dest_country: j.dest_country ?? null, rf_dest_centre: j.dest_centre ?? null, rf_dest_impc: j.dest_impc ?? null, rf_dest_time: j.dest_time ?? null,
-      rf_transit_hours: rfTransit, has_rf_departure: !!rfDep, has_rf_arrival: !!rfArr, has_rf_transit: rfTransit !== null,
+      rf_transit_hours: rfTransit, has_rf_departure: !!rfDep, has_rf_arrival: !!rfArr, has_rf_transit: rfTransit !== null && rfTransit > 0,
       edi_origin_impc: edi?.edi_origin_impc ?? null, edi_dest_impc: edi?.edi_dest_impc ?? null,
       edi_predes_time: edi?.edi_predes_time ?? null, edi_cardit_time: edi?.edi_cardit_time ?? null,
       edi_resdit74_time: edi?.edi_resdit74_time ?? null, edi_resdit74_impc: edi?.edi_resdit74_impc ?? null,
