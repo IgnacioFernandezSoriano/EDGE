@@ -361,14 +361,14 @@ export function useBenchmarkData(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idMap, ediMap, journeys, JSON.stringify(filters)]);
 
-  // ediRows: subset of rows that have actual EDI data — used for all EDI reports/stats
-  // rows without EDI data are kept in `rows` for RFID-only drilldowns but excluded from EDI metrics
-  const ediRows = useMemo<BenchmarkRow[]>(() => rows.filter(r =>
-    r.edi_origin_impc !== null ||
-    r.edi_dest_impc !== null ||
-    r.edi_predes_time !== null ||
-    r.edi_resdes_time !== null
-  ), [rows]);
+  // ediRows: subset of rows that have BOTH RFID data AND EDI data — used for all EDI reports/stats
+  // A row qualifies only when it has at least one RFID reading (rf_origin_time present)
+  // AND at least one EDI field present — this excludes receptacles that exist only in EDI with no RFID
+  const ediRows = useMemo<BenchmarkRow[]>(() => rows.filter(r => {
+    const hasRfid = r.rf_origin_time !== null || r.rf_departure_time !== null || r.rf_arrival_time !== null || r.rf_dest_time !== null;
+    const hasEdi  = r.edi_origin_impc !== null || r.edi_dest_impc !== null || r.edi_predes_time !== null || r.edi_resdes_time !== null;
+    return hasRfid && hasEdi;
+  }), [rows]);
 
   const stats = useMemo(() => ediRows.length ? computeStats(ediRows) : null, [ediRows]);
 
