@@ -527,6 +527,34 @@ export async function fetchRfidReadersMaster(): Promise<RfidReaderMaster[]> {
   return all;
 }
 
+/**
+ * Fetches the complete set of tagid values from the "ID Relation" table.
+ * Used by the RFID tab "ID Relation only" filter to show only receptacles
+ * that have a linked s9id (barcode) in ID Relation.
+ */
+export async function fetchIdRelationTagSet(): Promise<Set<string>> {
+  const headers = await getAuthHeaders();
+  const PAGE_SIZE = 1000;
+  const result = new Set<string>();
+  let offset = 0;
+
+  while (true) {
+    const url = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('ID Relation')}`);
+    url.searchParams.set('select', 'tagid');
+    url.searchParams.set('limit', String(PAGE_SIZE));
+    url.searchParams.set('offset', String(offset));
+    const res = await fetch(url.toString(), { headers });
+    if (!res.ok) break;
+    const rows: { tagid: string }[] = await res.json();
+    if (!rows.length) break;
+    for (const r of rows) { if (r.tagid) result.add(r.tagid); }
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  return result;
+}
+
 /** EDI tag info: origin and destination IMPC codes from "datos EDI" via "ID Relation" */
 export interface EdiTagInfo {
   origin_impc: string | null;

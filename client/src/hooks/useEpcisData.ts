@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { fetchRfidReadings, fetchRfidReadingsWithProgress, fetchRfidReadersMaster, fetchEdiTagMap } from '@/lib/supabase';
+import { fetchRfidReadings, fetchRfidReadingsWithProgress, fetchRfidReadersMaster, fetchEdiTagMap, fetchIdRelationTagSet } from '@/lib/supabase';
 import type { RfidReading, RfidReaderMaster, EdiTagInfo } from '@/lib/supabase';
 
 // ── Re-exported types (kept for backward compatibility with EpcisDataTable) ──
@@ -675,6 +675,7 @@ export function useEpcisData(filters: EpcisFilters = {}) {
   const [allReadings, setAllReadings] = useState<RfidReading[]>([]);
   const [readerMap, setReaderMap] = useState<Map<string, RfidReaderMaster>>(new Map());
   const [ediTagMap, setEdiTagMap] = useState<Map<string, EdiTagInfo>>(new Map());
+  const [idRelationTagSet, setIdRelationTagSet] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [backgroundProgress, setBackgroundProgress] = useState<{ loaded: number; total: number } | null>(null);
@@ -696,6 +697,13 @@ export function useEpcisData(filters: EpcisFilters = {}) {
     fetchEdiTagMap().then(map => {
       setEdiTagMap(map);
     }).catch(() => { /* non-critical — single-country tags will remain unclassified */ });
+  }, []);
+
+  // Load ID Relation tag set once on mount (used for the 'Matched Tags' checkbox filter)
+  useEffect(() => {
+    fetchIdRelationTagSet().then(set => {
+      setIdRelationTagSet(set);
+    }).catch(() => { /* non-critical — filter will be skipped if load fails */ });
   }, []);
 
   useEffect(() => {
@@ -835,13 +843,13 @@ export function useEpcisData(filters: EpcisFilters = {}) {
       const to = filters.dateTo + 'T23:59:59';
       j = j.filter(x => (x.origin_time || x.departure_time || '') <= to);
     }
-    // ID Relation filter: only journeys whose tag_id has a match in ID Relation (ediTagMap is keyed by tagid)
-    if (filters.onlyIdRelation && ediTagMap.size > 0) {
-      j = j.filter(x => ediTagMap.has(x.tag_id));
+    // Matched Tags filter: only journeys whose tag_id appears in ID Relation
+    if (filters.onlyIdRelation && idRelationTagSet.size > 0) {
+      j = j.filter(x => idRelationTagSet.has(x.tag_id));
     }
     return j;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allJourneys, filters.originCountry, filters.destCountry, filters.dateFrom, filters.dateTo, filters.onlyIdRelation, ediTagMap]);
+  }, [allJourneys, filters.originCountry, filters.destCountry, filters.dateFrom, filters.dateTo, filters.onlyIdRelation, idRelationTagSet]);
 
   const stats = useMemo(
     () => computeEpcisStats(filteredJourneys),

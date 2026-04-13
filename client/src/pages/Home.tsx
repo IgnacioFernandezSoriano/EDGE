@@ -1256,7 +1256,7 @@ export default function Home() {
                 onChange={e => setRfidOnlyIdRelation(e.target.checked)}
                 className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30 cursor-pointer"
               />
-              <span className="text-[11px] text-slate-600 font-medium whitespace-nowrap">ID Relation only</span>
+              <span className="text-[11px] text-slate-600 font-medium whitespace-nowrap">Matched Tags</span>
             </label>
             {(rfidDateRange.from || rfidDateRange.to || rfidOriginCountry || rfidDestCountry || rfidOnlyIdRelation) && (
               <div className="flex items-center gap-1.5">
