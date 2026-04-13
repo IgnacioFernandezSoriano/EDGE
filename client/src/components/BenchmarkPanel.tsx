@@ -372,7 +372,7 @@ interface BenchmarkPanelProps {
 }
 
 export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading = false, rfidBackgroundProgress = null }: BenchmarkPanelProps) {
-  const { rows, stats, loading, error, ediProgress, backgroundLoading, backgroundProgress } = useBenchmarkData(journeys, filters, rfidBackgroundLoading, rfidBackgroundProgress);
+  const { rows, ediRows, stats, loading, error, ediProgress, backgroundLoading, backgroundProgress } = useBenchmarkData(journeys, filters, rfidBackgroundLoading, rfidBackgroundProgress);
   const [detailView, setDetailView] = useState<DetailView>('departure');
   const [drill, setDrill] = useState<{ title: string; subtitle?: string; rows: BenchmarkRow[] } | null>(null);
 
@@ -654,7 +654,7 @@ export function BenchmarkPanel({ filters = {}, journeys, rfidBackgroundLoading =
             </button>
           ))}
         </div>
-        <DetailTable rows={rows} view={detailView} />
+        <DetailTable rows={ediRows} view={detailView} />
       </Section>
 
       <BenchmarkDrillModal

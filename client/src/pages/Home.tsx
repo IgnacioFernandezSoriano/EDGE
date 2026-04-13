@@ -815,7 +815,7 @@ export default function Home() {
         {activeTab === 'EDI+RFID' && (
           <Section
             title="EDI + RFID Analysis"
-            subtitle="Receptacles with both RFID tag_id and EDI s9id linked via ID Relation — comparison of physical readings vs declared events"
+            subtitle="Receptacles with RFID tag_id matched in ID Relation AND with EDI data in datos EDI — comparison of physical readings vs declared events"
           >
             {/* ── Benchmark filters ── */}
             <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">

@@ -361,7 +361,16 @@ export function useBenchmarkData(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idMap, ediMap, journeys, JSON.stringify(filters)]);
 
-  const stats = useMemo(() => rows.length ? computeStats(rows) : null, [rows]);
+  // ediRows: subset of rows that have actual EDI data — used for all EDI reports/stats
+  // rows without EDI data are kept in `rows` for RFID-only drilldowns but excluded from EDI metrics
+  const ediRows = useMemo<BenchmarkRow[]>(() => rows.filter(r =>
+    r.edi_origin_impc !== null ||
+    r.edi_dest_impc !== null ||
+    r.edi_predes_time !== null ||
+    r.edi_resdes_time !== null
+  ), [rows]);
+
+  const stats = useMemo(() => ediRows.length ? computeStats(ediRows) : null, [ediRows]);
 
   const allOriginCountries = useMemo(() => {
     if (!idMap || !ediMap) return [];
@@ -379,7 +388,7 @@ export function useBenchmarkData(
   }, [idMap, ediMap, journeys.length, filters.originCountry]);
 
   return {
-    rows, stats,
+    rows, ediRows, stats,
     loading: ediLoading || !idMap,
     error, ediProgress,
     backgroundLoading: rfidBackgroundLoading,
