@@ -565,10 +565,12 @@ export interface EdiTagInfo {
  * Fetches a map of tagid → { origin_impc, destination_impc } by joining
  * "ID Relation" (tagid → s9id) with "datos EDI" (ean = s9id → origin, destination).
  * Used to classify single-country RFID tags as Departure or Arrival.
+ * EDI lookups are batched in groups of 50 to avoid URL length limits (HTTP 400).
  */
 export async function fetchEdiTagMap(): Promise<Map<string, EdiTagInfo>> {
   const headers = await getAuthHeaders();
   const PAGE_SIZE = 1000;
+  const EDI_BATCH = 50; // max s9ids per EDI query to stay within URL length limits
   const result = new Map<string, EdiTagInfo>();
   let offset = 0;
 
@@ -582,23 +584,38 @@ export async function fetchEdiTagMap(): Promise<Map<string, EdiTagInfo>> {
     const idRelRows: { tagid: string; s9id: string }[] = await idRelRes.json();
     if (!idRelRows.length) break;
 
-    const s9ids = idRelRows.map(r => r.s9id).filter(Boolean);
-    if (s9ids.length > 0) {
+    // Build a local s9id → tagid[] map for this page
+    const s9idToTagids = new Map<string, string[]>();
+    for (const row of idRelRows) {
+      if (!row.s9id) continue;
+      if (!s9idToTagids.has(row.s9id)) s9idToTagids.set(row.s9id, []);
+      s9idToTagids.get(row.s9id)!.push(row.tagid);
+    }
+    const s9ids = Array.from(s9idToTagids.keys());
+
+    // Query datos EDI in small batches to avoid HTTP 400 (URL too long)
+    const ediMap = new Map<string, { origin: string | null; destination: string | null }>();
+    for (let i = 0; i < s9ids.length; i += EDI_BATCH) {
+      const batch = s9ids.slice(i, i + EDI_BATCH);
       const ediUrl = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent('datos EDI')}`);
       ediUrl.searchParams.set('select', 'ean,origin,destination');
-      ediUrl.searchParams.set('ean', `in.(${s9ids.map(s => `"${s}"`).join(',')})`);
-      ediUrl.searchParams.set('limit', String(PAGE_SIZE));
+      ediUrl.searchParams.set('ean', `in.(${batch.map(s => `"${s}"`).join(',')})`);
+      ediUrl.searchParams.set('limit', String(EDI_BATCH));
       const ediRes = await fetch(ediUrl.toString(), { headers });
       if (ediRes.ok) {
         const ediRows: { ean: string; origin: string | null; destination: string | null }[] = await ediRes.json();
-        const ediMap = new Map(ediRows.map(e => [e.ean, e]));
-        for (const row of idRelRows) {
-          const edi = ediMap.get(row.s9id);
-          result.set(row.tagid, {
-            origin_impc: edi?.origin ?? null,
-            destination_impc: edi?.destination ?? null,
-          });
-        }
+        for (const e of ediRows) ediMap.set(e.ean, e);
+      }
+    }
+
+    // Map results back to tagids
+    for (const [s9id, tagids] of s9idToTagids) {
+      const edi = ediMap.get(s9id);
+      for (const tagid of tagids) {
+        result.set(tagid, {
+          origin_impc: edi?.origin ?? null,
+          destination_impc: edi?.destination ?? null,
+        });
       }
     }
 
