@@ -882,7 +882,7 @@ export default function Home() {
               <KpiCard title="Analysed Pairs" value={safeStats.departurePairs.toLocaleString()} subtitle="RFID + PREDES matches" badge={{ label: 'departure', color: 'blue' }}
                 tooltip="Number of receptacles that have both an RFID reading at the origin centre AND a PREDES message. Only these pairs can be used to calculate the departure lag (time difference between administrative dispatch and physical detection)."
               />
-              <KpiCard title="Avg Lag" value={`+${safeStats.departureAvgHours}h / ${(safeStats.departureAvgHours / 24).toFixed(1)}d`} subtitle="RFID after PREDES" badge={{ label: 'RFID after PREDES', color: 'amber' }}
+              <KpiCard title="Avg Lag" value={`+${(safeStats.departureAvgHours / 24).toFixed(1)}d`} subtitle="RFID after PREDES" badge={{ label: 'RFID after PREDES', color: 'amber' }}
                 tooltip="The median (50th percentile) time between the PREDES message and the first RFID reading at the origin centre. The median is used instead of the mean to reduce the influence of extreme outliers. A positive value is expected and operationally normal."
               />
 
@@ -905,7 +905,7 @@ export default function Home() {
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="avgDepartureLag" name="Avg lag (hours)" radius={[0, 3, 3, 0]}>
                       {safeStats.byOriginCountry.map((entry, i) => <Cell key={i} fill={entry.avgDepartureLag < 0 ? C.emerald : C.amber} />)}
-                      <LabelList dataKey="avgDepartureLag" position="right" formatter={(v: number) => `${v.toFixed(0)}h / ${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
+                      <LabelList dataKey="avgDepartureLag" position="right" formatter={(v: number) => `${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -936,7 +936,7 @@ export default function Home() {
                     <YAxis type="category" dataKey="centre" tick={{ fontSize: 10 }} width={140} />
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="avg" name="Avg lag (hours)" fill={C.indigo} radius={[0, 3, 3, 0]}>
-                      <LabelList dataKey="avg" position="right" formatter={(v: number) => `${v.toFixed(0)}h / ${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
+                      <LabelList dataKey="avg" position="right" formatter={(v: number) => `${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -973,7 +973,7 @@ export default function Home() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="x" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                      label={{ value: 'Departure lag (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
+                      label={{ value: 'Departure lag (d)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
                     <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]}
                       label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
                     <ReferenceLine x={0} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: '0h', position: 'top', style: { fontSize: 9, fill: '#94a3b8' } }} />
@@ -986,7 +986,7 @@ export default function Home() {
             )}
 
             <InfoBox color="indigo">
-              <span className="font-semibold">Interpretation:</span> The PREDES message is issued by the origin postal operator when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs. The avg lag of <strong>+{safeStats.departureAvgHours}h ({(safeStats.departureAvgHours/24).toFixed(1)}d)</strong> is operationally consistent with this workflow. Cases where RFID precedes PREDES ({safeStats.departureRfidBeforePct}%) may indicate EDI transmission delays or timestamp inconsistencies.
+              <span className="font-semibold">Interpretation:</span> The PREDES message is issued by the origin postal operator when the dispatch is administratively prepared, typically 2–3 days before the receptacle physically departs. The avg lag of <strong>+{(safeStats.departureAvgHours/24).toFixed(1)}d</strong> is operationally consistent with this workflow. Cases where RFID precedes PREDES ({safeStats.departureRfidBeforePct}%) may indicate EDI transmission delays or timestamp inconsistencies.
             </InfoBox>
 
             <DepartureAnalysis s={stats} />
@@ -1005,7 +1005,7 @@ export default function Home() {
                 tooltip="Number of receptacles with both an RFID reading at the destination centre AND a RESDES message. Only these pairs enable the arrival lead/lag calculation."
               />
               <KpiCard title="Avg Lead/Lag"
-                value={`${safeStats.arrivalAvgHours < 0 ? '' : '+'}${safeStats.arrivalAvgHours.toFixed(1)}h / ${(Math.abs(safeStats.arrivalAvgHours)/24).toFixed(1)}d`}
+                value={`${safeStats.arrivalAvgHours < 0 ? '' : '+'}${(Math.abs(safeStats.arrivalAvgHours)/24).toFixed(1)}d`}
                 subtitle={safeStats.arrivalAvgHours < 0 ? `RFID before RESDES` : `RFID after RESDES`}
                 badge={{ label: safeStats.arrivalAvgHours < 0 ? 'RFID advantage' : 'EDI faster', color: safeStats.arrivalAvgHours < 0 ? 'green' : 'amber' }}
                 tooltip="Median time between the last RFID reading at the destination and the RESDES message. Negative = RFID detected BEFORE RESDES (RFID provides earlier visibility). Positive = RESDES issued before RFID detection (EDI is faster at this destination)."
@@ -1031,7 +1031,7 @@ export default function Home() {
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="avgArrivalLead" name="Avg lead/lag (hours)" radius={[0, 3, 3, 0]}>
                       {safeStats.byDestCountry.map((entry, i) => <Cell key={i} fill={entry.avgArrivalLead < 0 ? C.emerald : C.amber} />)}
-                      <LabelList dataKey="avgArrivalLead" position="right" formatter={(v: number) => `${v.toFixed(0)}h / ${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
+                      <LabelList dataKey="avgArrivalLead" position="right" formatter={(v: number) => `${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -1064,7 +1064,7 @@ export default function Home() {
                     <Tooltip content={<ChartTooltip />} />
                     <Bar dataKey="avg" name="Avg lead/lag (hours)" radius={[0, 3, 3, 0]}>
                       {safeStats.arrivalByCentre.map((entry, i) => <Cell key={i} fill={entry.avg < 0 ? C.emerald : C.amber} />)}
-                      <LabelList dataKey="avg" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
+                      <LabelList dataKey="avg" position="right" formatter={(v: number) => `${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: '#64748b' }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -1101,7 +1101,7 @@ export default function Home() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="x" tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                      label={{ value: 'Arrival lead/lag (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
+                      label={{ value: 'Arrival lead/lag (d)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
                     <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]}
                       label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
                     <ReferenceLine x={0} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: '0h', position: 'top', style: { fontSize: 9, fill: '#94a3b8' } }} />
@@ -1114,7 +1114,7 @@ export default function Home() {
             )}
 
             <InfoBox color="emerald">
-              <span className="font-semibold">Key Finding:</span> In <strong>{safeStats.arrivalRfidBeforePct}%</strong> of arrival events, the RFID system detects the receptacle <em>before</em> the RESDES message is generated. This represents the measurable real-time visibility advantage of RFID over EDI at the destination centre — the avg lead time is <strong>{Math.abs(safeStats.arrivalAvgHours).toFixed(1)}h ({(Math.abs(safeStats.arrivalAvgHours)/24).toFixed(1)}d)</strong>.
+              <span className="font-semibold">Key Finding:</span> In <strong>{safeStats.arrivalRfidBeforePct}%</strong> of arrival events, the RFID system detects the receptacle <em>before</em> the RESDES message is generated. This represents the measurable real-time visibility advantage of RFID over EDI at the destination centre — the avg lead time is <strong>{(Math.abs(safeStats.arrivalAvgHours)/24).toFixed(1)}d</strong>.
             </InfoBox>
 
             <ArrivalAnalysis s={stats} />
@@ -1132,13 +1132,13 @@ export default function Home() {
               <KpiCard title="Validated Routes" value={safeStats.transitPairs.toLocaleString()} subtitle="Full origin→dest RFID" badge={{ label: 'end-to-end', color: 'blue' }}
                 tooltip="Number of receptacles with RFID readings at both a distinct origin and destination centre (full_route_validated = true). Only these enable a direct comparison between physical transit time (RFID) and declared transit time (EDI)."
               />
-              <KpiCard title="Avg RFID Transit" value={`${safeStats.rfidTransitAvg}h / ${(safeStats.rfidTransitAvg / 24).toFixed(1)}d`} subtitle="Avg physical transit (RFID)" badge={{ label: 'physical', color: 'blue' }}
+              <KpiCard title="Avg RFID Transit" value={`${(safeStats.rfidTransitAvg / 24).toFixed(1)}d`} subtitle="Avg physical transit (RFID)" badge={{ label: 'physical', color: 'blue' }}
                 tooltip="Median physical transit time measured by RFID: the time between the last RFID reading at the origin centre and the first RFID reading at the destination centre. This is the actual time the receptacle spent in transit, as measured by the RFID infrastructure."
               />
-              <KpiCard title="Avg EDI Transit" value={`${safeStats.ediTransitAvg}h / ${(safeStats.ediTransitAvg / 24).toFixed(1)}d`} subtitle="Avg declared transit (EDI)" badge={{ label: 'declared', color: 'slate' }}
+              <KpiCard title="Avg EDI Transit" value={`${(safeStats.ediTransitAvg / 24).toFixed(1)}d`} subtitle="Avg declared transit (EDI)" badge={{ label: 'declared', color: 'slate' }}
                 tooltip="Median declared transit time from EDI messages: RESDES timestamp minus PREDES timestamp. This is the administratively declared transit time, which may differ from the physical transit measured by RFID due to processing delays, pre-advice timing, or timestamp inconsistencies."
               />
-              <KpiCard title="EDI Overestimate" value={`${safeStats.transitDiffAvg > 0 ? '+' : ''}${safeStats.transitDiffAvg}h / ${(Math.abs(safeStats.transitDiffAvg)/24).toFixed(1)}d`} subtitle="EDI vs RFID transit gap"
+              <KpiCard title="EDI Overestimate" value={`${safeStats.transitDiffAvg > 0 ? '+' : ''}${(Math.abs(safeStats.transitDiffAvg)/24).toFixed(1)}d`} subtitle="EDI vs RFID transit gap"
                 badge={{ label: safeStats.transitDiffAvg > 0 ? 'EDI longer' : 'RFID longer', color: safeStats.transitDiffAvg > 0 ? 'amber' : 'green' }}
                 tooltip="Median difference between EDI-declared transit and RFID-measured physical transit (EDI minus RFID). Positive = EDI overestimates transit time (EDI says the journey took longer than RFID measured). Negative = EDI underestimates. This gap reveals systematic biases in administrative declarations."
               />
@@ -1153,11 +1153,11 @@ export default function Home() {
                     <YAxis type="category" dataKey="route" tick={{ fontSize: 10 }} width={185} />
                     <Tooltip content={<ChartTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} />
-                    <Bar dataKey="rfidAvg" name="RFID Physical (h)" fill={C.indigo} radius={[0, 2, 2, 0]} barSize={13}>
-                      <LabelList dataKey="rfidAvg" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: C.indigo }} />
+                    <Bar dataKey="rfidAvg" name="RFID Physical (d)" fill={C.indigo} radius={[0, 2, 2, 0]} barSize={13}>
+                      <LabelList dataKey="rfidAvg" position="right" formatter={(v: number) => `${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: C.indigo }} />
                     </Bar>
-                    <Bar dataKey="ediAvg" name="EDI Declared (h)" fill={C.slate} radius={[0, 2, 2, 0]} barSize={13}>
-                      <LabelList dataKey="ediAvg" position="right" formatter={(v: number) => `${v.toFixed(0)}h/${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: C.slate }} />
+                    <Bar dataKey="ediAvg" name="EDI Declared (d)" fill={C.slate} radius={[0, 2, 2, 0]} barSize={13}>
+                      <LabelList dataKey="ediAvg" position="right" formatter={(v: number) => `${(v/24).toFixed(1)}d`} style={{ fontSize: 10, fill: C.slate }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -1187,7 +1187,7 @@ export default function Home() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="x" type="number" allowDuplicatedCategory={false} tick={{ fontSize: 10 }} tickFormatter={v => `${v}h`}
-                      label={{ value: 'Transit time (h)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
+                      label={{ value: 'Transit time (d)', position: 'insideBottom', offset: -10, style: { fontSize: 10, fill: '#94a3b8' } }} />
                     <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]}
                       label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }} />
                     <ReferenceLine y={50} strokeDasharray="4 2" strokeOpacity={0.35} stroke="#94a3b8" label={{ value: 'P50', position: 'right', style: { fontSize: 9, fill: '#94a3b8' } }} />
@@ -1615,9 +1615,9 @@ export default function Home() {
                             <tr className="border-b border-slate-100">
                               <th className="text-left py-2 pr-4 text-slate-500 font-medium">Route</th>
                               <th className="text-right py-2 pr-4 text-slate-500 font-medium">N</th>
-                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">Avg (h)</th>
-                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">P50 / Median (h)</th>
-                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">IQR P25–P75 (h)</th>
+                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">Avg (d)</th>
+                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">P50 / Median (d)</th>
+                              <th className="text-right py-2 pr-4 text-slate-500 font-medium">IQR P25–P75 (d)</th>
                               <th className="py-2 text-slate-500 font-medium" />
                             </tr>
                           </thead>
@@ -1637,17 +1637,17 @@ export default function Home() {
                                 <td className="py-2 pr-4 text-right font-medium text-slate-700">{r.count.toLocaleString()}</td>
                                 <td className="py-2 pr-4 text-right">
                                   {r.avgH !== null ? (
-                                    <span className="font-semibold text-indigo-600">{r.avgH}h</span>
+                                    <span className="font-semibold text-indigo-600">{(r.avgH / 24).toFixed(1)}d</span>
                                   ) : <span className="text-slate-300">—</span>}
                                 </td>
                                 <td className="py-2 pr-4 text-right">
                                   {r.p50H !== null ? (
-                                    <span className="font-semibold text-emerald-600">{r.p50H}h</span>
+                                    <span className="font-semibold text-emerald-600">{(r.p50H / 24).toFixed(1)}d</span>
                                   ) : <span className="text-slate-300">—</span>}
                                 </td>
                                 <td className="py-2 pr-4 text-right">
                                   {r.p25H !== null && r.p75H !== null ? (
-                                    <span className="text-slate-600">{r.p25H}h – {r.p75H}h</span>
+                                    <span className="text-slate-600">{(r.p25H / 24).toFixed(1)}d – {(r.p75H / 24).toFixed(1)}d</span>
                                   ) : <span className="text-slate-300">—</span>}
                                 </td>
                                 <td className="py-2 text-right" onClick={e => e.stopPropagation()}>
