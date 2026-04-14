@@ -174,13 +174,13 @@ function parseLocation(location: string | null): { country: string; centre: stri
  * 3. Within each block, group by read_point_id (centre):
  *    - ORIGIN block: select LAST reading per centre
  *    - DESTINATION block: select FIRST reading per centre
- * 4. Classify by td_reader (from rfid_readers_master):
+ * 4. Classify by td_reader (from rfid_readers_master) for OE hitos only:
  *    - ORIGIN + td_reader=false → OE Origin (last of all last-per-centre)
- *    - ORIGIN + td_reader=true  → AMU Outbound (last of all last-per-centre)
- *    - DEST   + td_reader=true  → AMU Inbound (first of all first-per-centre)
  *    - DEST   + td_reader=false → OE Destination (first of all first-per-centre)
- * 5. Leg2 = tags with both AMU Outbound AND AMU Inbound
- * 6. transit_hours = record_time(AMU Inbound) - record_time(AMU Outbound)
+ * 5. DEPARTURE = last reading of the entire origin block (any reader type)
+ *    ARRIVAL   = first reading of the entire destination block (any reader type)
+ * 6. Leg2 = tags with readings in two different countries
+ * 7. transit_hours = record_time(ARRIVAL) - record_time(DEPARTURE)
  */
 function readingsToJourneys(
   readings: RfidReading[],
@@ -274,26 +274,26 @@ function readingsToJourneys(
       else destOE.push(v);
     }
 
-    // Step 4: Select final hito readings
-    //
-    // DEPARTURE (salida del país): última lectura cronológica del bloque origen,
-    // independientemente del tipo de lector (AMU o OE).
-    // Se toma el último de todos los last-per-centre del bloque origen.
-    const allOriginEntries = [...originLastByCentre.values()];
+    // Step 5: DEPARTURE = last reading of the entire origin block (any reader type)
     // CONDICIÓN CLAVE: solo existe evento de salida si el tag tiene lecturas en
-    // al menos dos países distintos (destBlock.length > 0). Un tag con lecturas
-    // en un único país NO tiene evento de salida internacional.
-    // EXCEPCIÓN: si el tag tiene solo lecturas en un país pero tiene datos EDI
+    // al menos dos países distintos (destBlock.length > 0).
+    // EXCEPCIÓN EDI: si el tag tiene solo lecturas en un país pero tiene datos EDI
     // que indican que ese país es el origen, se clasifica como Departure.
-    let departureEntry = (allOriginEntries.length > 0 && destBlock.length > 0)
-      ? allOriginEntries.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1).at(-1)!
-      : null;
+    const allOriginEntries = [...originLastByCentre.values()];
+    // Use the raw origin block (all readings) to find the absolute last reading
+    const originBlockSorted = [...originBlock].sort((a, b) =>
+      (a.record_time || a.event_time_local || '') < (b.record_time || b.event_time_local || '') ? -1 : 1
+    );
+    const lastOriginReading = originBlockSorted.length > 0 ? originBlockSorted[originBlockSorted.length - 1] : null;
+    let departureEntry: { reading: RfidReading; info: ReturnType<typeof getReaderInfo> } | null =
+      (lastOriginReading && destBlock.length > 0)
+        ? { reading: lastOriginReading, info: getReaderInfo(lastOriginReading) }
+        : null;
 
-    // ARRIVAL (entrada al país destino): primera lectura de un lector TD (td_reader=true)
-    // en el bloque destino.
-    let amuInboundEntry = destAMU.length > 0
-      ? destAMU.sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1)[0]
-      : null;
+    // ARRIVAL = first reading of the entire destination block (any reader type)
+    const firstDestReading = destBlock.length > 0 ? destBlock[0] : null; // destBlock already sorted ASC
+    let amuInboundEntry: { reading: RfidReading; info: ReturnType<typeof getReaderInfo> } | null =
+      firstDestReading ? { reading: firstDestReading, info: getReaderInfo(firstDestReading) } : null;
 
     // EDI FALLBACK: para tags con lecturas en un único país (destBlock.length === 0),
     // consultar datos EDI para determinar si es Departure o Arrival.
@@ -305,15 +305,13 @@ function readingsToJourneys(
         const destImpc   = (ediInfo.destination_impc || '').toUpperCase();
         if (originImpc && readerImpc === originImpc) {
           // Tag is a Departure: last reading in origin block
-          departureEntry = allOriginEntries.sort((a, b) =>
-            (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1
-          ).at(-1)!;
+          departureEntry = lastOriginReading
+            ? { reading: lastOriginReading, info: getReaderInfo(lastOriginReading) }
+            : null;
         } else if (destImpc && readerImpc === destImpc) {
-          // Tag is an Arrival: treat the first TD reading as amuInboundEntry
-          const tdEntry = allOriginEntries
-            .filter(v => v.info.td_reader)
-            .sort((a, b) => (a.reading.record_time || '') < (b.reading.record_time || '') ? -1 : 1)[0] ?? null;
-          if (tdEntry) amuInboundEntry = tdEntry;
+          // Tag is an Arrival: first reading in the block (already the only block)
+          const firstReading = originBlockSorted[0] ?? null;
+          if (firstReading) amuInboundEntry = { reading: firstReading, info: getReaderInfo(firstReading) };
         }
       }
     }
