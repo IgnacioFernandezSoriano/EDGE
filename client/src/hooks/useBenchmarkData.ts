@@ -224,8 +224,8 @@ function buildBenchmarkRows(
     const rfDep = j.departure_time ?? null;
     const rfArr = j.arrival_time   ?? null;
     const rfDest = j.dest_time ?? null;
-    // RF transit: AMU Outbound (departure_time) → OE Destination (dest_time)
-    const rfTransit = diffHours(rfDep, rfDest);
+    // RF transit: last origin reading (departure_time) → first dest reading (arrival_time)
+    const rfTransit = diffHours(rfDep, rfArr);
     const edi = ediMap.get(s9id) ?? null;
     const originCountry = j.origin_country ?? j.departure_country ?? null;
     const destCountry   = j.dest_country   ?? j.arrival_country   ?? null;
@@ -277,7 +277,7 @@ function computeStats(rows: BenchmarkRow[]): BenchmarkStats {
   const routeMap = new Map<string, { origin: string; dest: string; originCentre: string | null; originCountry: string | null; destCentre: string | null; destCountry: string | null; count: number; depCount: number; arrCount: number; transitCount: number; rfH: number[]; ediH: number[]; rows: BenchmarkRow[] }>();
   for (const r of rows) {
     const origin = r.rf_origin_country ?? r.rf_departure_country ?? r.edi_origin_impc ?? '?';
-    const dest   = r.edi_dest_impc ?? r.rf_dest_impc ?? r.rf_arrival_impc ?? r.rf_dest_country ?? r.rf_arrival_country ?? '?';
+    const dest   = r.edi_dest_impc ?? r.rf_arrival_impc ?? r.rf_dest_impc ?? r.rf_arrival_country ?? r.rf_dest_country ?? '?';
     const route  = `${origin} → ${dest}`;
     if (!routeMap.has(route)) {
       const originCentre  = r.rf_origin_centre   ?? r.rf_departure_centre  ?? null;
