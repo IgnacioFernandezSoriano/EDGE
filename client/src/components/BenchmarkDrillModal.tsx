@@ -76,7 +76,7 @@ function fmt(t: string | null): string {
 function fmtH(h: number | null): string {
   if (h === null) return '—';
   const sign = h < 0 ? '−' : '+';
-  return `${sign}${Math.abs(h).toFixed(1)}h`;
+  return `${sign}${(Math.abs(h) / 24).toFixed(1)}d`;
 }
 
 const PAGE = 50;
@@ -189,15 +189,15 @@ export default function BenchmarkDrillModal({ open, title, subtitle, rows, onClo
                 <Th k="edi_origin_impc" label="Origin IMPC" />
                 <Th k="rf_departure_time" label="RFID Outbound" />
                 <Th k="edi_predes_time" label="EDI PREDES" />
-                <Th k="delta_predes_hours" label="Δ Outbound (h)" />
+                <Th k="delta_predes_hours" label="Δ Outbound (d)" />
                 <Th k="rf_dest_country" label="Dest Country" />
                 <Th k="rf_dest_centre" label="Dest Centre" />
                 <Th k="edi_dest_impc" label="Dest IMPC" />
                 <Th k="rf_arrival_time" label="RFID Inbound" />
                 <Th k="edi_resdes_time" label="EDI RESDES" />
-                <Th k="delta_resdes_hours" label="Δ Inbound (h)" />
-                <Th k="rf_transit_hours" label="RFID Transit (h)" />
-                <Th k="edi_transit_hours" label="EDI Transit (h)" />
+                <Th k="delta_resdes_hours" label="Δ Inbound (d)" />
+                <Th k="rf_transit_hours" label="RFID Transit (d)" />
+                <Th k="edi_transit_hours" label="EDI Transit (d)" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -221,8 +221,8 @@ export default function BenchmarkDrillModal({ open, title, subtitle, rows, onClo
                     <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{fmt(r.rf_arrival_time)}</td>
                     <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{fmt(r.edi_resdes_time)}</td>
                     <td className={`px-2 py-1.5 font-semibold whitespace-nowrap ${deltaResdesColor}`}>{fmtH(r.delta_resdes_hours)}</td>
-                    <td className="px-2 py-1.5 text-slate-600 whitespace-nowrap">{r.rf_transit_hours !== null ? `${r.rf_transit_hours.toFixed(1)}h` : '—'}</td>
-                    <td className="px-2 py-1.5 text-slate-600 whitespace-nowrap">{r.edi_transit_hours !== null ? `${r.edi_transit_hours.toFixed(1)}h` : '—'}</td>
+                    <td className="px-2 py-1.5 text-slate-600 whitespace-nowrap">{r.rf_transit_hours !== null ? `${(r.rf_transit_hours / 24).toFixed(1)}d` : '—'}</td>
+                    <td className="px-2 py-1.5 text-slate-600 whitespace-nowrap">{r.edi_transit_hours !== null ? `${(r.edi_transit_hours / 24).toFixed(1)}d` : '—'}</td>
                   </tr>
                 );
               })}

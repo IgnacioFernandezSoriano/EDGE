@@ -2,9 +2,9 @@
  * EpcisDataTable — data table for the RFID tab, sourced exclusively from datos EPCIS.
  * Columns:
  *   1. Identity:     S9ID | Tag ID
- *   2. Origin:       Country | Centre | IMPC | Time (UTC) | Readings
- *   3. Destination:  Country | Centre | IMPC | Time (UTC) | Readings  (— when no dest)
- *   4. Transit:      Hours | Days  (— when no dest)
+ *   2. Origin:       Country | Centre | IMPC | Time (UTC)
+ *   3. Destination:  Country | Centre | IMPC | Time (UTC)  (— when no dest)
+ *   4. Transit:      Days  (— when no dest)
  * Includes search, pagination, sort, and CSV export.
  * Pagination fix: useEffect resets page when journeys/filter/search/sort changes.
  */
@@ -24,10 +24,8 @@ function formatTime(t: string | null): string {
 
 function formatTransit(h: number | null): string {
   if (h === null || h === undefined) return '—';
-  const abs = Math.abs(h);
   const sign = h < 0 ? '−' : '+';
-  if (abs < 24) return `${sign}${abs.toFixed(1)}h`;
-  return `${sign}${(abs / 24).toFixed(1)}d`;
+  return `${sign}${(Math.abs(h) / 24).toFixed(1)}d`;
 }
 
 function truncTag(tag: string | null): string {
@@ -52,13 +50,11 @@ function exportJourneysToCsv(journeys: RfidJourney[], filename = 'rfid_epcis_jou
     { key: 'origin_centre',   label: 'Origin Centre' },
     { key: 'origin_impc',     label: 'Origin IMPC' },
     { key: 'origin_time',     label: 'Origin Time (UTC)' },
-    { key: 'origin_readings', label: 'Origin Readings' },
     { key: 'dest_country',    label: 'Dest Country' },
     { key: 'dest_centre',     label: 'Dest Centre' },
     { key: 'dest_impc',       label: 'Dest IMPC' },
     { key: 'dest_time',       label: 'Dest Time (UTC)' },
-    { key: 'dest_readings',   label: 'Dest Readings' },
-    { key: 'transit_hours',   label: 'Transit (h)' },
+    { key: 'transit_hours',   label: 'Transit (d)' },
     { key: 'has_destination', label: 'Has Destination' },
     { key: 'centres_visited', label: 'Centres Visited' },
   ] as const;
@@ -323,10 +319,9 @@ export function EpcisDataTable({ journeys, dateLabel, showFilters, allOriginCoun
                 Centre <SortIcon col="origin_centre" />
               </th>
               <th className="px-3 py-2 text-left bg-indigo-50/20 whitespace-nowrap">IMPC</th>
-              <th className="px-3 py-2 text-left cursor-pointer hover:text-indigo-600 bg-indigo-50/20 whitespace-nowrap" onClick={() => handleSort('origin_time')}>
+              <th className="px-3 py-2 text-left cursor-pointer hover:text-indigo-600 bg-indigo-50/20 border-r border-indigo-200 whitespace-nowrap" onClick={() => handleSort('origin_time')}>
                 Time (UTC) <SortIcon col="origin_time" />
               </th>
-              <th className="px-3 py-2 text-right bg-indigo-50/20 border-r border-indigo-200 whitespace-nowrap">Reads</th>
               {/* Destination */}
               <th className="px-3 py-2 text-left cursor-pointer hover:text-emerald-600 bg-emerald-50/20 whitespace-nowrap" onClick={() => handleSort('dest_country')}>
                 Country <SortIcon col="dest_country" />
@@ -335,15 +330,13 @@ export function EpcisDataTable({ journeys, dateLabel, showFilters, allOriginCoun
                 Centre <SortIcon col="dest_centre" />
               </th>
               <th className="px-3 py-2 text-left bg-emerald-50/20 whitespace-nowrap">IMPC</th>
-              <th className="px-3 py-2 text-left cursor-pointer hover:text-emerald-600 bg-emerald-50/20 whitespace-nowrap" onClick={() => handleSort('dest_time')}>
+              <th className="px-3 py-2 text-left cursor-pointer hover:text-emerald-600 bg-emerald-50/20 border-r border-emerald-200 whitespace-nowrap" onClick={() => handleSort('dest_time')}>
                 Time (UTC) <SortIcon col="dest_time" />
               </th>
-              <th className="px-3 py-2 text-right bg-emerald-50/20 border-r border-emerald-200 whitespace-nowrap">Reads</th>
               {/* Transit */}
               <th className="px-3 py-2 text-right cursor-pointer hover:text-slate-800 whitespace-nowrap" onClick={() => handleSort('transit_hours')}>
-                Duration <SortIcon col="transit_hours" />
+                Transit (d) <SortIcon col="transit_hours" />
               </th>
-              <th className="px-3 py-2 text-right whitespace-nowrap">Days</th>
             </tr>
           </thead>
           <tbody>
@@ -368,39 +361,28 @@ export function EpcisDataTable({ journeys, dateLabel, showFilters, allOriginCoun
                 <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate bg-indigo-50/20" title={j.origin_centre ?? ''}>{j.origin_centre || '—'}</td>
                 <td className="px-3 py-2 font-mono text-slate-500 bg-indigo-50/20">{j.origin_impc || '—'}</td>
                 <td className="px-3 py-2 font-mono text-slate-500 bg-indigo-50/20 whitespace-nowrap">{formatTime(j.origin_time)}</td>
-                <td className="px-3 py-2 text-right font-mono text-indigo-600 bg-indigo-50/20 border-r border-indigo-200">{j.origin_readings}</td>
                 {/* Destination: use OE Dest if available, fallback to AMU Inbound (arrival) */}
                 {(() => {
                   const dc  = j.dest_country  ?? j.arrival_country  ?? null;
                   const dce = j.dest_centre   ?? j.arrival_centre   ?? null;
                   const di  = j.dest_impc     ?? j.arrival_impc     ?? null;
                   const dt  = j.dest_time     ?? j.arrival_time     ?? null;
-                  const dr  = j.dest_readings > 0 ? j.dest_readings : (j.arrival_time ? 1 : 0);
-                  const hasD = !!dc;
                   return (
                     <>
                       <td className="px-3 py-2 text-slate-700 bg-emerald-50/20">{dc || '—'}</td>
                       <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate bg-emerald-50/20" title={dce ?? ''}>{dce || '—'}</td>
                       <td className="px-3 py-2 font-mono text-slate-500 bg-emerald-50/20">{di || '—'}</td>
-                      <td className="px-3 py-2 font-mono text-slate-500 bg-emerald-50/20 whitespace-nowrap">{formatTime(dt)}</td>
-                      <td className="px-3 py-2 text-right font-mono text-emerald-600 bg-emerald-50/20 border-r border-emerald-200">
-                        {dr > 0 ? dr : '—'}
-                      </td>
+                      <td className="px-3 py-2 font-mono text-slate-500 bg-emerald-50/20 border-r border-emerald-200 whitespace-nowrap">{formatTime(dt)}</td>
                     </>
                   );
                 })()}
-                {/* Transit: prefer full journey (transit_hours), fallback to international (international_transit_hours) */}
+                {/* Transit in days */}
                 {(() => {
                   const h = j.transit_hours ?? j.international_transit_hours ?? null;
                   return (
-                    <>
-                      <td className={`px-3 py-2 text-right font-mono font-medium ${h !== null ? 'text-slate-700' : 'text-slate-300'}`}>
-                        {formatTransit(h)}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono text-slate-500">
-                        {h !== null ? (h / 24).toFixed(1) + 'd' : '—'}
-                      </td>
-                    </>
+                    <td className={`px-3 py-2 text-right font-mono font-medium ${h !== null ? 'text-slate-700' : 'text-slate-300'}`}>
+                      {formatTransit(h)}
+                    </td>
                   );
                 })()}
               </tr>

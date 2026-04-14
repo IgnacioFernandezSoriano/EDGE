@@ -23,10 +23,8 @@ const COVERAGE_COLORS: Record<string, string> = {
 
 function formatHours(h: number | null): string {
   if (h === null || h === undefined) return '—';
-  const abs = Math.abs(h);
   const sign = h < 0 ? '−' : '+';
-  if (abs < 24) return `${sign}${abs.toFixed(1)}h`;
-  return `${sign}${(abs / 24).toFixed(1)}d`;
+  return `${sign}${(Math.abs(h) / 24).toFixed(1)}d`;
 }
 
 function formatTime(t: string | null): string {
@@ -179,7 +177,7 @@ export function DataTable({ events, filterCoverage, dateLabel }: DataTableProps)
                 onClick={() => handleSort('departure_lag_hours')}
                 className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:text-slate-900 select-none border-r border-indigo-200 bg-indigo-50/40"
               >
-                Dep. Lag<SortIcon col="departure_lag_hours" />
+                Dep. Lag (d)<SortIcon col="departure_lag_hours" />
               </th>
               {/* Arrival pair */}
               <Th col="redes_dest_country" label="RFID Dest." className="bg-emerald-50/40" />
@@ -190,11 +188,11 @@ export function DataTable({ events, filterCoverage, dateLabel }: DataTableProps)
                 onClick={() => handleSort('arrival_lead_hours')}
                 className="px-3 py-2.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:text-slate-900 select-none border-r border-emerald-200 bg-emerald-50/40"
               >
-                Arr. Lead<SortIcon col="arrival_lead_hours" />
+                Arr. Lead (d)<SortIcon col="arrival_lead_hours" />
               </th>
               {/* Transit */}
-              <Th col="rfid_transit_hours" label="RFID Transit" />
-              <Th col="edi_transit_hours" label="EDI Transit" />
+              <Th col="rfid_transit_hours" label="RFID Transit (d)" />
+              <Th col="edi_transit_hours" label="EDI Transit (d)" />
             </tr>
           </thead>
           <tbody>

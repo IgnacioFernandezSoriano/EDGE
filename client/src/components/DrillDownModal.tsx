@@ -198,7 +198,7 @@ export default function DrillDownModal({ open, title, subtitle, journeys, onClos
                 <Th label="AMU In Time" k="arrival_time" />
                 <Th label="Dest. Centre (OE)" k="dest_centre" />
                 <Th label="OE Dest Time" k="dest_time" />
-                <Th label="Transit (h)" k="international_transit_hours" />
+                <Th label="Transit (d)" k="international_transit_hours" />
               </tr>
             </thead>
             <tbody>
@@ -224,7 +224,7 @@ export default function DrillDownModal({ open, title, subtitle, journeys, onClos
                   <td className="py-1.5 px-3 text-slate-500 whitespace-nowrap">{j.dest_time ? j.dest_time.slice(0, 16).replace('T', ' ') : '—'}</td>
                   <td className="py-1.5 px-3 text-right whitespace-nowrap">
                     {j.international_transit_hours != null
-                      ? <span className="font-semibold text-indigo-600">{j.international_transit_hours}h</span>
+                      ? <span className="font-semibold text-indigo-600">{(j.international_transit_hours / 24).toFixed(1)}d</span>
                       : <span className="text-slate-300">—</span>}
                   </td>
                 </tr>
