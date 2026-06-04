@@ -49,9 +49,15 @@ cron */30  ──▶  edge-rfid-etl-orchestrator
 - **Función dedicada** (no inline en el orquestador): unidad aislada, testeable sola, sin mezclar
   ETL con export. Un fallo de S3 no debe ensuciar la lógica del ETL.
 - **`verify_jwt = false`** en la nueva función (igual que `sync-site-snapshot`). Motivo: en este
-  proyecto las llamadas función→función con la `service_role`/`anon` del entorno devuelven **401**
-  (las keys son del formato nuevo no‑JWT que `verify_jwt` rechaza). Con `verify_jwt=false` el
-  orquestador la invoca sin fricción de auth.
+  proyecto las keys del entorno (`SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_ANON_KEY`) son del **formato
+  nuevo no‑JWT**, y el gateway de Functions exige una **clave de proyecto válida en formato JWT**
+  para enrutar → de ahí el conocido **401** función→función.
+- **Auth de la invocación interna:** el orquestador llama a la función de export pasando en
+  `apikey` **y** `Authorization: Bearer` un **JWT anon legacy** válido (el mismo `eyJ…` rol `anon`
+  que el cron del orquestador ya usa como `apikey`; es la clave pública anon, no sensible). Se
+  guarda como secreto `EDGE_INTERNAL_INVOKE_KEY` (fallback a `SUPABASE_ANON_KEY` si en el futuro el
+  entorno expone un JWT válido). Con `verify_jwt=false`, ese JWT basta para enrutar y la función no
+  re‑verifica. Dentro de la función, el acceso a la DB sigue usando `SUPABASE_SERVICE_ROLE_KEY`.
 - **Aislamiento de fallos:** el orquestador la llama dentro de un `try/catch`. Si el export falla
   (S3 caído, credencial inválida, etc.) se **loguea** y el run del ETL **termina OK igualmente**.
   El export no es condición de éxito del ETL.
@@ -140,14 +146,29 @@ Todas verificadas como existentes en `vw_quicksight_rfid_report_movements`.
 > Se usa el prefijo `AWS_S3_` en las claves para evitar choques con variables que Supabase pueda
 > reservar/inyectar. `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` ya están auto‑inyectadas.
 
+**Secreto del orquestador** (para la invocación interna, no sensible):
+
+| Secreto | Valor / origen |
+|---|---|
+| `EDGE_INTERNAL_INVOKE_KEY` | JWT anon legacy del proyecto (el `eyJ…` rol `anon` ya presente en el cron jobid 1 como `apikey`) |
+
 ## 8. Contrato de la función
 
-**Entrada:** invocación POST sin body (o body vacío) desde el orquestador.
+**Entrada:** invocación POST. Body opcional `{ "dry_run": true }`.
 
-**Salida (200):**
+- **`dry_run`:** construye el CSV pero **NO** sube a S3; devuelve cabecera + primeras líneas y stats
+  (para validar formato, ya que la key S3 solo permite `PutObject`, no `GetObject`).
+
+**Salida (200, carga normal):**
 ```json
-{ "ok": true, "rows_exported": 3661, "bytes": 1234567, "s3_key": "quicksight/rfid/current/rfid_movements.csv", "uploaded_at": "2026-06-04T...Z" }
+{ "ok": true, "rows_exported": 3661, "bytes": 1234567, "first_byte_hex": "73", "s3_key": "quicksight/rfid/current/rfid_movements.csv", "uploaded_at": "2026-06-04T...Z" }
 ```
+
+**Salida (200, dry_run):**
+```json
+{ "ok": true, "dry_run": true, "rows_exported": 3661, "bytes": 1234567, "first_byte_hex": "73", "header": "source_edge_id,tag_id,...", "sample": ["<fila1>", "<fila2>", "<fila3>"] }
+```
+> `first_byte_hex` permite confirmar que **no hay BOM** (un BOM UTF‑8 empezaría por `ef`).
 
 **Error (≥400):** `{ "ok": false, "error": "<mensaje>" }` (sin filtrar secretos en el mensaje).
 
