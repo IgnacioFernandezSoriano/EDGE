@@ -38,3 +38,11 @@ Deno.test("buildS3PutRequest: deterministic for fixed clock", async () => {
   const b = await buildS3PutRequest(fixed);
   assertEquals(a.headers["Authorization"], b.headers["Authorization"]);
 });
+
+Deno.test("buildS3PutRequest: golden Authorization for fixed input", async () => {
+  const { headers } = await buildS3PutRequest(fixed);
+  assertEquals(
+    headers["Authorization"],
+    "AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE/20260604/eu-central-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=394d289c09f411660a9c2393a8e07c4d5fc059ca73f59f602df23e498431b830",
+  );
+});
