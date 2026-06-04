@@ -17,6 +17,7 @@ Deno.test("offsetForZone resolves IANA zones incl. DST", () => {
   assertEquals(offsetForZone(new Date("2026-07-01T12:00:00Z"), "America/New_York"), "-04:00");
   assertEquals(offsetForZone(new Date("2026-01-01T12:00:00Z"), "America/New_York"), "-05:00");
   assertEquals(offsetForZone(new Date("2026-05-27T02:48:19Z"), "UTC"), "Z");
+  assertEquals(offsetForZone(new Date("2026-01-01T12:00:00Z"), "Asia/Kolkata"), "+05:30");
 });
 
 Deno.test("toLocalIsoWithOffset derives local wall time + offset", () => {
@@ -29,4 +30,8 @@ Deno.test("toLocalIsoWithOffset derives local wall time + offset", () => {
   assertEquals(toLocalIsoWithOffset("2026-05-27T02:48:19Z", null), "2026-05-27T02:48:19Z");
   // Null instant -> null
   assertEquals(toLocalIsoWithOffset(null, "Asia/Tokyo"), null);
+  assertEquals(
+    toLocalIsoWithOffset("2026-01-01T12:00:00Z", "America/New_York"),
+    "2026-01-01T07:00:00-05:00",
+  );
 });
