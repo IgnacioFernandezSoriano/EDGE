@@ -10,7 +10,7 @@ export function toUtcIso(value: string | null): string | null {
 export function offsetForZone(instant: Date, timeZone: string): string {
   const dtf = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" });
   const name = dtf.formatToParts(instant).find((p) => p.type === "timeZoneName")?.value ?? "GMT";
-  const m = name.match(/GMT([+-]\d{1,2}:?\d{2})?/);
+  const m = name.match(/^GMT([+-]\d{1,2}:?\d{2})?/);
   if (!m || !m[1]) return "Z";
   let off = m[1];
   if (!off.includes(":")) off = `${off.slice(0, -2)}:${off.slice(-2)}`; // "+0900" -> "+09:00"
