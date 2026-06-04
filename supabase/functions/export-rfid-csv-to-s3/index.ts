@@ -26,8 +26,8 @@ const COLUMNS = [
   "created_at_utc",
 ] as const;
 
-// Columnas que pedimos a PostgREST (las 22; event_datetime_utc/reader_timezone ya están y
-// son la fuente para event_datetime_local).
+// Columnas que pedimos a PostgREST (las 22). Solo event_datetime_local se RE-DERIVA aquí
+// (de event_datetime_utc + reader_timezone); las demás *_local vienen ya calculadas de la vista.
 const SELECT = COLUMNS.join(",");
 
 type Row = Record<string, unknown>;
@@ -36,15 +36,15 @@ function json(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-async function fetchAllRows(): Promise<Row[]> {
+async function fetchAllRows(supabaseUrl: string, serviceKey: string): Promise<Row[]> {
   const PAGE = 1000;
   let offset = 0;
   const out: Row[] = [];
   while (true) {
-    const url = `${SUPABASE_URL}/rest/v1/vw_quicksight_rfid_report_movements` +
+    const url = `${supabaseUrl}/rest/v1/vw_quicksight_rfid_report_movements` +
       `?select=${SELECT}&order=source_edge_id.asc&limit=${PAGE}&offset=${offset}`;
     const resp = await fetch(url, {
-      headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}`, Accept: "application/json" },
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: "application/json" },
     });
     if (!resp.ok) {
       throw new Error(`view fetch ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
@@ -57,34 +57,36 @@ async function fetchAllRows(): Promise<Row[]> {
   return out;
 }
 
+function buildCsvRow(r: Row): string {
+  return csvRow([
+    r.source_edge_id,
+    r.tag_id,
+    r.s9_id,
+    r.reader_id,
+    r.movement_type,
+    toUtcIso(r.event_datetime_utc as string | null),
+    toLocalIsoWithOffset(r.event_datetime_utc as string | null, r.reader_timezone as string | null),
+    r.movement_date_local,
+    r.movement_hour_local,
+    r.movement_month_local,
+    r.country_code,
+    r.country_name,
+    r.centre_code,
+    r.site_impc_code,
+    r.site_name,
+    r.city,
+    r.edi_equivalent,
+    r.reader_timezone,
+    r.handover_point,
+    r.handover_label,
+    r.reader_location_label,
+    toUtcIso(r.created_at_utc as string | null),
+  ]);
+}
+
 function buildCsv(rows: Row[]): string {
   const lines: string[] = [COLUMNS.join(",")]; // cabecera (sin escapar: nombres seguros)
-  for (const r of rows) {
-    lines.push(csvRow([
-      r.source_edge_id,
-      r.tag_id,
-      r.s9_id,
-      r.reader_id,
-      r.movement_type,
-      toUtcIso(r.event_datetime_utc as string | null),
-      toLocalIsoWithOffset(r.event_datetime_utc as string | null, r.reader_timezone as string | null),
-      r.movement_date_local,
-      r.movement_hour_local,
-      r.movement_month_local,
-      r.country_code,
-      r.country_name,
-      r.centre_code,
-      r.site_impc_code,
-      r.site_name,
-      r.city,
-      r.edi_equivalent,
-      r.reader_timezone,
-      r.handover_point,
-      r.handover_label,
-      r.reader_location_label,
-      toUtcIso(r.created_at_utc as string | null),
-    ]));
-  }
+  for (const r of rows) lines.push(buildCsvRow(r));
   return lines.join("\n") + "\n";
 }
 
@@ -92,17 +94,20 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: "Use POST" }, 405);
   if (!SUPABASE_URL || !SERVICE_KEY) return json({ ok: false, error: "Missing Supabase service environment" }, 500);
 
+  const dbUrl = SUPABASE_URL!;
+  const dbKey = SERVICE_KEY!;
+
   const body = await req.json().catch(() => ({}));
   const dryRun = body?.dry_run === true;
 
   try {
-    const rows = await fetchAllRows();
+    const rows = await fetchAllRows(dbUrl, dbKey);
     const csv = buildCsv(rows);
     const bytes = new TextEncoder().encode(csv); // UTF-8 sin BOM
     const firstByteHex = bytes.length ? bytes[0].toString(16).padStart(2, "0") : "";
 
     if (dryRun) {
-      const sample = csv.split("\n").slice(1, 4).filter((l) => l.length > 0);
+      const sample = rows.slice(0, 3).map(buildCsvRow);
       return json({
         ok: true, dry_run: true, rows_exported: rows.length, bytes: bytes.length,
         first_byte_hex: firstByteHex, header: COLUMNS.join(","), sample,
@@ -121,7 +126,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Missing AWS_S3_REGION / S3_BUCKET / S3_PREFIX / S3_OBJECT_KEY secret" }, 500);
     }
 
-    const objectKey = `${prefix}/${objectName}`;
+    const objectKey = `${prefix.replace(/\/+$/, "")}/${objectName}`;
     const { url, headers } = await buildS3PutRequest({
       accessKeyId, secretAccessKey, region, bucket, objectKey,
       body: bytes, contentType: "text/csv", now: new Date(),
@@ -130,7 +135,8 @@ Deno.serve(async (req) => {
     const put = await fetch(url, { method: "PUT", headers, body: bytes });
     if (!put.ok) {
       const errText = (await put.text()).slice(0, 500);
-      return json({ ok: false, error: `S3 PutObject ${put.status}: ${errText}` }, 502);
+      console.error("s3_put_object_failed", put.status, errText);
+      return json({ ok: false, error: `S3 PutObject failed (${put.status})` }, 502);
     }
 
     return json({
