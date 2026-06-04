@@ -200,6 +200,30 @@ Deno.serve(async (req: Request) => {
       p_error_message: null,
     });
 
+    // ── ÚLTIMO PASO: exportar la vista a CSV y subirla a S3 (no bloqueante) ──
+    // La vista ya está refrescada por rfid_transform_run. Un fallo aquí NO marca el run
+    // como fallido: el ETL ya terminó OK. Auth del gateway: JWT anon legacy (no sensible),
+    // porque las keys del entorno son formato nuevo no-JWT (401 función→función).
+    let csvExport: Json = { ok: false, error: "not attempted" };
+    try {
+      const invokeKey = Deno.env.get("EDGE_INTERNAL_INVOKE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+      const exportResp = await fetch(`${supabaseUrl}/functions/v1/export-rfid-csv-to-s3`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": invokeKey,
+          "Authorization": `Bearer ${invokeKey}`,
+        },
+        body: "{}",
+      });
+      csvExport = await exportResp.json().catch(() => ({ ok: false, error: `non-JSON ${exportResp.status}` }));
+      if (!exportResp.ok) console.error("csv_export_failed", JSON.stringify(csvExport));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("csv_export_error", msg);
+      csvExport = { ok: false, error: msg };
+    }
+
     return jsonResponse({
       status: "success",
       run_id: start.run_id,
@@ -207,6 +231,7 @@ Deno.serve(async (req: Request) => {
       reads_received: readsReceived,
       reads_staged: readsStaged,
       cursor_finished: finalCursor,
+      csv_export: csvExport,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
