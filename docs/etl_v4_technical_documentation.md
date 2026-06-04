@@ -62,9 +62,16 @@
 │                                                                            │
 │  public.rfid_report_movements  (tabla física final de movimientos)        │
 │        └─► public.vw_quicksight_rfid_report_movements (VISTA)             │
+│                                                                            │
+│  [ÚLTIMO PASO, no bloqueante — tras rfid_finish_etl_run]                  │
+│        export-rfid-csv-to-s3 (invocado por el orquestador)                │
+│        └─► s3://upu-rfid-reporting/quicksight/rfid/current/               │
+│                  rfid_movements.csv  (eu-central-1, sobrescritura)        │
 └───────────────────────────────────────────────────────────────┬──────────┘
                                                                   ▼
                                                         Amazon QuickSight
+                                          (re-importa rfid_movements.csv
+                                           según su manifest, por horario)
 ```
 
 **Cadencia (cron, UTC):**
@@ -178,6 +185,7 @@ La lectura se persiste en `public.rfid_edge_input_reads` con `enrichment_status=
 | 3 | **Enriquecimiento** | `rfid_enrich_run(run_id)` (ver §6). |
 | 4 | **Transformación** | `rfid_transform_run(run_id)` (ver §7). |
 | 5 | **Cierre** | `rfid_finish_etl_run(...)`: actualiza `rfid_etl_runs` (estado, métricas, cursor), avanza `current_cursor`/`initial_since_utc` en `cursor_state`, libera lock. En `success` sin cursor nuevo, fija `initial_since_utc = max(edge_received_at_utc|event_datetime_utc)+1ms`. |
+| 6 | **Export CSV → S3** *(no bloqueante)* | Tras `rfid_finish_etl_run`, el orquestador invoca `export-rfid-csv-to-s3` mediante HTTP POST autenticado con `EDGE_INTERNAL_INVOKE_KEY` (JWT anon legacy). La llamada va dentro de `try/catch`: si el export falla (S3 caído, credencial inválida, etc.) el error se loguea en el campo `csv_export` de la respuesta del run pero **el ETL termina OK**. El export no es condición de éxito del ETL. |
 
 > El refresco de maestros (sync) ya NO se invoca aquí; lo hace el cron del §4.3 antes del ETL.
 
@@ -319,8 +327,27 @@ Cron `rfid-reprocess-recoverable-every-30-minutes` (`5,35 * * * *`) ejecuta `rfi
 
 | Slug | verify_jwt | Disparador | Función |
 |---|:--:|---|---|
-| `edge-rfid-etl-orchestrator` | true | cron `:00/:30` + manual | Orquesta ingesta + enrich + transform |
+| `edge-rfid-etl-orchestrator` | true | cron `:00/:30` + manual | Orquesta ingesta + enrich + transform + invoca export CSV (paso 6, no bloqueante) |
 | `sync-site-snapshot` | **false** (interna) | cron `:25/:55` | Refresca `rfid_reader_master_snapshot` + `rfid_site_snapshot` desde GMS IOT |
+| `export-rfid-csv-to-s3` | **false** (interna) | invocado por el orquestador (paso 6) + manual | Lee `vw_quicksight_rfid_report_movements` (REST paginado, service_role), construye CSV QuickSight-estricto (UTF-8 sin BOM, 22 columnas en orden fijo, `event_datetime_local` derivado de UTC + `reader_timezone` con offset ISO-8601), sube vía AWS SigV4 `PutObject` sin ACL a `s3://upu-rfid-reporting/quicksight/rfid/current/rfid_movements.csv` (eu-central-1). Soporta modo `dry_run` (construye CSV sin subir). Secretos: `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`, `AWS_S3_REGION`, `S3_BUCKET`, `S3_PREFIX`, `S3_OBJECT_KEY` (ver [etl_v4_credentials.md](etl_v4_credentials.md)). |
+
+---
+
+## 13b. Destino S3 y entrega a QuickSight
+
+| Aspecto | Detalle |
+|---|---|
+| Bucket | `upu-rfid-reporting` (región `eu-central-1`) |
+| Key (fija, sobrescritura) | `quicksight/rfid/current/rfid_movements.csv` |
+| Versionado del bucket | Activado (S3 conserva versiones anteriores aunque la key se sobrescriba) |
+| Cadencia de actualización | Cada run del ETL (`:00`/`:30`) que completa el paso 6 |
+| Permisos de la key AWS | Solo `PutObject` sobre `quicksight/rfid/current/` — sin lectura ni listado |
+| ACL | Ninguno (bucket tiene ACLs desactivadas; enviar ACL devuelve HTTP 400) |
+| Implementación SigV4 | Nativa con Web Crypto de Deno (HMAC-SHA256); sin SDK de AWS ni dependencias externas |
+| Columnas exportadas | 22 columnas en orden fijo (ver §5 del spec `2026-06-04-rfid-csv-s3-export-design.md`) |
+| Timestamp local con offset | `event_datetime_local` se deriva de `event_datetime_utc` + `reader_timezone` usando `Intl.DateTimeFormat` (respeta DST); emitido como ISO-8601 con offset, p. ej. `2026-05-27T11:48:19+09:00` |
+| Entrega a QuickSight | QuickSight tiene su manifest apuntando a esa key y re-importa el dataset según su propio horario; no hay UPSERT ni base de datos en AWS |
+| Credenciales | `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`, `AWS_S3_REGION`, `S3_BUCKET`, `S3_PREFIX`, `S3_OBJECT_KEY` — ver inventario completo en [etl_v4_credentials.md](etl_v4_credentials.md) |
 
 ---
 
@@ -360,6 +387,7 @@ Cron `rfid-reprocess-recoverable-every-30-minutes` (`5,35 * * * *`) ejecuta `rfi
 2. `rfid_etl_incidents`: **RLS desactivado** → activar RLS con políticas.
 3. GMS IOT `public.sites` y `public.readers_master`: `anon` tiene DML completo y la anon key es pública → restringir a SELECT.
 4. `sync-site-snapshot` tiene `verify_jwt=false` (función interna sin input); revisar si conviene auth propia (secreto compartido) en el repaso de seguridad.
+5. ⚠️ **`AWS_S3_ACCESS_KEY_ID` / `AWS_S3_SECRET_ACCESS_KEY`: rotación pendiente urgente** — las claves estuvieron en texto plano en el documento fuente del consumidor (canal no seguro) y deben considerarse potencialmente comprometidas. Rotar en AWS IAM y actualizar los secretos de Edge Function en Edge Leg2. Ver §3.6 de [etl_v4_credentials.md](etl_v4_credentials.md).
 
 ---
 
@@ -392,4 +420,12 @@ Cron `rfid-reprocess-recoverable-every-30-minutes` (`5,35 * * * *`) ejecuta `rfi
 2. **Política de refresco antes del ETL** (cron `sync-masters-before-etl` a `:25/:55`).
 3. Corrección de raíz de columnas en blanco en la vista (`site_impc_code`, `site_name`, `country_name`, `city`, `edi_equivalent`) y del infraconteo de movimientos por maestro de lectores obsoleto.
 4. EDI a nivel de sitio agregado desde lectores frescos (GMS `sites` no tiene EDI).
+
+## 20. Cambios V4 → V4.1 — Export CSV → S3 (2026-06-04)
+
+1. **Nueva Edge Function `export-rfid-csv-to-s3`** (`verify_jwt=false`): lee la vista QuickSight completa vía REST paginado (service_role), construye CSV estricto (UTF-8 sin BOM, 22 columnas, `event_datetime_local` con offset ISO-8601), sube vía SigV4 `PutObject` sin ACL a `s3://upu-rfid-reporting/quicksight/rfid/current/rfid_movements.csv`.
+2. **Nuevo paso 6 en el orquestador** (no bloqueante): tras `rfid_finish_etl_run`, invoca `export-rfid-csv-to-s3` con `EDGE_INTERNAL_INVOKE_KEY`. Fallos del export se loguean en `csv_export` de la respuesta pero no afectan el estado del ETL.
+3. **Destino S3 documentado** en §13b: bucket `upu-rfid-reporting`, key fija, bucket versionado, manifest de QuickSight ya en lugar.
+4. **Nuevas credenciales** (#9–#15) añadidas al inventario de [etl_v4_credentials.md](etl_v4_credentials.md).
+5. **Hueco de seguridad pendiente** (§16.5): claves AWS S3 pendientes de rotación urgente.
 ```
