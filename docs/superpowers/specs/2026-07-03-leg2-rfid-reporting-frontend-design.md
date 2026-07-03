@@ -61,18 +61,48 @@ con los checkpoints como columnas y un panel de detalle maestro-detalle.
 | `site_name`, `city`, `country_name` | etiquetas legibles |
 | `handover_point`, `handover_quality_status` | calidad del handover (badge) |
 
-### 3.2 Reframe importante (fidelidad al dato)
+### 3.2 Columnas de checkpoint DINÁMICAS (requisito explícito)
 
 El pivot del IPC tiene ~9 columnas de checkpoint (2300/2310/2320/2400/2410/2420/
-2440/2450). **Leg2 solo captura los puntos de handover**: `2320` (salida de
-origen) y `2400` (entrada en destino), más los TRANSIT. El pivot del app nuevo
-refleja esto honestamente: por cada S9, columnas **Exit Outbound (2320)** y
-**Entry Inbound (2400)** (+ tránsito cuando aplique). No se inventan checkpoints
-que el dato no tiene.
+2440/2450). **Leg2 hoy solo captura los puntos de handover**: `2320` (salida de
+origen) y `2400` (entrada en destino), más los TRANSIT. Distribución real
+(2026-07-03): INBOUND 6521, OUTBOUND 1377, TRANSIT_ENTRY 110, TRANSIT_EXIT 110;
+`edi_equivalent` ∈ {2320, 2400}; ~15/8118 con EDI null (hueco fuente GMS).
 
-Distribución real (2026-07-03): INBOUND 6521, OUTBOUND 1377, TRANSIT_ENTRY 110,
-TRANSIT_EXIT 110. `edi_equivalent`: 2400 (entrada destino) y 2320 (salida
-origen); ~15/8118 movimientos con EDI null (hueco de fuente GMS, self-healing).
+**Regla de diseño (crítica):** las columnas-checkpoint del pivot NO se
+hardcodean. Se **derivan del dato en runtime**: el conjunto de columnas = los
+valores DISTINTOS de `edi_equivalent` presentes en el dataset filtrado (según
+pestaña/filtros activos). Así, cuando el ETL empiece a producir checkpoints
+nuevos (porque se suman lectores/puntos con otros `edi_equivalent_inbound/
+outbound` en GMS), **las columnas nuevas aparecen solas, sin tocar código**.
+Hoy salen 2 columnas; el día que aparezca un `2410`, sale una tercera
+automáticamente.
+
+- **Orden de columnas:** ascendente por el valor numérico del código. Esto
+  coincide con el orden semántico del IPC (2300→2310→2320 salida, luego
+  2400→2410→2420 entrada, 2440/2450 al final) y ordena razonablemente cualquier
+  código futuro desconocido.
+- **Etiqueta de columna:** mapa `CHECKPOINT_LABELS` (código→nombre legible); si
+  un código no está mapeado, se muestra **el código crudo** tal cual (cero
+  mantenimiento para que aparezca; se le pone nombre bonito después). Mapa base:
+
+  | code | label |
+  |---|---|
+  | 2300 | Exit From Outbound OE |
+  | 2310 | Entry Outbound AMU |
+  | 2320 | Exit Outbound AMU |
+  | 2400 | Entry Inbound AMU |
+  | 2410 | Exit Inbound AMU |
+  | 2420 | Entry Inbound OE |
+  | 2440 | Incorrect Inbound |
+  | 2450 | Backup |
+
+- **Celda:** el `Reg Time` del movimiento cuyo `edi_equivalent` = ese código para
+  ese S9 (según toggle UTC/Local). Si un S9 tiene varios movimientos en el mismo
+  checkpoint, la celda muestra el **más temprano** (`min event_datetime_utc`);
+  todos quedan visibles en el panel de detalle. Vacío si no hubo paso.
+- Movimientos con `edi_equivalent` null NO generan columna (no hay checkpoint);
+  se listan igualmente en el detalle del S9.
 
 ### 3.3 Derivaciones (confirmadas contra el código legacy y el estándar UPU S9)
 
@@ -147,10 +177,11 @@ Ruta protegida `/` (principal). Cabecera con título, `DateRangePicker`, toggle
 │ ( Inbound ) ( Outbound )                                        │
 │ Filtros: Orig country ▾  Dest country ▾  S9 [search] Rte [srch]│
 ├───────────────────────────────────────────────────────────────┤
-│ RFID events (pivot — 1 fila por S9)                            │
-│ S9 | Orig Po | Dest Po | Rte | Exit Outbound(2320) | Entry     │
-│    |         |         |     |  timestamp          | Inbound   │
-│    |         |         |     |                     | (2400) ts │
+│ RFID events (pivot — 1 fila por S9; columnas checkpoint dinámicas) │
+│ S9 | Orig Po | Dest Po | Rte | «2320 Exit Outbound» | «2400 Entry» │
+│    |         |         |     |  timestamp           |  timestamp   │
+│    |         |         |     |  (columnas = edi_equivalent presentes,│
+│    |         |         |     |   crecen solas al sumar checkpoints)  │
 │  … (clic en fila → carga el detalle abajo)                     │
 ├───────────────────────────────────────────────────────────────┤
 │ Event details (detalle del S9 seleccionado)                   │
@@ -161,13 +192,16 @@ Ruta protegida `/` (principal). Cabecera con título, `DateRangePicker`, toggle
 ### 5.2 Pivot superior ("RFID events")
 
 - Una fila por **S9** dentro de la pestaña activa (Inbound/Outbound).
-- Columnas fijas: `S9`, `Orig Po Code`, `Dest Po Code`, `Rte` (tag_id).
-- Columnas-checkpoint: **Exit Outbound (2320)** y **Entry Inbound (2400)**; la
-  celda muestra el `Reg Time` del movimiento cuyo `edi_equivalent` = ese código
-  para ese S9 (según toggle UTC/Local). Vacío si no hubo paso por ese checkpoint.
+- Columnas fijas (izquierda): `S9`, `Orig Po Code`, `Dest Po Code`, `Rte`
+  (tag_id).
+- **Columnas-checkpoint DINÁMICAS** (§3.2): una por cada `edi_equivalent`
+  presente en el dataset filtrado, ordenadas por código numérico, etiquetadas
+  vía `CHECKPOINT_LABELS` (o el código crudo si no está mapeado). La celda
+  muestra el `Reg Time` (según toggle) del movimiento de ese S9 en ese
+  checkpoint; vacío si no hubo paso. Hoy salen 2 (2320/2400); crecen solas.
 - Tránsitos (TRANSIT_ENTRY/EXIT): se muestran como movimientos adicionales del
-  mismo S9 (columna/indicador de tránsito); v1 los lista en el detalle.
-- Orden por defecto: `Reg Time` desc.
+  mismo S9 (indicador de tránsito); v1 los lista en el detalle.
+- Orden de filas por defecto: `Reg Time` desc.
 
 ### 5.3 Detalle inferior ("Event details")
 
@@ -205,6 +239,7 @@ leg2-reporting/
     main.tsx, App.tsx                    # router wouter + providers
     lib/
       supabase.ts                        # cliente Leg2 + fetchRfidMovements()
+      checkpoints.ts                     # CHECKPOINT_LABELS + columnas dinámicas
       time.ts                            # formato UTC/Local + regla de duración
       utils.ts                           # cn(), helpers
     contexts/
@@ -253,16 +288,43 @@ export async function fetchRfidMovements(filters: {
   dateFrom?: string; dateTo?: string;
 }): Promise<RfidMovement[]>;
 
+// lib/checkpoints.ts
+export const CHECKPOINT_LABELS: Record<string, string> = {
+  '2300': 'Exit From Outbound OE',
+  '2310': 'Entry Outbound AMU',
+  '2320': 'Exit Outbound AMU',
+  '2400': 'Entry Inbound AMU',
+  '2410': 'Exit Inbound AMU',
+  '2420': 'Entry Inbound OE',
+  '2440': 'Incorrect Inbound',
+  '2450': 'Backup',
+};
+/** label conocido, o el código crudo si no está mapeado */
+export function checkpointLabel(code: string): string;
+/** columnas dinámicas: códigos distintos presentes, ordenados por valor numérico asc */
+export function checkpointColumnsFromData(movs: RfidMovement[]): CheckpointColumn[];
+
+export interface CheckpointColumn {
+  code: string;    // edi_equivalent, p.ej. '2320'
+  label: string;   // checkpointLabel(code)
+}
+
 // hooks/useRfidEventsReport.ts
 export interface S9PivotRow {
   s9_id: string;
   origPoCode: string;   // s9_id.slice(0,6)
   destPoCode: string;   // s9_id.slice(6,12)
   rte: string | null;   // tag_id
-  exitOutbound: RfidMovement | null;  // edi_equivalent === '2320'
-  entryInbound: RfidMovement | null;  // edi_equivalent === '2400'
+  // celda por checkpoint: código edi_equivalent -> movimiento representativo
+  // (el de min event_datetime_utc si hay varios). Claves = columnas dinámicas.
+  cells: Record<string, RfidMovement>;
   transits: RfidMovement[];
   all: RfidMovement[];  // para el detalle
+}
+
+export interface RfidEventsReport {
+  columns: CheckpointColumn[];  // dinámicas, ordenadas (derivadas del dataset)
+  rows: S9PivotRow[];
 }
 ```
 
@@ -272,8 +334,13 @@ export interface S9PivotRow {
   puras testeables sin red:
   - `deriveOrigPoCode('INBOMBJPTYOA...') === 'INBOMB'`,
     `deriveDestPoCode(...) === 'JPTYOA'`.
+  - **Columnas dinámicas:** `checkpointColumnsFromData([mov2400, mov2320])`
+    devuelve `[{code:'2320'...},{code:'2400'...}]` (orden numérico asc); si el
+    input incluye un `2410` inédito, aparece una tercera columna sin cambios de
+    código; un código no mapeado (p.ej. `9999`) usa su código crudo como label.
   - `pivotByS9([mov2320, mov2400, ...])` agrupa por s9_id y coloca cada
-    movimiento en su columna según `edi_equivalent`.
+    movimiento en `cells[edi_equivalent]`; con dos movimientos del mismo
+    checkpoint, `cells[code]` = el de `min event_datetime_utc`.
   - `classifyTab('OUTBOUND') === 'outbound'`,
     `classifyTab('TRANSIT_ENTRY') === 'inbound'`.
   - `formatTimestamp(mov, 'utc'|'local')` devuelve el campo correcto.
