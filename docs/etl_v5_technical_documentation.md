@@ -358,7 +358,7 @@ El campo `event_datetime_local` de la vista es `timestamp without time zone` (no
 - `toLocalIsoWithOffset(utcValue, timeZone)`: si falta `reader_timezone` o resuelve a UTC, cae a `toUtcIso` (sufijo `Z`); si hay offset, desplaza el instante y concatena el offset.
 - `toUtcIso(value)`: ISO-8601 en UTC sin milisegundos; `null` si la entrada es vacía/ inválida.
 
-> **Hueco de dato origen (abierto):** `reader_timezone` llega como `UTC` para muchas filas (incluido Japón/Kawasaki, que debería ser `Asia/Tokyo`), porque el maestro GMS `public.sites.timezone` no está poblado con IANA reales. La función deriva el offset correctamente **cuando el dato existe**; mientras GMS no lo complete, `event_datetime_local` queda igual al UTC (sin offset). Al ser dinámico, se corrige solo en el siguiente refresco cuando GMS publique las zonas.
+> **Origen de `reader_timezone` (resuelto 2026-07-03).** GMS **no** puebla `public.sites.timezone` (100% null, sin ETA); la doc anterior afirmaba erróneamente que `event_datetime_local` "se autocorrige solo cuando GMS publique las zonas" — no lo hacía: `reader_timezone` quedaba congelado en `'UTC'` en `rfid_report_movements` para todas las filas. Ahora la zona IANA la resuelve **la vista** desde la tabla Leg2 `rfid_timezone_map` (country/city → IANA, 245 países), con `coalesce(sites.timezone, mapa_por_ciudad, mapa_por_país, 'UTC')` — tolerante a GMS si algún día lo llena. El local se calcula al vuelo en la vista (`event_datetime_utc AT TIME ZONE zona`), por lo que **se autocorrige de verdad** al editar el mapa, sin reprocesar. `event_datetime_utc` fue siempre un instante correcto (EDGE manda ISO con offset real); el hueco era solo de presentación. Detalle de diseño: [spec 2026-07-03](superpowers/specs/2026-07-03-etl-leg2-timezone-model-design.md). Como refuerzo, el ingest guarda el offset crudo de cada lectura en `rfid_edge_input_reads.event_offset` (auditoría/QA del mapa y fallback sin país).
 
 ### 8.6 Subida a S3 — AWS Signature V4 nativo (`sigv4.ts`)
 
@@ -543,7 +543,7 @@ Cron `rfid-reprocess-recoverable-every-30-minutes` (`5,35 * * * *`) ejecuta `rfi
 - Vista QuickSight: `site_impc_code`/`site_name`/`country_name`/`city` poblados para los sitios con maestro completo; `edi_equivalent` 100% en JP/CH/TR (p. ej. Kawasaki = `RESDES`).
 - **Huecos de dato origen abiertos:**
   - Sitios sin `site_impc`/`timezone`/EDI en GMS (p. ej. BT, parte de IN) salen NULL hasta que GMS los complete; al ser dinámico, se rellenan solos en el siguiente refresco.
-  - `reader_timezone` llega como `UTC` para muchas filas → `event_datetime_local` sin offset hasta que GMS pueble las IANA reales (`public.sites.timezone`).
+  - ~~`reader_timezone` llega como `UTC` para muchas filas~~ **RESUELTO (2026-07-03):** la zona IANA se resuelve en la vista desde `rfid_timezone_map` (Leg2, 245 países), el local se autocorrige sin reprocesar y `event_datetime_utc` siempre fue correcto. Ver §8.5.
 
 ---
 
@@ -557,6 +557,8 @@ Cron `rfid-reprocess-recoverable-every-30-minutes` (`5,35 * * * *`) ejecuta `rfi
 | Ver salud de ejecuciones | `select * from rfid_etl_runs order by started_at_utc desc limit 20;` |
 | Ver incidencias abiertas | `select incident_type, count(*) from rfid_etl_incidents where status='open' group by 1;` |
 | Verificar la vista | conteos de NULL sobre `vw_quicksight_rfid_report_movements` |
+| **Corregir/añadir zona horaria de un país o ciudad** | `insert into rfid_timezone_map(country_code, city, iana_zone) values ('XX', null, 'Area/City') on conflict (country_code, coalesce(city,'')) do update set iana_zone=excluded.iana_zone;` → la vista se autocorrige, sin reprocesar. `city=null` = default del país; `city='...'` = override multi-zona |
+| **Detectar zonas mal mapeadas** | comparar `event_offset` del payload vs offset derivado del mapa en `rfid_edge_input_reads` (ver QA en spec 2026-07-03) |
 | **Validar el CSV sin subir** | `POST export-rfid-csv-to-s3` con `{ "dry_run": true }` → revisar `header`, `sample`, `first_byte_hex` (≠ `ef`) y `rows_exported` |
 | **Forzar regeneración del CSV en S3** | `POST export-rfid-csv-to-s3` con body `{}` (sube de verdad) o esperar al siguiente run del orquestador |
 | **Diagnosticar fallo de export** | revisar `csv_export` en la respuesta del run o `console.error` (`csv_export_failed` / `s3_put_object_failed`) en logs de la función |
@@ -571,6 +573,6 @@ Cron `rfid-reprocess-recoverable-every-30-minutes` (`5,35 * * * *`) ejecuta `rfi
 3. **AWS SigV4 implementado a mano con Web Crypto de Deno** — sin SDK de AWS ni dependencias nuevas.
 4. **Paso 6 no bloqueante en el orquestador**: el resultado va en `csv_export`; un fallo del export no marca el run como fallido.
 5. **Nuevas credenciales** (#9–#15) en [etl_v4_credentials.md](etl_v4_credentials.md): `AWS_S3_*`, `S3_*`, `EDGE_INTERNAL_INVOKE_KEY`.
-6. **Huecos abiertos documentados:** rotación urgente de claves AWS (§18.5) y `reader_timezone=UTC` por GMS (§8.5/§19).
+6. **Huecos abiertos documentados:** rotación urgente de claves AWS (§18.5). *(El hueco `reader_timezone=UTC` quedó **resuelto** el 2026-07-03 vía `rfid_timezone_map` + vista; ver §8.5.)*
 
 > **Heredado de V4 (sin cambios):** sincronización dinámica de maestros desde GMS IOT (`sync-site-snapshot` + cron `:25/:55`), corrección de columnas en blanco en la vista y del infraconteo de movimientos, EDI a nivel de sitio agregado desde lectores.
