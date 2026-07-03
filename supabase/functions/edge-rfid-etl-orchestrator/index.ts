@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { extractOffset } from "./offset.ts";
 
 const DEFAULT_EDGE_URL = "https://t81an8rql2.execute-api.eu-central-1.amazonaws.com/v1/reads";
 
@@ -47,6 +48,7 @@ function normalizeRead(raw: Json, runId: string): Json | null {
     s9_id: s9Id,
     reader_id: readerId,
     event_datetime_utc: timestamp,
+    event_offset: extractOffset(timestamp),
     raw_payload: raw,
     edge_received_at_utc: ingestedAt,
     enrichment_status: "pending",
