@@ -20,6 +20,8 @@
 - **Duration rule (hard):** any duration between two events is ALWAYS computed from `event_datetime_utc`. The UTC/Local toggle only changes which timestamp is *displayed*.
 - Derivations: Orig Po Code = `s9_id.slice(0,6)`, Dest Po Code = `s9_id.slice(6,12)`, Site Code = `site_impc_code ?? centre_code`.
 - Tab mapping: `OUTBOUND`/`TRANSIT_EXIT` → outbound; `INBOUND`/`TRANSIT_ENTRY` → inbound.
+- **Terminology (user's, not IPC):** `reader_id`→"RFID Reader", `tag_id`→"RFID Tag", `s9_id`→"S9", `s9_id[0:6]`→"Origin IMPC", `s9_id[6:12]`→"Destination IMPC", `movement_id`→"Movement Id", timestamp→"Time", `site_impc_code ?? centre_code`→"Site".
+- **i18n-ready (English now, translation later — no i18n framework yet):** every user-facing string comes from `src/i18n/strings.ts`; checkpoint column names come from `CHECKPOINT_LABELS`. Components NEVER hardcode visible text.
 - Before the Leg2 `GRANT` (Task 12): name project+ref and ask explicit confirmation (CLAUDE.md anti-confusion rule).
 - Spec: `docs/superpowers/specs/2026-07-03-leg2-rfid-reporting-frontend-design.md`.
 
@@ -39,11 +41,12 @@
 - Create: `leg2-reporting/src/App.tsx`
 - Create: `leg2-reporting/src/vitest.setup.ts`
 - Create: `leg2-reporting/src/lib/utils.ts`
+- Create: `leg2-reporting/src/i18n/strings.ts`
 - Test: `leg2-reporting/src/smoke.test.ts`
 
 **Interfaces:**
 - Consumes: nothing (first task).
-- Produces: a runnable app + Vitest harness. `@/*` alias → `leg2-reporting/src/*`. `cn(...)` helper in `@/lib/utils`.
+- Produces: a runnable app + Vitest harness. `@/*` alias → `leg2-reporting/src/*`. `cn(...)` helper in `@/lib/utils`. `strings` dictionary (English) in `@/i18n/strings` — the single source of all user-facing text.
 
 - [ ] **Step 1: Create `leg2-reporting/package.json`**
 
@@ -196,6 +199,55 @@ export function cn(...inputs: ClassValue[]) {
 
 ```ts
 import "@testing-library/jest-dom/vitest";
+```
+
+- [ ] **Step 9b: Create `leg2-reporting/src/i18n/strings.ts`** (single source of all UI text; English now, translatable later)
+
+```ts
+// All user-facing English strings live here so a future i18n layer can swap
+// them per locale without hunting through components. Checkpoint column names
+// live in CHECKPOINT_LABELS (src/lib/checkpoints.ts) as their own dictionary.
+// Terminology is the USER's, not IPC's (RFID Reader, RFID Tag, ...).
+export const strings = {
+  appTitle: "Leg2 RFID Reporting — RFID events",
+  auth: {
+    heading: "Leg2 RFID Reporting",
+    email: "Email",
+    password: "Password",
+    signIn: "Sign in",
+    signingIn: "Signing in…",
+    signOut: "Sign out",
+  },
+  tabs: { inbound: "Inbound", outbound: "Outbound" },
+  timeMode: { utc: "UTC", local: "Local" },
+  filters: {
+    origCountry: "Orig country",
+    destCountry: "Dest country",
+    s9: "S9",
+    rfidTag: "RFID Tag",
+    all: "All",
+    searchS9: "Search S9",
+    searchRfidTag: "Search RFID Tag",
+  },
+  columns: {
+    s9: "S9",
+    origImpc: "Origin IMPC",
+    destImpc: "Destination IMPC",
+    rfidTag: "RFID Tag",
+    rfidReader: "RFID Reader",
+    movementId: "Movement Id",
+    time: "Time",
+    site: "Site",
+    handover: "Handover",
+  },
+  states: {
+    loading: "Loading…",
+    noRows: "No movements match the current filters.",
+    selectS9: "Select an S9 to see its events.",
+    eventDetails: "Event details",
+    errorPrefix: "Error: ",
+  },
+} as const;
 ```
 
 - [ ] **Step 10: Create `leg2-reporting/src/App.tsx`**
@@ -1431,6 +1483,7 @@ Expected: FAIL — `Failed to resolve import "@/components/RfidEventsPivot"`.
 ```tsx
 import type { RfidMovement } from "@/lib/supabase";
 import { formatTimestamp, type TimeMode } from "@/lib/time";
+import { strings } from "@/i18n/strings";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -1443,7 +1496,7 @@ export function EventDetailsTable({
   timeMode: TimeMode;
 }) {
   if (movements.length === 0) {
-    return <p className="text-sm text-muted-foreground p-4">Select a receptacle (S9) to see its events.</p>;
+    return <p className="text-sm text-muted-foreground p-4">{strings.states.selectS9}</p>;
   }
   const sorted = [...movements].sort((a, b) =>
     a.event_datetime_utc.localeCompare(b.event_datetime_utc)
@@ -1452,13 +1505,13 @@ export function EventDetailsTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>S9</TableHead>
-          <TableHead>Rte</TableHead>
-          <TableHead>Event Id</TableHead>
-          <TableHead>Reg Time</TableHead>
-          <TableHead>Site Code</TableHead>
-          <TableHead>Rp</TableHead>
-          <TableHead>Handover</TableHead>
+          <TableHead>{strings.columns.s9}</TableHead>
+          <TableHead>{strings.columns.rfidTag}</TableHead>
+          <TableHead>{strings.columns.movementId}</TableHead>
+          <TableHead>{strings.columns.time}</TableHead>
+          <TableHead>{strings.columns.site}</TableHead>
+          <TableHead>{strings.columns.rfidReader}</TableHead>
+          <TableHead>{strings.columns.handover}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -1484,6 +1537,7 @@ export function EventDetailsTable({
 ```tsx
 import type { RfidEventsReport } from "@/lib/pivot";
 import { formatTimestamp, type TimeMode } from "@/lib/time";
+import { strings } from "@/i18n/strings";
 import { cn } from "@/lib/utils";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -1501,16 +1555,16 @@ export function RfidEventsPivot({
   onSelectS9: (s9: string) => void;
 }) {
   if (report.rows.length === 0) {
-    return <p className="text-sm text-muted-foreground p-4">No movements match the current filters.</p>;
+    return <p className="text-sm text-muted-foreground p-4">{strings.states.noRows}</p>;
   }
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>S9</TableHead>
-          <TableHead>Orig Po Code</TableHead>
-          <TableHead>Dest Po Code</TableHead>
-          <TableHead>Rte</TableHead>
+          <TableHead>{strings.columns.s9}</TableHead>
+          <TableHead>{strings.columns.origImpc}</TableHead>
+          <TableHead>{strings.columns.destImpc}</TableHead>
+          <TableHead>{strings.columns.rfidTag}</TableHead>
           {report.columns.map((c) => (
             <TableHead key={c.code}>{c.label}</TableHead>
           ))}
@@ -1615,6 +1669,7 @@ Expected: FAIL — `Failed to resolve import "@/components/ReportFilters"`.
 import type { Dispatch, SetStateAction } from "react";
 import type { ReportFilterState } from "@/lib/filter";
 import type { TimeMode } from "@/lib/time";
+import { strings } from "@/i18n/strings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -1650,32 +1705,32 @@ export function ReportFilters({
           }
         >
           <TabsList>
-            <TabsTrigger value="inbound">Inbound</TabsTrigger>
-            <TabsTrigger value="outbound">Outbound</TabsTrigger>
+            <TabsTrigger value="inbound">{strings.tabs.inbound}</TabsTrigger>
+            <TabsTrigger value="outbound">{strings.tabs.outbound}</TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-2">
-          <Label htmlFor="tz">UTC</Label>
+          <Label htmlFor="tz">{strings.timeMode.utc}</Label>
           <Switch
             id="tz"
             checked={timeMode === "local"}
             onCheckedChange={(c) => onTimeModeChange(c ? "local" : "utc")}
           />
-          <Label htmlFor="tz">Local</Label>
+          <Label htmlFor="tz">{strings.timeMode.local}</Label>
         </div>
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
-          <Label>Orig country</Label>
+          <Label>{strings.filters.origCountry}</Label>
           <Select
             value={filter.originCountry ?? ALL}
             onValueChange={(v) =>
               setFilter((f) => ({ ...f, originCountry: v === ALL ? null : v }))
             }
           >
-            <SelectTrigger className="w-40"><SelectValue placeholder="All" /></SelectTrigger>
+            <SelectTrigger className="w-40"><SelectValue placeholder={strings.filters.all} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All</SelectItem>
+              <SelectItem value={ALL}>{strings.filters.all}</SelectItem>
               {originOptions.map((c) => (
                 <SelectItem key={c} value={c}>{c}</SelectItem>
               ))}
@@ -1683,16 +1738,16 @@ export function ReportFilters({
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label>Dest country</Label>
+          <Label>{strings.filters.destCountry}</Label>
           <Select
             value={filter.destCountry ?? ALL}
             onValueChange={(v) =>
               setFilter((f) => ({ ...f, destCountry: v === ALL ? null : v }))
             }
           >
-            <SelectTrigger className="w-40"><SelectValue placeholder="All" /></SelectTrigger>
+            <SelectTrigger className="w-40"><SelectValue placeholder={strings.filters.all} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All</SelectItem>
+              <SelectItem value={ALL}>{strings.filters.all}</SelectItem>
               {destOptions.map((c) => (
                 <SelectItem key={c} value={c}>{c}</SelectItem>
               ))}
@@ -1700,17 +1755,17 @@ export function ReportFilters({
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label>S9</Label>
+          <Label>{strings.filters.s9}</Label>
           <Input
-            placeholder="Search S9"
+            placeholder={strings.filters.searchS9}
             value={filter.s9Query}
             onChange={(e) => setFilter((f) => ({ ...f, s9Query: e.target.value }))}
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label>Rte</Label>
+          <Label>{strings.filters.rfidTag}</Label>
           <Input
-            placeholder="Search Rte"
+            placeholder={strings.filters.searchRfidTag}
             value={filter.rteQuery}
             onChange={(e) => setFilter((f) => ({ ...f, rteQuery: e.target.value }))}
           />
@@ -1731,6 +1786,7 @@ Expected: 1 passed.
 ```tsx
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { strings } from "@/i18n/strings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1754,13 +1810,13 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <form onSubmit={onSubmit} className="flex flex-col gap-3 w-72">
-        <h1 className="text-lg font-semibold">Leg2 RFID Reporting</h1>
-        <Label>Email</Label>
+        <h1 className="text-lg font-semibold">{strings.auth.heading}</h1>
+        <Label>{strings.auth.email}</Label>
         <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <Label>Password</Label>
+        <Label>{strings.auth.password}</Label>
         <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <Button type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
+        <Button type="submit" disabled={busy}>{busy ? strings.auth.signingIn : strings.auth.signIn}</Button>
       </form>
     </div>
   );
@@ -1776,6 +1832,7 @@ import { useRfidEventsReport } from "@/hooks/useRfidEventsReport";
 import { ReportFilters } from "@/components/ReportFilters";
 import { RfidEventsPivot } from "@/components/RfidEventsPivot";
 import { EventDetailsTable } from "@/components/EventDetailsTable";
+import { strings } from "@/i18n/strings";
 import { Button } from "@/components/ui/button";
 import type { TimeMode } from "@/lib/time";
 
@@ -1794,10 +1851,10 @@ export default function RfidEventsPage() {
   return (
     <div className="p-4 flex flex-col gap-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Leg2 RFID Reporting — RFID events</h1>
+        <h1 className="text-xl font-semibold">{strings.appTitle}</h1>
         <div className="flex items-center gap-3 text-sm">
           <span className="text-muted-foreground">{user?.email}</span>
-          <Button variant="outline" size="sm" onClick={() => signOut()}>Sign out</Button>
+          <Button variant="outline" size="sm" onClick={() => signOut()}>{strings.auth.signOut}</Button>
         </div>
       </header>
 
@@ -1810,8 +1867,8 @@ export default function RfidEventsPage() {
         onTimeModeChange={setTimeMode}
       />
 
-      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {error && <p className="text-sm text-red-600">Error: {error}</p>}
+      {loading && <p className="text-sm text-muted-foreground">{strings.states.loading}</p>}
+      {error && <p className="text-sm text-red-600">{strings.states.errorPrefix}{error}</p>}
 
       {!loading && !error && (
         <>
@@ -1824,7 +1881,7 @@ export default function RfidEventsPage() {
             />
           </section>
           <section className="border rounded-md overflow-auto">
-            <h2 className="text-sm font-semibold p-2">Event details</h2>
+            <h2 className="text-sm font-semibold p-2">{strings.states.eventDetails}</h2>
             <EventDetailsTable movements={detail} timeMode={timeMode} />
           </section>
         </>
@@ -1974,6 +2031,8 @@ git commit -m "docs(leg2-reporting): run/deploy notes; grant SELECT to authentic
 - §5.5 UTC/Local toggle + UTC-only duration → Task 4 (`durationHours`, `formatTimestamp`), wired in Tasks 10–11. ✔
 - §6 file structure → Tasks 1–11 (note: `lib/time.ts` holds the duration helper; a dedicated duration view is v2). ✔
 - §7 testing (pure logic + fetch + component smoke) → every task is TDD. ✔
+- §3.4 terminology (RFID Reader/RFID Tag/Origin IMPC/…) → `strings.columns.*` in Task 1 §Step 9b, consumed by Tasks 10–11. ✔
+- §4.5 i18n-readiness (single strings dictionary, no hardcoded UI text) → Task 1 `src/i18n/strings.ts`; every component imports `strings` (Tasks 10, 11); checkpoint names stay in `CHECKPOINT_LABELS` (Task 3). ✔
 - §8 error handling (fetch throw w/ status, empty states, auth gate) → Task 5 (throw), Task 10/11 (empty states), Task 11 (gate). ✔
 
 **2. Placeholder scan:** No TBD/TODO; every code step has complete code and exact commands. ✔

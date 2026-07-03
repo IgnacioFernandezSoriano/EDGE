@@ -114,6 +114,25 @@ automáticamente.
 - **Inbound/Outbound** (pestañas): `movement_type IN ('OUTBOUND','TRANSIT_EXIT')`
   → Outbound; `IN ('INBOUND','TRANSIT_ENTRY')` → Inbound.
 
+### 3.4 Terminología (la del usuario, NO la de IPC)
+
+Los encabezados/etiquetas usan la terminología del usuario, no la de IPC.
+Defaults en inglés (i18n-ready, ver §4.5):
+
+| IPC | Campo Leg2 | Etiqueta (default EN) |
+|---|---|---|
+| Rp | `reader_id` | **RFID Reader** |
+| Rte | `tag_id` | **RFID Tag** |
+| S9 | `s9_id` | **S9** |
+| Orig Po Code | `s9_id[0:6]` | **Origin IMPC** |
+| Dest Po Code | `s9_id[6:12]` | **Destination IMPC** |
+| Event Id | `movement_id` | **Movement Id** |
+| Reg Time | `event_datetime_*` | **Time** |
+| Site Code | `site_impc_code ?? centre_code` | **Site** |
+
+Las columnas-checkpoint conservan su nombre estándar EDI vía `CHECKPOINT_LABELS`
+(§3.2); son códigos de evento, no terminología IPC de campos.
+
 ## 4. Arquitectura del app
 
 ### 4.1 Ubicación y stack
@@ -163,6 +182,17 @@ autenticado del proyecto Leg2 puede leer el reporte".
 > Esta sentencia se ejecutará **nombrando proyecto+ref (Leg2
 > `ubgatxfwpmyaqyfrwias`) y pidiendo confirmación explícita**, conforme a la
 > regla anti-confusión.
+
+### 4.5 Preparado para i18n (traducción futura)
+
+El desarrollo es en **inglés**, pero se deja listo para traducir a varios
+idiomas más adelante (NO se construye el módulo de i18n ahora — YAGNI). Regla:
+**toda cadena visible sale de un único diccionario** `src/i18n/strings.ts`
+(inglés), y las etiquetas de checkpoint de `CHECKPOINT_LABELS`
+(`src/lib/checkpoints.ts`). Los componentes NUNCA hardcodean texto visible: lo
+referencian desde ese diccionario. Así, añadir un idioma luego = añadir un
+locale y un selector, sin tocar los componentes ni cazar strings dispersos. v1
+expone un solo locale (`en`).
 
 ## 5. UI del reporte
 
