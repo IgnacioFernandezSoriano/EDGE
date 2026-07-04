@@ -410,3 +410,13 @@ export interface RfidEventsReport {
 - **Grant a `authenticated`:** expone el reporte a todo usuario autenticado de
   Leg2. Si se requiere granularidad por usuario/país, se añadirá RLS en v2.
 ```
+---
+
+## Revisión 2026-07-04 (feedback del usuario vs imagen IPC original)
+
+Realineación con la imagen de referencia. Cambios sobre el diseño inicial:
+
+1. **Filtros — filtrado temporal.** Añadir **Desde/Hasta** (sobre `event_datetime_utc`) + botones de preset que setean ambas fechas: **Hoy, Semana actual, Semana anterior, Mes actual, Últimos 90 días**. La semana empieza en **lunes**. Sustituye la ventana fija de 365 días; el rango de fechas ahora dirige el FETCH (server-side). Default al abrir: **Últimos 90 días**.
+   - DEUDA: inicio de semana **configurable por cuenta** (lunes/domingo) — más adelante. Ahora hardcode lunes.
+2. **Pivot unificado.** Quitar las pestañas Inbound/Outbound → una sola tabla con TODOS los movimientos. Columnas de evento ordenadas por código. **Primera columna = resumen congelado (sticky, siempre visible)** con **S9 + Origin IMPC → Destination IMPC + RFID Tag**. Cabeceras de checkpoint = **solo el código**; **hover → tooltip** con la descripción (`CHECKPOINT_LABELS`). Requiere `@radix-ui/react-tooltip` + primitiva tooltip.
+3. **Detalle.** Clic en la fila (S9) o en el RFID → eventos RFID de esa unidad, **de más antiguo a más nuevo** (ya implementado; se mantiene).
