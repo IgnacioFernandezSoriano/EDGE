@@ -11,6 +11,8 @@ export interface S9PivotRow {
   destPoCode: string;
   rte: string | null;
   cells: Record<string, RfidMovement>;
+  noEventCodeOutbound: RfidMovement[];
+  noEventCodeInbound: RfidMovement[];
   transits: RfidMovement[];
   all: RfidMovement[];
 }
@@ -18,6 +20,8 @@ export interface S9PivotRow {
 export interface RfidEventsReport {
   columns: CheckpointColumn[];
   rows: S9PivotRow[];
+  hasNoEventCodeOutbound: boolean;
+  hasNoEventCodeInbound: boolean;
 }
 
 function latestUtc(movs: RfidMovement[]): string {
@@ -40,8 +44,17 @@ export function pivotByS9(movs: RfidMovement[]): RfidEventsReport {
   const rows: S9PivotRow[] = [];
   for (const [s9_id, group] of byS9) {
     const cells: Record<string, RfidMovement> = {};
+    const noEventCodeOutbound: RfidMovement[] = [];
+    const noEventCodeInbound: RfidMovement[] = [];
     for (const m of group) {
-      if (!m.edi_equivalent) continue;
+      if (!m.edi_equivalent) {
+        if (m.movement_type === "OUTBOUND" || m.movement_type === "TRANSIT_EXIT") {
+          noEventCodeOutbound.push(m);
+        } else if (m.movement_type === "INBOUND" || m.movement_type === "TRANSIT_ENTRY") {
+          noEventCodeInbound.push(m);
+        }
+        continue;
+      }
       const existing = cells[m.edi_equivalent];
       if (!existing || m.event_datetime_utc < existing.event_datetime_utc) {
         cells[m.edi_equivalent] = m;
@@ -57,6 +70,8 @@ export function pivotByS9(movs: RfidMovement[]): RfidEventsReport {
       destPoCode: deriveDestPoCode(s9_id),
       rte,
       cells,
+      noEventCodeOutbound,
+      noEventCodeInbound,
       transits,
       all: group,
     });
@@ -64,5 +79,7 @@ export function pivotByS9(movs: RfidMovement[]): RfidEventsReport {
 
   // Most recent activity first (ISO UTC strings compare lexicographically).
   rows.sort((a, b) => latestUtc(b.all).localeCompare(latestUtc(a.all)));
-  return { columns, rows };
+  const hasNoEventCodeOutbound = rows.some((r) => r.noEventCodeOutbound.length > 0);
+  const hasNoEventCodeInbound = rows.some((r) => r.noEventCodeInbound.length > 0);
+  return { columns, rows, hasNoEventCodeOutbound, hasNoEventCodeInbound };
 }

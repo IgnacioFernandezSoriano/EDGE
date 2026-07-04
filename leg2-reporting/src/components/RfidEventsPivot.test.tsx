@@ -22,10 +22,14 @@ const report: RfidEventsReport = {
           event_datetime_local: "2026-07-03T19:00:00",
         } as any,
       },
+      noEventCodeOutbound: [],
+      noEventCodeInbound: [],
       transits: [],
       all: [],
     },
   ],
+  hasNoEventCodeOutbound: false,
+  hasNoEventCodeInbound: false,
 };
 
 const readerMap = new Map<string, ReaderMaster>([
