@@ -1,5 +1,5 @@
 import type { RfidEventsReport } from "@/lib/pivot";
-import type { ReaderMaster } from "@/lib/supabase";
+import type { ReaderMaster, RfidMovement } from "@/lib/supabase";
 import { formatTimestampParts, type TimeMode } from "@/lib/time";
 import { strings } from "@/i18n/strings";
 import { cn } from "@/lib/utils";
@@ -10,17 +10,54 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+function NoEventCodeCell({
+  movements, timeMode, readerMap, onSelectIncident,
+}: {
+  movements: RfidMovement[];
+  timeMode: TimeMode;
+  readerMap: Map<string, ReaderMaster>;
+  onSelectIncident: (movements: RfidMovement[]) => void;
+}) {
+  if (movements.length === 0) {
+    return <TableCell className="bg-amber-50/40" />;
+  }
+  const m = movements[0];
+  const reader = readerMap.get(m.reader_id);
+  const parts = formatTimestampParts(m, timeMode);
+  return (
+    <TableCell
+      className="font-mono text-xs bg-amber-50/40 cursor-pointer"
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelectIncident(movements);
+      }}
+    >
+      <div className="font-semibold">{parts.date} ({parts.weekday})</div>
+      <div className="font-semibold">{parts.time}</div>
+      <div className="text-muted-foreground">{m.reader_id}</div>
+      <div className="text-muted-foreground">
+        {strings.columns.gate}: {reader?.gate_name ?? "—"}
+      </div>
+      {movements.length > 1 && (
+        <div className="text-[10px] text-amber-800">+{movements.length - 1}</div>
+      )}
+    </TableCell>
+  );
+}
+
 export function RfidEventsPivot({
   report,
   timeMode,
   selectedS9,
   onSelectS9,
+  onSelectIncident,
   readerMap,
 }: {
   report: RfidEventsReport;
   timeMode: TimeMode;
   selectedS9: string | null;
   onSelectS9: (s9: string) => void;
+  onSelectIncident: (movements: RfidMovement[]) => void;
   readerMap: Map<string, ReaderMaster>;
 }) {
   if (report.rows.length === 0) {
@@ -34,6 +71,11 @@ export function RfidEventsPivot({
             <TableHead className="sticky top-0 left-0 z-40 bg-background border-r">
               {strings.columns.s9}
             </TableHead>
+            {report.hasNoEventCodeOutbound && (
+              <TableHead className="sticky top-0 z-30 bg-amber-100/70 border-r">
+                {strings.columns.noEventCode}
+              </TableHead>
+            )}
             {report.columns.map((c) => (
               <TableHead key={c.code} className="sticky top-0 z-30 bg-background">
                 <Tooltip>
@@ -47,6 +89,11 @@ export function RfidEventsPivot({
                 </div>
               </TableHead>
             ))}
+            {report.hasNoEventCodeInbound && (
+              <TableHead className="sticky top-0 z-30 bg-amber-100/70 border-l">
+                {strings.columns.noEventCode}
+              </TableHead>
+            )}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -70,6 +117,14 @@ export function RfidEventsPivot({
                   </div>
                   <div className="font-mono text-xs">{row.rte ?? "—"}</div>
                 </TableCell>
+                {report.hasNoEventCodeOutbound && (
+                  <NoEventCodeCell
+                    movements={row.noEventCodeOutbound}
+                    timeMode={timeMode}
+                    readerMap={readerMap}
+                    onSelectIncident={onSelectIncident}
+                  />
+                )}
                 {report.columns.map((c) => {
                   const m = row.cells[c.code];
                   if (!m) {
@@ -96,6 +151,14 @@ export function RfidEventsPivot({
                     </TableCell>
                   );
                 })}
+                {report.hasNoEventCodeInbound && (
+                  <NoEventCodeCell
+                    movements={row.noEventCodeInbound}
+                    timeMode={timeMode}
+                    readerMap={readerMap}
+                    onSelectIncident={onSelectIncident}
+                  />
+                )}
               </TableRow>
             );
           })}

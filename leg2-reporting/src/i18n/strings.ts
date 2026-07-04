@@ -45,10 +45,19 @@ export const strings = {
     handoverStatus: "Handover status",
     readerHandover: "Reader HO",
     gate: "Gate",
+    noEventCode: "No Event Code",
   },
   common: {
     yes: "Yes",
     no: "No",
+  },
+  correction: {
+    title: "Fix missing event code",
+    help: "This reader has RFID reads but its EDI event code is not set. Assign the Inbound/Outbound code in the GMS reader master, then reprocess.",
+    openInMaster: "Open in reader master (GMS)",
+    reprocess: "Reprocess",
+    reprocessing: "Reprocessing…",
+    reprocessDone: "Reprocess complete. The movement will appear under its checkpoint.",
   },
   states: {
     loading: "Loading…",

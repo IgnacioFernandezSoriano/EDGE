@@ -57,6 +57,7 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={() => {}}
+        onSelectIncident={() => {}}
         readerMap={readerMap}
       />
     );
@@ -82,6 +83,7 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={() => {}}
+        onSelectIncident={() => {}}
         readerMap={readerMap}
       />
     );
@@ -100,6 +102,7 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={onSelect}
+        onSelectIncident={() => {}}
         readerMap={readerMap}
       />
     );
@@ -114,11 +117,64 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={() => {}}
+        onSelectIncident={() => {}}
         readerMap={readerMap}
       />
     );
     expect(screen.getByText("R1")).toBeInTheDocument();
     expect(screen.getByText(/MT/)).toBeInTheDocument();
     expect(screen.getByText("HO")).toBeInTheDocument();
+  });
+
+  const reportWithGap: RfidEventsReport = {
+    ...report,
+    rows: [
+      {
+        ...report.rows[0],
+        noEventCodeOutbound: [
+          {
+            reader_id: "R2",
+            site_impc_code: "INMUBA",
+            country_code: "IN",
+            movement_type: "OUTBOUND",
+            edi_equivalent: null,
+            event_datetime_utc: "2026-07-02T08:00:00+00:00",
+            event_datetime_local: "2026-07-02T13:30:00",
+          } as any,
+        ],
+      },
+    ],
+    hasNoEventCodeOutbound: true,
+  };
+
+  it("renders a left 'No Event Code' column when outbound gaps exist", () => {
+    render(
+      <RfidEventsPivot
+        report={reportWithGap}
+        timeMode="utc"
+        selectedS9={null}
+        onSelectS9={() => {}}
+        onSelectIncident={() => {}}
+        readerMap={readerMap}
+      />
+    );
+    expect(screen.getByText("No Event Code")).toBeInTheDocument();
+  });
+
+  it("fires onSelectIncident with the gap movements when a No Event Code cell is clicked", () => {
+    const onIncident = vi.fn();
+    render(
+      <RfidEventsPivot
+        report={reportWithGap}
+        timeMode="utc"
+        selectedS9={null}
+        onSelectS9={() => {}}
+        onSelectIncident={onIncident}
+        readerMap={readerMap}
+      />
+    );
+    fireEvent.click(screen.getByText("02 Jul 2026 (Thu)"));
+    expect(onIncident).toHaveBeenCalledTimes(1);
+    expect(onIncident.mock.calls[0][0][0].reader_id).toBe("R2");
   });
 });
