@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { filterMovements, distinctCountries, type ReportFilterState } from "@/lib/filter";
+import {
+  filterMovements,
+  distinctCountries,
+  s9sWithEventInRange,
+  keepMovementsForS9Set,
+  type ReportFilterState,
+} from "@/lib/filter";
 import type { RfidMovement } from "@/lib/supabase";
 
 function mov(p: Partial<RfidMovement>): RfidMovement {
@@ -38,6 +44,27 @@ describe("filterMovements", () => {
       mov({ movement_type: "INBOUND" }),
     ];
     expect(filterMovements(movs, base)).toHaveLength(3);
+  });
+});
+
+describe("s9sWithEventInRange / keepMovementsForS9Set", () => {
+  const aIn = mov({ s9_id: "A", event_datetime_utc: "2026-07-03T10:00:00+00:00" });
+  const aOut = mov({ s9_id: "A", event_datetime_utc: "2026-05-01T10:00:00+00:00" });
+  const bOut1 = mov({ s9_id: "B", event_datetime_utc: "2026-05-01T10:00:00+00:00" });
+  const bOut2 = mov({ s9_id: "B", event_datetime_utc: "2026-05-02T10:00:00+00:00" });
+  const movs = [aIn, aOut, bOut1, bOut2];
+
+  it("s9sWithEventInRange returns only S9s with at least one event in the window", () => {
+    const set = s9sWithEventInRange(movs, "2026-07-01", "2026-07-31");
+    expect(set).toEqual(new Set(["A"]));
+  });
+
+  it("keepMovementsForS9Set returns ALL events for the selected S9s, in and out of window", () => {
+    const set = s9sWithEventInRange(movs, "2026-07-01", "2026-07-31");
+    const kept = keepMovementsForS9Set(movs, set);
+    expect(kept).toHaveLength(2);
+    expect(kept).toEqual(expect.arrayContaining([aIn, aOut]));
+    expect(kept).not.toEqual(expect.arrayContaining([bOut1]));
   });
 });
 

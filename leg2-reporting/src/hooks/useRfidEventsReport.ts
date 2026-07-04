@@ -3,6 +3,8 @@ import { fetchRfidMovements, fetchReaderMaster, supabase, type RfidMovement, typ
 import {
   filterMovements,
   distinctCountries,
+  s9sWithEventInRange,
+  keepMovementsForS9Set,
   type ReportFilterState,
 } from "@/lib/filter";
 import { pivotByS9, type RfidEventsReport } from "@/lib/pivot";
@@ -49,17 +51,14 @@ export function useRfidEventsReport() {
     try {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
-      const rows = await fetchRfidMovements(
-        { dateFrom: dateRange.from, dateTo: dateRange.to },
-        token ? { token } : {}
-      );
+      const rows = await fetchRfidMovements({}, token ? { token } : {});
       setMovements(rows);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -69,34 +68,33 @@ export function useRfidEventsReport() {
     setDateRange(presetRange(p));
   }, []);
 
+  // The date range selects WHICH S9 receptacles are in scope (any event in range),
+  // then we show ALL of their events (full journey), including out-of-range ones.
+  const windowMovements = useMemo(
+    () =>
+      keepMovementsForS9Set(
+        movements,
+        s9sWithEventInRange(movements, dateRange.from, dateRange.to)
+      ),
+    [movements, dateRange]
+  );
   const filtered = useMemo(
-    () => filterMovements(movements, filter),
-    [movements, filter]
+    () => filterMovements(windowMovements, filter),
+    [windowMovements, filter]
   );
   const report: RfidEventsReport = useMemo(
     () => pivotByS9(filtered),
     [filtered]
   );
 
-  // Country options come from all fetched movements (ignoring country/query filters).
-  const allScoped = useMemo(
-    () =>
-      filterMovements(movements, {
-        ...filter,
-        originCountry: null,
-        destCountry: null,
-        s9Query: "",
-        rteQuery: "",
-      }),
-    [movements, filter]
-  );
+  // Country options come from the date-window-selected movements (ignoring country/query filters).
   const originOptions = useMemo(
-    () => distinctCountries(allScoped, "origin_country_code"),
-    [allScoped]
+    () => distinctCountries(windowMovements, "origin_country_code"),
+    [windowMovements]
   );
   const destOptions = useMemo(
-    () => distinctCountries(allScoped, "destination_country_code"),
-    [allScoped]
+    () => distinctCountries(windowMovements, "destination_country_code"),
+    [windowMovements]
   );
 
   return {

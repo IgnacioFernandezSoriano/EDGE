@@ -22,6 +22,26 @@ export function filterMovements(
   });
 }
 
+export function s9sWithEventInRange(
+  movs: RfidMovement[],
+  from: string,
+  to: string
+): Set<string> {
+  const set = new Set<string>();
+  for (const m of movs) {
+    const d = m.event_datetime_utc.slice(0, 10);
+    if (d >= from && d <= to) set.add(m.s9_id);
+  }
+  return set;
+}
+
+export function keepMovementsForS9Set(
+  movs: RfidMovement[],
+  s9set: Set<string>
+): RfidMovement[] {
+  return movs.filter((m) => s9set.has(m.s9_id));
+}
+
 export function distinctCountries(
   movs: RfidMovement[],
   field: "origin_country_code" | "destination_country_code"

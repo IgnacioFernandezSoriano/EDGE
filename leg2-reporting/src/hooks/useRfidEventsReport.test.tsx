@@ -35,22 +35,33 @@ describe("useRfidEventsReport", () => {
     fetchReaderMaster.mockClear();
   });
 
-  it("loads and pivots all fetched movements (no tab split), fetching with a server-side date range", async () => {
+  it("fetches all movements once (no date params), and date range selects which S9s show but keeps all their events", async () => {
+    // A has one event inside the window and one outside; B is only outside.
     fetchMovements.mockResolvedValue([
-      mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320" }),
-      mov({ s9_id: "S2", movement_type: "INBOUND", edi_equivalent: "2400" }),
+      mov({ s9_id: "A", movement_type: "OUTBOUND", edi_equivalent: "2320", event_datetime_utc: "2026-07-03T10:00:00+00:00" }),
+      mov({ s9_id: "A", movement_type: "INBOUND", edi_equivalent: "2400", event_datetime_utc: "2026-01-01T10:00:00+00:00" }),
+      mov({ s9_id: "B", movement_type: "OUTBOUND", edi_equivalent: "2320", event_datetime_utc: "2026-01-05T10:00:00+00:00" }),
     ]);
     const { result } = renderHook(() => useRfidEventsReport());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.report.rows.map((r) => r.s9_id).sort()).toEqual(["S1", "S2"]);
+
+    // Fetch has no date filter at all.
+    expect(fetchMovements).toHaveBeenCalledWith({}, expect.anything());
+    expect(fetchMovements).toHaveBeenCalledTimes(1);
+
+    // Select a window covering only A's in-window event.
+    act(() => result.current.setDateRange({ from: "2026-07-01", to: "2026-07-31" }));
+
+    // Selecting a date range must not trigger a re-fetch...
+    expect(fetchMovements).toHaveBeenCalledTimes(1);
+
+    // ...but must change which S9 rows are shown.
+    await waitFor(() => {
+      expect(result.current.report.rows.map((r) => r.s9_id)).toEqual(["A"]);
+    });
+    // A's row must reflect BOTH its in-window and out-of-window events (full journey),
+    // i.e. both checkpoint columns (2320 and 2400) are present.
     expect(result.current.report.columns.map((c) => c.code).sort()).toEqual(["2320", "2400"]);
-    expect(fetchMovements).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      }),
-      expect.anything()
-    );
   });
 
   it("loads reader master data once into readerMap", async () => {
@@ -64,33 +75,29 @@ describe("useRfidEventsReport", () => {
     expect(result.current.readerMap.get("R1")?.handover_point).toBe(true);
   });
 
-  it("changing the date range (setDateRange) triggers a re-fetch", async () => {
+  it("changing the date range (setDateRange) does not re-fetch but changes selected rows", async () => {
     fetchMovements.mockResolvedValue([
-      mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320" }),
+      mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320", event_datetime_utc: "2026-07-03T10:00:00+00:00" }),
     ]);
     const { result } = renderHook(() => useRfidEventsReport());
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(fetchMovements).toHaveBeenCalledTimes(1);
 
     act(() => result.current.setDateRange({ from: "2026-01-01", to: "2026-01-31" }));
-    await waitFor(() => expect(fetchMovements).toHaveBeenCalledTimes(2));
-    expect(fetchMovements).toHaveBeenLastCalledWith(
-      expect.objectContaining({ dateFrom: "2026-01-01", dateTo: "2026-01-31" }),
-      expect.anything()
-    );
+    expect(fetchMovements).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(result.current.report.rows).toHaveLength(0));
   });
 
-  it("applyPreset triggers a re-fetch with the preset's range", async () => {
+  it("applyPreset changes dateRange without re-fetching", async () => {
     fetchMovements.mockResolvedValue([
-      mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320" }),
+      mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320", event_datetime_utc: "2026-07-03T10:00:00+00:00" }),
     ]);
     const { result } = renderHook(() => useRfidEventsReport());
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(fetchMovements).toHaveBeenCalledTimes(1);
 
     act(() => result.current.applyPreset("today"));
-    await waitFor(() => expect(fetchMovements).toHaveBeenCalledTimes(2));
-    const [args] = fetchMovements.mock.calls[1];
-    expect(args.dateFrom).toBe(args.dateTo);
+    expect(fetchMovements).toHaveBeenCalledTimes(1);
+    expect(result.current.dateRange.from).toBe(result.current.dateRange.to);
   });
 });
