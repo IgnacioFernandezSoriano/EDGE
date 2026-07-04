@@ -12,7 +12,6 @@ export const strings = {
     signingIn: "Signing in…",
     signOut: "Sign out",
   },
-  tabs: { inbound: "Inbound", outbound: "Outbound" },
   timeMode: { utc: "UTC", local: "Local" },
   filters: {
     origCountry: "Orig country",
@@ -22,6 +21,15 @@ export const strings = {
     all: "All",
     searchS9: "Search S9",
     searchRfidTag: "Search RFID Tag",
+    from: "From",
+    to: "To",
+  },
+  datePresets: {
+    today: "Today",
+    thisWeek: "This week",
+    lastWeek: "Last week",
+    thisMonth: "This month",
+    last90Days: "Last 90 days",
   },
   columns: {
     s9: "S9",

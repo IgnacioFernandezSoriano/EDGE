@@ -27,32 +27,51 @@ function mov(p: Partial<RfidMovement>): RfidMovement {
 describe("useRfidEventsReport", () => {
   beforeEach(() => fetchMovements.mockReset());
 
-  it("loads, defaults to outbound tab, and pivots filtered data", async () => {
+  it("loads and pivots all fetched movements (no tab split), fetching with a server-side date range", async () => {
     fetchMovements.mockResolvedValue([
       mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320" }),
       mov({ s9_id: "S2", movement_type: "INBOUND", edi_equivalent: "2400" }),
     ]);
     const { result } = renderHook(() => useRfidEventsReport());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    // default tab outbound → only S1
-    expect(result.current.report.rows.map((r) => r.s9_id)).toEqual(["S1"]);
-    expect(result.current.report.columns.map((c) => c.code)).toEqual(["2320"]);
-    // bounds the fetch to a default rolling date window (no unbounded full-table load)
+    expect(result.current.report.rows.map((r) => r.s9_id).sort()).toEqual(["S1", "S2"]);
+    expect(result.current.report.columns.map((c) => c.code).sort()).toEqual(["2320", "2400"]);
     expect(fetchMovements).toHaveBeenCalledWith(
-      expect.objectContaining({ dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }),
+      expect.objectContaining({
+        dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        dateTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
       expect.anything()
     );
   });
 
-  it("switching tab to inbound re-pivots", async () => {
+  it("changing the date range (setDateRange) triggers a re-fetch", async () => {
     fetchMovements.mockResolvedValue([
       mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320" }),
-      mov({ s9_id: "S2", movement_type: "INBOUND", edi_equivalent: "2400" }),
     ]);
     const { result } = renderHook(() => useRfidEventsReport());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    act(() => result.current.setFilter((f) => ({ ...f, tab: "inbound" })));
-    expect(result.current.report.rows.map((r) => r.s9_id)).toEqual(["S2"]);
-    expect(result.current.report.columns.map((c) => c.code)).toEqual(["2400"]);
+    expect(fetchMovements).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.setDateRange({ from: "2026-01-01", to: "2026-01-31" }));
+    await waitFor(() => expect(fetchMovements).toHaveBeenCalledTimes(2));
+    expect(fetchMovements).toHaveBeenLastCalledWith(
+      expect.objectContaining({ dateFrom: "2026-01-01", dateTo: "2026-01-31" }),
+      expect.anything()
+    );
+  });
+
+  it("applyPreset triggers a re-fetch with the preset's range", async () => {
+    fetchMovements.mockResolvedValue([
+      mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320" }),
+    ]);
+    const { result } = renderHook(() => useRfidEventsReport());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(fetchMovements).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.applyPreset("today"));
+    await waitFor(() => expect(fetchMovements).toHaveBeenCalledTimes(2));
+    const [args] = fetchMovements.mock.calls[1];
+    expect(args.dateFrom).toBe(args.dateTo);
   });
 });

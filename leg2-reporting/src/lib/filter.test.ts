@@ -17,19 +17,10 @@ function mov(p: Partial<RfidMovement>): RfidMovement {
 }
 
 const base: ReportFilterState = {
-  tab: "outbound", originCountry: null, destCountry: null, s9Query: "", rteQuery: "",
+  originCountry: null, destCountry: null, s9Query: "", rteQuery: "",
 };
 
 describe("filterMovements", () => {
-  it("outbound tab keeps OUTBOUND and TRANSIT_EXIT", () => {
-    const movs = [
-      mov({ movement_type: "OUTBOUND" }),
-      mov({ movement_type: "TRANSIT_EXIT" }),
-      mov({ movement_type: "INBOUND" }),
-    ];
-    expect(filterMovements(movs, base)).toHaveLength(2);
-  });
-
   it("filters by origin/dest country and S9/Rte substring", () => {
     const movs = [
       mov({ s9_id: "AAA111", tag_id: "G.1UPU.KEEP", origin_country_code: "IN" }),
@@ -38,6 +29,15 @@ describe("filterMovements", () => {
     expect(filterMovements(movs, { ...base, originCountry: "IN" })).toHaveLength(1);
     expect(filterMovements(movs, { ...base, s9Query: "aaa" })).toHaveLength(1);
     expect(filterMovements(movs, { ...base, rteQuery: "keep" })).toHaveLength(1);
+  });
+
+  it("returns all movements when no filters are set", () => {
+    const movs = [
+      mov({ movement_type: "OUTBOUND" }),
+      mov({ movement_type: "TRANSIT_EXIT" }),
+      mov({ movement_type: "INBOUND" }),
+    ];
+    expect(filterMovements(movs, base)).toHaveLength(3);
   });
 });
 

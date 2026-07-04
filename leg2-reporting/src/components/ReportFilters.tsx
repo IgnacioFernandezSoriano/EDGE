@@ -1,11 +1,12 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { ReportFilterState } from "@/lib/filter";
 import type { TimeMode } from "@/lib/time";
+import { PRESET_ORDER, type DateRange, type DatePreset } from "@/lib/datePresets";
 import { strings } from "@/i18n/strings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -19,6 +20,9 @@ export function ReportFilters({
   destOptions,
   timeMode,
   onTimeModeChange,
+  dateRange,
+  onDateChange,
+  onApplyPreset,
 }: {
   filter: ReportFilterState;
   setFilter: Dispatch<SetStateAction<ReportFilterState>>;
@@ -26,21 +30,46 @@ export function ReportFilters({
   destOptions: string[];
   timeMode: TimeMode;
   onTimeModeChange: (m: TimeMode) => void;
+  dateRange: DateRange;
+  onDateChange: (r: DateRange) => void;
+  onApplyPreset: (p: DatePreset) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <Tabs
-          value={filter.tab}
-          onValueChange={(v) =>
-            setFilter((f) => ({ ...f, tab: v as ReportFilterState["tab"] }))
-          }
-        >
-          <TabsList>
-            <TabsTrigger value="inbound">{strings.tabs.inbound}</TabsTrigger>
-            <TabsTrigger value="outbound">{strings.tabs.outbound}</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="date-from">{strings.filters.from}</Label>
+            <Input
+              id="date-from"
+              type="date"
+              value={dateRange.from}
+              onChange={(e) => onDateChange({ ...dateRange, from: e.target.value })}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="date-to">{strings.filters.to}</Label>
+            <Input
+              id="date-to"
+              type="date"
+              value={dateRange.to}
+              onChange={(e) => onDateChange({ ...dateRange, to: e.target.value })}
+            />
+          </div>
+          <div className="flex items-end gap-2">
+            {PRESET_ORDER.map((p) => (
+              <Button
+                key={p}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onApplyPreset(p)}
+              >
+                {strings.datePresets[p]}
+              </Button>
+            ))}
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <Label htmlFor="tz">{strings.timeMode.utc}</Label>
           <Switch
