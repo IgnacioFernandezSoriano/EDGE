@@ -7,6 +7,17 @@ import {
 } from "@/lib/filter";
 import { pivotByS9, type RfidEventsReport } from "@/lib/pivot";
 
+// Bounds the movements fetch to a rolling window so the browser never pages
+// the entire vw_quicksight_rfid_report_movements view into memory. A full
+// date-range picker (arbitrary dateFrom/dateTo) is v2.
+export const DEFAULT_WINDOW_DAYS = 365;
+
+function defaultDateFrom(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - DEFAULT_WINDOW_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+
 const INITIAL_FILTER: ReportFilterState = {
   tab: "outbound",
   originCountry: null,
@@ -27,7 +38,11 @@ export function useRfidEventsReport() {
     try {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
-      const rows = await fetchRfidMovements({}, token ? { token } : {});
+      const dateFrom = defaultDateFrom();
+      const rows = await fetchRfidMovements(
+        { dateFrom },
+        token ? { token } : {}
+      );
       setMovements(rows);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

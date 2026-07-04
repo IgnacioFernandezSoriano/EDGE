@@ -22,6 +22,7 @@ VITE_SUPABASE_ANON_KEY=<Leg2 publishable key>
   `GRANT SELECT ... TO authenticated` on Leg2 (applied via migration
   `grant_select_rfid_report_view_to_authenticated`).
 - Auth: Supabase Auth of Leg2. Create users in the Leg2 project.
+- The report loads a rolling default window of the last `DEFAULT_WINDOW_DAYS` (365) days; full historical range is v2.
 
 ## Deploy
 Static SPA (like the legacy dashboard): serve `dist/` with an SPA fallback

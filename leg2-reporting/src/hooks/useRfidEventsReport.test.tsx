@@ -37,6 +37,11 @@ describe("useRfidEventsReport", () => {
     // default tab outbound → only S1
     expect(result.current.report.rows.map((r) => r.s9_id)).toEqual(["S1"]);
     expect(result.current.report.columns.map((c) => c.code)).toEqual(["2320"]);
+    // bounds the fetch to a default rolling date window (no unbounded full-table load)
+    expect(fetchMovements).toHaveBeenCalledWith(
+      expect.objectContaining({ dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }),
+      expect.anything()
+    );
   });
 
   it("switching tab to inbound re-pivots", async () => {
