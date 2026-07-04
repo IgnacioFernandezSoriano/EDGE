@@ -23,8 +23,8 @@ export default function RfidEventsPage() {
   );
 
   return (
-    <div className="p-4 flex flex-col gap-4">
-      <header className="flex items-center justify-between">
+    <div className="h-screen flex flex-col">
+      <header className="shrink-0 flex items-center justify-between p-4 border-b">
         <h1 className="text-xl font-semibold">{strings.appTitle}</h1>
         <div className="flex items-center gap-3 text-sm">
           <span className="text-muted-foreground">{user?.email}</span>
@@ -32,32 +32,36 @@ export default function RfidEventsPage() {
         </div>
       </header>
 
-      <ReportFilters
-        filter={filter}
-        setFilter={setFilter}
-        originOptions={originOptions}
-        destOptions={destOptions}
-        timeMode={timeMode}
-        onTimeModeChange={setTimeMode}
-        dateRange={dateRange}
-        onDateChange={setDateRange}
-        onApplyPreset={applyPreset}
-      />
+      <div className="shrink-0 border-b bg-background px-4 py-3">
+        <ReportFilters
+          filter={filter}
+          setFilter={setFilter}
+          originOptions={originOptions}
+          destOptions={destOptions}
+          timeMode={timeMode}
+          onTimeModeChange={setTimeMode}
+          dateRange={dateRange}
+          onDateChange={setDateRange}
+          onApplyPreset={applyPreset}
+        />
+      </div>
 
-      {loading && <p className="text-sm text-muted-foreground">{strings.states.loading}</p>}
-      {error && <p className="text-sm text-red-600">{strings.states.errorPrefix}{error}</p>}
+      <div className="flex-1 min-h-0 overflow-auto p-4">
+        {loading && <p className="text-sm text-muted-foreground">{strings.states.loading}</p>}
+        {error && <p className="text-sm text-red-600">{strings.states.errorPrefix}{error}</p>}
 
-      {!loading && !error && (
-        <section className="border rounded-md overflow-auto">
-          <RfidEventsPivot
-            report={report}
-            timeMode={timeMode}
-            selectedS9={selectedS9}
-            onSelectS9={setSelectedS9}
-            readerMap={readerMap}
-          />
-        </section>
-      )}
+        {!loading && !error && (
+          <section className="border rounded-md">
+            <RfidEventsPivot
+              report={report}
+              timeMode={timeMode}
+              selectedS9={selectedS9}
+              onSelectS9={setSelectedS9}
+              readerMap={readerMap}
+            />
+          </section>
+        )}
+      </div>
 
       <EventDetailsDialog
         open={selectedS9 !== null}

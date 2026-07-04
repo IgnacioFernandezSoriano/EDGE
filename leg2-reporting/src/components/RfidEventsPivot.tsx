@@ -29,13 +29,13 @@ export function RfidEventsPivot({
   return (
     <TooltipProvider delayDuration={200}>
       <Table>
-        <TableHeader>
+        <TableHeader className="sticky top-0 z-30 bg-background">
           <TableRow>
-            <TableHead className="sticky left-0 z-20 bg-background border-r">
+            <TableHead className="sticky left-0 top-0 z-40 bg-background border-r">
               {strings.columns.s9}
             </TableHead>
             {report.columns.map((c) => (
-              <TableHead key={c.code}>
+              <TableHead key={c.code} className="sticky top-0 z-30 bg-background">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span title={c.label} aria-label={c.label}>{c.code}</span>
