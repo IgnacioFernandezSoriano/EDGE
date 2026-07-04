@@ -1,0 +1,49 @@
+import type { RfidMovement } from "@/lib/supabase";
+import { formatTimestamp, type TimeMode } from "@/lib/time";
+import { strings } from "@/i18n/strings";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+
+export function EventDetailsTable({
+  movements,
+  timeMode,
+}: {
+  movements: RfidMovement[];
+  timeMode: TimeMode;
+}) {
+  if (movements.length === 0) {
+    return <p className="text-sm text-muted-foreground p-4">{strings.states.selectS9}</p>;
+  }
+  const sorted = [...movements].sort((a, b) =>
+    a.event_datetime_utc.localeCompare(b.event_datetime_utc)
+  );
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{strings.columns.s9}</TableHead>
+          <TableHead>{strings.columns.rfidTag}</TableHead>
+          <TableHead>{strings.columns.movementId}</TableHead>
+          <TableHead>{strings.columns.time}</TableHead>
+          <TableHead>{strings.columns.site}</TableHead>
+          <TableHead>{strings.columns.rfidReader}</TableHead>
+          <TableHead>{strings.columns.handover}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sorted.map((m) => (
+          <TableRow key={m.movement_id}>
+            <TableCell className="font-mono text-xs">{m.s9_id}</TableCell>
+            <TableCell className="font-mono text-xs">{m.tag_id ?? "—"}</TableCell>
+            <TableCell className="font-mono text-xs">{m.movement_id}</TableCell>
+            <TableCell className="font-mono text-xs">{formatTimestamp(m, timeMode)}</TableCell>
+            <TableCell>{m.site_impc_code ?? m.centre_code}</TableCell>
+            <TableCell className="font-mono text-xs">{m.reader_id}</TableCell>
+            <TableCell>{m.handover_quality_status ?? "—"}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
