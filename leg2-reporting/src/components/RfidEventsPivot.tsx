@@ -79,8 +79,8 @@ export function RfidEventsPivot({
                   const parts = formatTimestampParts(m, timeMode);
                   return (
                     <TableCell key={c.code} className="font-mono text-xs">
-                      <div>{parts.time}</div>
-                      <div className="text-[10px] text-muted-foreground">{parts.date}</div>
+                      <div className="font-semibold">{parts.date}</div>
+                      <div className="font-semibold">{parts.time}</div>
                       <div className="text-muted-foreground">{m.reader_id}</div>
                       <div className="text-muted-foreground">
                         {strings.columns.gate}: {reader?.gate_name ?? "—"}
