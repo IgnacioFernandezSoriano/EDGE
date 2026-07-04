@@ -51,6 +51,12 @@ export function useRfidEventsReport() {
     try {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
+      // Deliberately fetch the full movements set once (no server-side date
+      // bound): the date window below selects which S9 receptacles are in
+      // scope, then we show their FULL journeys (including out-of-window
+      // events). Fine at current volume (~8k rows); if this grows large,
+      // move to a server-side two-phase fetch (select in-range S9 ids via
+      // an RPC, then fetch only those journeys) instead of loading everything.
       const rows = await fetchRfidMovements({}, token ? { token } : {});
       setMovements(rows);
     } catch (e) {

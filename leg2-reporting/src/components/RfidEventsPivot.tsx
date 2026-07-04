@@ -89,7 +89,7 @@ export function RfidEventsPivot({
                             className="ml-1 inline-block rounded bg-amber-200 px-1 text-[10px] font-semibold text-amber-900"
                             title={strings.columns.handover}
                           >
-                            HO
+                            {strings.columns.handoverBadge}
                           </span>
                         )}
                       </div>

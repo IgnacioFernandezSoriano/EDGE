@@ -41,6 +41,7 @@ export const strings = {
     time: "Time",
     site: "Site",
     handover: "Handover",
+    handoverBadge: "HO",
     handoverStatus: "Handover status",
     readerHandover: "Reader HO",
     gate: "Gate",

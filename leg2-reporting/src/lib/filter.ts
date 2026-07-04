@@ -27,10 +27,17 @@ export function s9sWithEventInRange(
   from: string,
   to: string
 ): Set<string> {
+  // NOTE: the bound comparison uses the UTC calendar date (event_datetime_utc
+  // slice) while presets are computed from local date parts — acceptable
+  // under the project's "UTC canonical" stance.
   const set = new Set<string>();
   for (const m of movs) {
     const d = m.event_datetime_utc.slice(0, 10);
-    if (d >= from && d <= to) set.add(m.s9_id);
+    // An empty from/to means "no bound" (an <input type="date"> can be
+    // cleared to ""), so only apply a bound when it's a non-empty string.
+    if (from && d < from) continue;
+    if (to && d > to) continue;
+    set.add(m.s9_id);
   }
   return set;
 }

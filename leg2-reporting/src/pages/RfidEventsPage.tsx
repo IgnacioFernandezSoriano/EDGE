@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRfidEventsReport } from "@/hooks/useRfidEventsReport";
 import { ReportFilters } from "@/components/ReportFilters";
@@ -21,6 +21,15 @@ export default function RfidEventsPage() {
     () => report.rows.find((r) => r.s9_id === selectedS9)?.all ?? [],
     [report, selectedS9]
   );
+
+  // Clear the selection if the date range changes such that the previously
+  // selected S9 no longer appears in the current report (avoids showing a
+  // stale/empty detail modal).
+  useEffect(() => {
+    if (selectedS9 !== null && !report.rows.some((r) => r.s9_id === selectedS9)) {
+      setSelectedS9(null);
+    }
+  }, [report, selectedS9]);
 
   return (
     <div className="h-screen flex flex-col">

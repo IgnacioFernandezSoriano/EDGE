@@ -59,6 +59,12 @@ describe("s9sWithEventInRange / keepMovementsForS9Set", () => {
     expect(set).toEqual(new Set(["A"]));
   });
 
+  it("s9sWithEventInRange treats empty from/to as open-ended (includes all S9)", () => {
+    expect(s9sWithEventInRange(movs, "", "")).toEqual(new Set(["A", "B"]));
+    expect(s9sWithEventInRange(movs, "2026-06-01", "")).toEqual(new Set(["A"]));
+    expect(s9sWithEventInRange(movs, "", "2026-06-01")).toEqual(new Set(["A", "B"]));
+  });
+
   it("keepMovementsForS9Set returns ALL events for the selected S9s, in and out of window", () => {
     const set = s9sWithEventInRange(movs, "2026-07-01", "2026-07-31");
     const kept = keepMovementsForS9Set(movs, set);
