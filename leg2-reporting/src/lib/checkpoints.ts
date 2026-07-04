@@ -1,6 +1,7 @@
 export interface CheckpointColumn {
   code: string;
   label: string;
+  count: number;
 }
 
 /** IPC checkpoint code → human label. Extend as new codes get names. */
@@ -27,11 +28,17 @@ export function checkpointLabel(code: string): string {
 export function checkpointColumnsFromData(
   movs: { edi_equivalent: string | null }[]
 ): CheckpointColumn[] {
-  const codes = new Set<string>();
+  const counts = new Map<string, number>();
   for (const m of movs) {
-    if (m.edi_equivalent) codes.add(m.edi_equivalent);
+    if (m.edi_equivalent) {
+      counts.set(m.edi_equivalent, (counts.get(m.edi_equivalent) ?? 0) + 1);
+    }
   }
-  return [...codes]
+  return [...counts.keys()]
     .sort((a, b) => Number(a) - Number(b))
-    .map((code) => ({ code, label: checkpointLabel(code) }));
+    .map((code) => ({
+      code,
+      label: checkpointLabel(code),
+      count: counts.get(code)!,
+    }));
 }

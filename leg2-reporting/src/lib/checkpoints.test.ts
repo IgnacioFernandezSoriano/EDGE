@@ -17,6 +17,19 @@ describe("checkpoint columns (dynamic)", () => {
     expect(cols.map((c) => c.code)).toEqual(["2320", "2400"]);
   });
 
+  it("computes the raw event count per code", () => {
+    const cols = checkpointColumnsFromData([
+      { edi_equivalent: "2400" },
+      { edi_equivalent: "2320" },
+      { edi_equivalent: "2400" },
+      { edi_equivalent: null },
+    ]);
+    expect(cols).toEqual([
+      { code: "2320", label: "Exit Outbound AMU", count: 1 },
+      { code: "2400", label: "Entry Inbound AMU", count: 2 },
+    ]);
+  });
+
   it("a brand-new checkpoint appears automatically as a column", () => {
     const cols = checkpointColumnsFromData([
       { edi_equivalent: "2400" },
@@ -28,6 +41,6 @@ describe("checkpoint columns (dynamic)", () => {
 
   it("unknown code uses its raw code as label", () => {
     const cols = checkpointColumnsFromData([{ edi_equivalent: "9999" }]);
-    expect(cols[0]).toEqual({ code: "9999", label: "9999" });
+    expect(cols[0]).toEqual({ code: "9999", label: "9999", count: 1 });
   });
 });

@@ -29,9 +29,9 @@ export function RfidEventsPivot({
   return (
     <TooltipProvider delayDuration={200}>
       <Table>
-        <TableHeader className="sticky top-0 z-30 bg-background">
+        <TableHeader>
           <TableRow>
-            <TableHead className="sticky left-0 top-0 z-40 bg-background border-r">
+            <TableHead className="sticky top-0 left-0 z-40 bg-background border-r">
               {strings.columns.s9}
             </TableHead>
             {report.columns.map((c) => (
@@ -42,6 +42,9 @@ export function RfidEventsPivot({
                   </TooltipTrigger>
                   <TooltipContent>{c.label}</TooltipContent>
                 </Tooltip>
+                <div className="text-[10px] text-muted-foreground">
+                  {c.count.toLocaleString("en-US")}
+                </div>
               </TableHead>
             ))}
           </TableRow>

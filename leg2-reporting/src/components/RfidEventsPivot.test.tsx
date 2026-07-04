@@ -6,8 +6,8 @@ import type { ReaderMaster } from "@/lib/supabase";
 
 const report: RfidEventsReport = {
   columns: [
-    { code: "2320", label: "Exit Outbound AMU" },
-    { code: "2410", label: "Exit Inbound AMU" },
+    { code: "2320", label: "Exit Outbound AMU", count: 1234 },
+    { code: "2410", label: "Exit Inbound AMU", count: 5 },
   ],
   rows: [
     {
@@ -58,6 +58,8 @@ describe("RfidEventsPivot", () => {
     );
     expect(screen.getByText("2320")).toBeInTheDocument();
     expect(screen.getByText("2410")).toBeInTheDocument(); // dynamic col
+    expect(screen.getByText("1,234")).toBeInTheDocument(); // count under code
+    expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.queryByText("Exit Outbound AMU")).not.toBeInTheDocument();
     expect(
       document.querySelector('[title="Exit Outbound AMU"]')
