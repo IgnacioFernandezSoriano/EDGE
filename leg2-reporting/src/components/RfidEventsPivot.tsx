@@ -79,7 +79,7 @@ export function RfidEventsPivot({
                   const parts = formatTimestampParts(m, timeMode);
                   return (
                     <TableCell key={c.code} className="font-mono text-xs">
-                      <div className="font-semibold">{parts.date}</div>
+                      <div className="font-semibold">{parts.date} ({parts.weekday})</div>
                       <div className="font-semibold">{parts.time}</div>
                       <div className="text-muted-foreground">{m.reader_id}</div>
                       <div className="text-muted-foreground">

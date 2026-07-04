@@ -8,18 +8,20 @@ describe("time", () => {
   };
 
   it("shows UTC or local based on mode, formatted compact and human-readable", () => {
-    expect(formatTimestamp(mov, "utc")).toBe("03 Jul 2026, 10:00:00");
-    expect(formatTimestamp(mov, "local")).toBe("03 Jul 2026, 19:00:00");
+    expect(formatTimestamp(mov, "utc")).toBe("03 Jul 2026 (Fri), 10:00:00");
+    expect(formatTimestamp(mov, "local")).toBe("03 Jul 2026 (Fri), 19:00:00");
   });
 
   it("splits date and time parts without shifting local values via Date parsing", () => {
     expect(formatTimestampParts(mov, "utc")).toEqual({
       date: "03 Jul 2026",
       time: "10:00:00",
+      weekday: "Fri",
     });
     expect(formatTimestampParts(mov, "local")).toEqual({
       date: "03 Jul 2026",
       time: "19:00:00",
+      weekday: "Fri",
     });
   });
 

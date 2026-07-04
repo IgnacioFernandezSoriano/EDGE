@@ -68,7 +68,7 @@ describe("RfidEventsPivot", () => {
       document.querySelector('[aria-label="Exit Outbound AMU"]')
     ).toBeInTheDocument();
     expect(screen.getByText("10:00:00")).toBeInTheDocument();
-    expect(screen.getByText("03 Jul 2026")).toBeInTheDocument();
+    expect(screen.getByText("03 Jul 2026 (Fri)")).toBeInTheDocument();
   });
 
   it("renders the consolidated first column with s9_id, orig->dest, and rte", () => {

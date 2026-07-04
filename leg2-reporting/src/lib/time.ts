@@ -16,6 +16,7 @@ const MONTHS = [
 ];
 
 const TS_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
+const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
  * Extract date/time components directly from an ISO-ish string without
@@ -27,17 +28,19 @@ const TS_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
 export function formatTimestampParts(
   mov: { event_datetime_utc: string; event_datetime_local: string },
   mode: TimeMode
-): { date: string; time: string } {
+): { date: string; time: string; weekday: string } {
   const raw = mode === "utc" ? mov.event_datetime_utc : mov.event_datetime_local;
   const match = TS_RE.exec(raw);
   if (!match) {
-    return { date: raw, time: "" };
+    return { date: raw, time: "", weekday: "" };
   }
   const [, year, month, day, hour, minute, second] = match;
   const monthAbbrev = MONTHS[Number(month) - 1] ?? month;
+  const weekday = WD[new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).getUTCDay()];
   return {
     date: `${day} ${monthAbbrev} ${year}`,
     time: `${hour}:${minute}:${second}`,
+    weekday,
   };
 }
 
@@ -46,7 +49,8 @@ export function formatTimestamp(
   mode: TimeMode
 ): string {
   const parts = formatTimestampParts(mov, mode);
-  return parts.time ? `${parts.date}, ${parts.time}` : parts.date;
+  const dateStr = parts.weekday ? `${parts.date} (${parts.weekday})` : parts.date;
+  return parts.time ? `${dateStr}, ${parts.time}` : dateStr;
 }
 
 /**
