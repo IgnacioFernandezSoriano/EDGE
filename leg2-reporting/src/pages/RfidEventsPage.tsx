@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRfidEventsReport } from "@/hooks/useRfidEventsReport";
 import { ReportFilters } from "@/components/ReportFilters";
 import { RfidEventsPivot } from "@/components/RfidEventsPivot";
-import { EventDetailsTable } from "@/components/EventDetailsTable";
+import { EventDetailsDialog } from "@/components/EventDetailsDialog";
 import { strings } from "@/i18n/strings";
 import { Button } from "@/components/ui/button";
 import type { TimeMode } from "@/lib/time";
@@ -48,21 +48,25 @@ export default function RfidEventsPage() {
       {error && <p className="text-sm text-red-600">{strings.states.errorPrefix}{error}</p>}
 
       {!loading && !error && (
-        <>
-          <section className="border rounded-md overflow-auto">
-            <RfidEventsPivot
-              report={report}
-              timeMode={timeMode}
-              selectedS9={selectedS9}
-              onSelectS9={setSelectedS9}
-            />
-          </section>
-          <section className="border rounded-md overflow-auto">
-            <h2 className="text-sm font-semibold p-2">{strings.states.eventDetails}</h2>
-            <EventDetailsTable movements={detail} timeMode={timeMode} />
-          </section>
-        </>
+        <section className="border rounded-md overflow-auto">
+          <RfidEventsPivot
+            report={report}
+            timeMode={timeMode}
+            selectedS9={selectedS9}
+            onSelectS9={setSelectedS9}
+          />
+        </section>
       )}
+
+      <EventDetailsDialog
+        open={selectedS9 !== null}
+        onOpenChange={(o) => {
+          if (!o) setSelectedS9(null);
+        }}
+        s9={selectedS9}
+        movements={detail}
+        timeMode={timeMode}
+      />
     </div>
   );
 }
