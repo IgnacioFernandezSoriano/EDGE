@@ -24,7 +24,7 @@ function mov(p: Partial<RfidMovement>): RfidMovement {
     event_datetime_utc: "2026-07-03T10:00:00+00:00",
     event_datetime_local: "2026-07-03T19:00:00", reader_timezone: "Asia/Kolkata",
     site_impc_code: "INMUBA", centre_code: "INMUBA", site_name: "Mumbai",
-    city: "Mumbai", handover_point: true, handover_quality_status: "handover_ok",
+    city: "Mumbai", country_code: "IN", handover_point: true, handover_quality_status: "handover_ok",
     ...p,
   };
 }

@@ -5,6 +5,12 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 
+function formatSite(m: RfidMovement): string {
+  const site = m.site_impc_code ?? m.centre_code;
+  if (!site) return m.country_code ? `(${m.country_code})` : "—";
+  return site + (m.country_code ? ` (${m.country_code})` : "");
+}
+
 export function EventDetailsTable({
   movements,
   timeMode,
@@ -44,7 +50,7 @@ export function EventDetailsTable({
               <TableCell className="font-mono text-xs">{m.tag_id ?? "—"}</TableCell>
               <TableCell className="font-mono text-xs">{m.movement_id}</TableCell>
               <TableCell className="font-mono text-xs">{formatTimestamp(m, timeMode)}</TableCell>
-              <TableCell>{m.site_impc_code ?? m.centre_code}</TableCell>
+              <TableCell>{formatSite(m)}</TableCell>
               <TableCell className="font-mono text-xs">{m.reader_id}</TableCell>
               <TableCell>{reader?.gate_name ?? "—"}</TableCell>
               <TableCell>{m.handover_quality_status ?? "—"}</TableCell>

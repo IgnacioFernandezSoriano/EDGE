@@ -26,6 +26,7 @@ export interface RfidMovement {
   centre_code: string;
   site_name: string | null;
   city: string | null;
+  country_code: string | null;
   handover_point: boolean;
   handover_quality_status: string | null;
 }
@@ -35,7 +36,7 @@ const SELECT_COLS = [
   "route_country_role", "edi_equivalent", "origin_country_code",
   "destination_country_code", "movement_country_code", "country_sequence_number",
   "event_datetime_utc", "event_datetime_local", "reader_timezone",
-  "site_impc_code", "centre_code", "site_name", "city",
+  "site_impc_code", "centre_code", "site_name", "city", "country_code",
   "handover_point", "handover_quality_status",
 ].join(",");
 

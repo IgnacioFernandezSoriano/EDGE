@@ -36,10 +36,11 @@ const movements: RfidMovement[] = [
     event_datetime_utc: "2026-07-03T10:00:00+00:00",
     event_datetime_local: "2026-07-03T19:00:00",
     reader_timezone: "Asia/Tokyo",
-    site_impc_code: "AAA",
+    site_impc_code: "INMUBA",
     centre_code: "AAA",
     site_name: "Site A",
     city: "City A",
+    country_code: "IN",
     handover_point: true,
     handover_quality_status: "OK",
   } as RfidMovement,
@@ -59,6 +60,7 @@ describe("EventDetailsDialog", () => {
     );
     expect(screen.getAllByText(/INBOMBJPTYOAAEM60760004100101/).length).toBeGreaterThan(0);
     expect(screen.getByText("03 Jul 2026, 10:00:00")).toBeInTheDocument();
+    expect(screen.getByText("INMUBA (IN)")).toBeInTheDocument();
     expect(screen.getByText("MT")).toBeInTheDocument();
     expect(screen.getByText("OK")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
