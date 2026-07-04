@@ -31,7 +31,8 @@ export function EventDetailsTable({
           <TableHead>{strings.columns.site}</TableHead>
           <TableHead>{strings.columns.rfidReader}</TableHead>
           <TableHead>{strings.columns.gate}</TableHead>
-          <TableHead>{strings.columns.handover}</TableHead>
+          <TableHead>{strings.columns.handoverStatus}</TableHead>
+          <TableHead>{strings.columns.readerHandover}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -46,6 +47,7 @@ export function EventDetailsTable({
               <TableCell>{m.site_impc_code ?? m.centre_code}</TableCell>
               <TableCell className="font-mono text-xs">{m.reader_id}</TableCell>
               <TableCell>{reader?.gate_name ?? "—"}</TableCell>
+              <TableCell>{m.handover_quality_status ?? "—"}</TableCell>
               <TableCell>
                 {reader?.handover_point ? strings.common.yes : strings.common.no}
               </TableCell>

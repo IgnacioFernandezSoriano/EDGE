@@ -60,6 +60,8 @@ describe("EventDetailsDialog", () => {
     expect(screen.getAllByText(/INBOMBJPTYOAAEM60760004100101/).length).toBeGreaterThan(0);
     expect(screen.getByText("2026-07-03T10:00:00+00:00")).toBeInTheDocument();
     expect(screen.getByText("MT")).toBeInTheDocument();
+    expect(screen.getByText("OK")).toBeInTheDocument();
+    expect(screen.getByText("Yes")).toBeInTheDocument();
   });
 
   it("does not render content when closed", () => {
