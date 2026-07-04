@@ -2,12 +2,15 @@
 -- Mirrors the selection logic of rfid_transform_run (sql/06_…); keep in sync.
 -- New filter: p_filters->'sites' = array of site_impc_code to scope the reprocess.
 -- Generated from the live Leg2 definition with only the documented edits applied.
+-- statement_timeout raised to 240s so a scoped reprocess invoked via PostgREST
+-- (rfid-reprocess-site edge function) is not killed by the role's short default.
 
 CREATE OR REPLACE FUNCTION public.rfid_reprocess_scope(p_filters jsonb DEFAULT '{}'::jsonb, p_environment text DEFAULT 'production'::text, p_max_reads integer DEFAULT 50000, p_reason text DEFAULT 'manual_recalc'::text)
  RETURNS TABLE(reprocess_run_id uuid, etl_run_id uuid, status text, reads_matched_total bigint, reads_selected integer, reads_enriched integer, reads_still_blocked integer, affected_pairs integer, movements_upserted integer, incidents_created integer, error_message text)
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'extensions'
+ SET statement_timeout TO '240s'
 AS $function$
 declare
     v_reprocess_run_id  uuid    := extensions.gen_random_uuid();
