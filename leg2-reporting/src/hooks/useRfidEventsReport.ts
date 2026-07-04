@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchRfidMovements, supabase, type RfidMovement } from "@/lib/supabase";
+import { fetchRfidMovements, fetchReaderMaster, supabase, type RfidMovement, type ReaderMaster } from "@/lib/supabase";
 import {
   filterMovements,
   distinctCountries,
@@ -21,6 +21,27 @@ export function useRfidEventsReport() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<ReportFilterState>(INITIAL_FILTER);
   const [dateRange, setDateRange] = useState<DateRange>(() => presetRange("last90Days"));
+  const [readerMap, setReaderMap] = useState<Map<string, ReaderMaster>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        const readers = await fetchReaderMaster(token ? { token } : {});
+        if (!cancelled) {
+          setReaderMap(new Map(readers.map((r) => [r.lpi, r])));
+        }
+      } catch (e) {
+        // Reader enrichment is best-effort; movements report must not break.
+        console.error("Failed to load reader master data", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,6 +103,7 @@ export function useRfidEventsReport() {
     loading,
     error,
     report,
+    readerMap,
     filter,
     setFilter,
     originOptions,

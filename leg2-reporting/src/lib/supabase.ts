@@ -42,6 +42,66 @@ const SELECT_COLS = [
 const VIEW = "vw_quicksight_rfid_report_movements";
 const PAGE_SIZE = 1000;
 
+export interface ReaderMaster {
+  lpi: string;
+  gate_id: string | number | null;
+  gate_name: string | null;
+  gate_purpose: string | null;
+  reading_direction: string | null;
+  facility_name: string | null;
+  site_id: string | null;
+  reader_country_code: string | null;
+  handover_point: boolean;
+}
+
+const READER_MASTER_VIEW = "vw_reader_master";
+const READER_MASTER_SELECT_COLS = [
+  "lpi", "gate_id", "gate_name", "gate_purpose", "reading_direction",
+  "facility_name", "site_id", "reader_country_code", "handover_point",
+].join(",");
+
+type FetchDeps = {
+  fetchFn?: typeof fetch;
+  token?: string;
+  anonKey?: string;
+  baseUrl?: string;
+};
+
+function resolveAuth(deps: FetchDeps) {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const anonKey = deps.anonKey ?? SUPABASE_ANON_KEY;
+  const token = deps.token ?? anonKey;
+  const headers = {
+    apikey: anonKey,
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+  return { fetchFn, headers };
+}
+
+async function fetchAllPages<T>(
+  buildUrl: (offset: number, limit: number) => string,
+  fetchFn: typeof fetch,
+  headers: Record<string, string>,
+  errorPrefix: string
+): Promise<T[]> {
+  const all: T[] = [];
+  let offset = 0;
+  while (true) {
+    const url = buildUrl(offset, PAGE_SIZE);
+    const res = await fetchFn(url, { headers });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`${errorPrefix} failed: ${res.status} ${body}`);
+    }
+    const page = (await res.json()) as T[];
+    all.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return all;
+}
+
 export function buildMovementsUrl(
   baseUrl: string,
   opts: { dateFrom?: string; dateTo?: string; offset: number; limit: number }
@@ -60,41 +120,47 @@ export function buildMovementsUrl(
 
 export async function fetchRfidMovements(
   filters: { dateFrom?: string; dateTo?: string },
-  deps: {
-    fetchFn?: typeof fetch;
-    token?: string;
-    anonKey?: string;
-    baseUrl?: string;
-  } = {}
+  deps: FetchDeps = {}
 ): Promise<RfidMovement[]> {
-  const fetchFn = deps.fetchFn ?? fetch;
-  const anonKey = deps.anonKey ?? SUPABASE_ANON_KEY;
-  const token = deps.token ?? anonKey;
+  const { fetchFn, headers } = resolveAuth(deps);
   const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${VIEW}`;
-  const headers = {
-    apikey: anonKey,
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
 
-  const all: RfidMovement[] = [];
-  let offset = 0;
-  while (true) {
-    const url = buildMovementsUrl(baseUrl, {
-      dateFrom: filters.dateFrom,
-      dateTo: filters.dateTo,
-      offset,
-      limit: PAGE_SIZE,
-    });
-    const res = await fetchFn(url, { headers });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Leg2 movements fetch failed: ${res.status} ${body}`);
-    }
-    const page = (await res.json()) as RfidMovement[];
-    all.push(...page);
-    if (page.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-  return all;
+  return fetchAllPages<RfidMovement>(
+    (offset, limit) =>
+      buildMovementsUrl(baseUrl, {
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+        offset,
+        limit,
+      }),
+    fetchFn,
+    headers,
+    "Leg2 movements fetch"
+  );
+}
+
+export function buildReaderMasterUrl(
+  baseUrl: string,
+  opts: { offset: number; limit: number }
+): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", READER_MASTER_SELECT_COLS);
+  url.searchParams.set("order", "lpi");
+  url.searchParams.set("offset", String(opts.offset));
+  url.searchParams.set("limit", String(opts.limit));
+  return url.toString();
+}
+
+export async function fetchReaderMaster(
+  deps: FetchDeps = {}
+): Promise<ReaderMaster[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${READER_MASTER_VIEW}`;
+
+  return fetchAllPages<ReaderMaster>(
+    (offset, limit) => buildReaderMasterUrl(baseUrl, { offset, limit }),
+    fetchFn,
+    headers,
+    "Leg2 reader master fetch"
+  );
 }

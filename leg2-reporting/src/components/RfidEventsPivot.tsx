@@ -1,4 +1,5 @@
 import type { RfidEventsReport } from "@/lib/pivot";
+import type { ReaderMaster } from "@/lib/supabase";
 import { formatTimestamp, type TimeMode } from "@/lib/time";
 import { strings } from "@/i18n/strings";
 import { cn } from "@/lib/utils";
@@ -14,11 +15,13 @@ export function RfidEventsPivot({
   timeMode,
   selectedS9,
   onSelectS9,
+  readerMap,
 }: {
   report: RfidEventsReport;
   timeMode: TimeMode;
   selectedS9: string | null;
   onSelectS9: (s9: string) => void;
+  readerMap: Map<string, ReaderMaster>;
 }) {
   if (report.rows.length === 0) {
     return <p className="text-sm text-muted-foreground p-4">{strings.states.noRows}</p>;
@@ -66,9 +69,25 @@ export function RfidEventsPivot({
                 </TableCell>
                 {report.columns.map((c) => {
                   const m = row.cells[c.code];
+                  if (!m) {
+                    return <TableCell key={c.code} className="font-mono text-xs" />;
+                  }
+                  const reader = readerMap.get(m.reader_id);
                   return (
                     <TableCell key={c.code} className="font-mono text-xs">
-                      {m ? formatTimestamp(m, timeMode) : ""}
+                      <div>{formatTimestamp(m, timeMode)}</div>
+                      <div className="text-muted-foreground">{m.reader_id}</div>
+                      <div className="text-muted-foreground">
+                        {strings.columns.gate}: {reader?.gate_name ?? "—"}
+                        {reader?.handover_point === true && (
+                          <span
+                            className="ml-1 inline-block rounded bg-amber-200 px-1 text-[10px] font-semibold text-amber-900"
+                            title={strings.columns.handover}
+                          >
+                            HO
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                   );
                 })}

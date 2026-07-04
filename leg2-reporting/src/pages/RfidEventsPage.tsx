@@ -11,7 +11,7 @@ import type { TimeMode } from "@/lib/time";
 export default function RfidEventsPage() {
   const { signOut, user } = useAuth();
   const {
-    loading, error, report, filter, setFilter, originOptions, destOptions,
+    loading, error, report, readerMap, filter, setFilter, originOptions, destOptions,
     dateRange, setDateRange, applyPreset,
   } = useRfidEventsReport();
   const [timeMode, setTimeMode] = useState<TimeMode>("utc");
@@ -54,6 +54,7 @@ export default function RfidEventsPage() {
             timeMode={timeMode}
             selectedS9={selectedS9}
             onSelectS9={setSelectedS9}
+            readerMap={readerMap}
           />
         </section>
       )}
@@ -66,6 +67,7 @@ export default function RfidEventsPage() {
         s9={selectedS9}
         movements={detail}
         timeMode={timeMode}
+        readerMap={readerMap}
       />
     </div>
   );

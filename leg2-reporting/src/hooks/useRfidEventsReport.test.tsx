@@ -3,9 +3,14 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 import type { RfidMovement } from "@/lib/supabase";
 
 const fetchMovements = vi.fn();
+const fetchReaderMaster = vi.fn().mockResolvedValue([
+  { lpi: "R1", gate_id: "G1", gate_name: "MT", gate_purpose: "exit", reading_direction: "out", facility_name: "Facility A", site_id: "S1", reader_country_code: "IN", handover_point: true },
+  { lpi: "R2", gate_id: "G2", gate_name: "MO", gate_purpose: "entry", reading_direction: "in", facility_name: "Facility B", site_id: "S2", reader_country_code: "JP", handover_point: false },
+]);
 vi.mock("@/lib/supabase", () => ({
   supabase: { auth: { getSession: vi.fn().mockResolvedValue({ data: { session: null } }) } },
   fetchRfidMovements: (...args: unknown[]) => fetchMovements(...args),
+  fetchReaderMaster: (...args: unknown[]) => fetchReaderMaster(...args),
 }));
 
 import { useRfidEventsReport } from "@/hooks/useRfidEventsReport";
@@ -25,7 +30,10 @@ function mov(p: Partial<RfidMovement>): RfidMovement {
 }
 
 describe("useRfidEventsReport", () => {
-  beforeEach(() => fetchMovements.mockReset());
+  beforeEach(() => {
+    fetchMovements.mockReset();
+    fetchReaderMaster.mockClear();
+  });
 
   it("loads and pivots all fetched movements (no tab split), fetching with a server-side date range", async () => {
     fetchMovements.mockResolvedValue([
@@ -43,6 +51,17 @@ describe("useRfidEventsReport", () => {
       }),
       expect.anything()
     );
+  });
+
+  it("loads reader master data once into readerMap", async () => {
+    fetchMovements.mockResolvedValue([
+      mov({ s9_id: "S1", movement_type: "OUTBOUND", edi_equivalent: "2320" }),
+    ]);
+    const { result } = renderHook(() => useRfidEventsReport());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.readerMap.size).toBe(2));
+    expect(result.current.readerMap.get("R1")?.gate_name).toBe("MT");
+    expect(result.current.readerMap.get("R1")?.handover_point).toBe(true);
   });
 
   it("changing the date range (setDateRange) triggers a re-fetch", async () => {

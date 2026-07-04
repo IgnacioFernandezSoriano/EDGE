@@ -41,6 +41,11 @@ export const strings = {
     time: "Time",
     site: "Site",
     handover: "Handover",
+    gate: "Gate",
+  },
+  common: {
+    yes: "Yes",
+    no: "No",
   },
   states: {
     loading: "Loading…",

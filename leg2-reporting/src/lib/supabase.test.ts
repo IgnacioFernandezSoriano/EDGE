@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildMovementsUrl, fetchRfidMovements } from "@/lib/supabase";
+import { buildMovementsUrl, fetchRfidMovements, buildReaderMasterUrl, fetchReaderMaster } from "@/lib/supabase";
 
 const BASE = "https://x.supabase.co/rest/v1/vw_quicksight_rfid_report_movements";
+const READER_BASE = "https://x.supabase.co/rest/v1/vw_reader_master";
 
 describe("buildMovementsUrl", () => {
   it("orders by event_datetime_utc desc and paginates", () => {
@@ -51,6 +52,52 @@ describe("fetchRfidMovements", () => {
         {},
         { fetchFn: fetchFn as unknown as typeof fetch, token: "t", anonKey: "k", baseUrl: BASE }
       )
+    ).rejects.toThrow(/403/);
+  });
+});
+
+describe("buildReaderMasterUrl", () => {
+  it("selects from vw_reader_master, orders by lpi, and paginates", () => {
+    const url = buildReaderMasterUrl(READER_BASE, { offset: 0, limit: 1000 });
+    expect(url).toContain("/vw_reader_master");
+    expect(url).toContain("order=lpi");
+    expect(url).toContain("offset=0");
+    expect(url).toContain("limit=1000");
+    expect(url).toContain("select=lpi%2Cgate_id%2Cgate_name");
+  });
+});
+
+describe("fetchReaderMaster", () => {
+  it("concatenates pages until a short page ends pagination", async () => {
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({ lpi: `R${i}` }));
+    const page2 = [{ lpi: "Rlast" }];
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => page1 })
+      .mockResolvedValueOnce({ ok: true, json: async () => page2 });
+
+    const rows = await fetchReaderMaster({
+      fetchFn: fetchFn as unknown as typeof fetch,
+      token: "t",
+      anonKey: "k",
+      baseUrl: READER_BASE,
+    });
+
+    expect(rows).toHaveLength(1001);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws on non-ok response", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 403, text: async () => "no grant" });
+    await expect(
+      fetchReaderMaster({
+        fetchFn: fetchFn as unknown as typeof fetch,
+        token: "t",
+        anonKey: "k",
+        baseUrl: READER_BASE,
+      })
     ).rejects.toThrow(/403/);
   });
 });

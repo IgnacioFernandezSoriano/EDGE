@@ -1,4 +1,4 @@
-import type { RfidMovement } from "@/lib/supabase";
+import type { RfidMovement, ReaderMaster } from "@/lib/supabase";
 import type { TimeMode } from "@/lib/time";
 import { strings } from "@/i18n/strings";
 import { EventDetailsTable } from "@/components/EventDetailsTable";
@@ -12,12 +12,14 @@ export function EventDetailsDialog({
   s9,
   movements,
   timeMode,
+  readerMap,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   s9: string | null;
   movements: RfidMovement[];
   timeMode: TimeMode;
+  readerMap: Map<string, ReaderMaster>;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -28,7 +30,7 @@ export function EventDetailsDialog({
             {s9 ? ` — ${s9}` : ""}
           </DialogTitle>
         </DialogHeader>
-        <EventDetailsTable movements={movements} timeMode={timeMode} />
+        <EventDetailsTable movements={movements} timeMode={timeMode} readerMap={readerMap} />
       </DialogContent>
     </Dialog>
   );

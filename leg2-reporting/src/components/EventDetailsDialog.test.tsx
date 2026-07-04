@@ -1,7 +1,24 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { EventDetailsDialog } from "@/components/EventDetailsDialog";
-import type { RfidMovement } from "@/lib/supabase";
+import type { RfidMovement, ReaderMaster } from "@/lib/supabase";
+
+const readerMap = new Map<string, ReaderMaster>([
+  [
+    "R1",
+    {
+      lpi: "R1",
+      gate_id: "G1",
+      gate_name: "MT",
+      gate_purpose: "exit",
+      reading_direction: "out",
+      facility_name: "Facility A",
+      site_id: "S1",
+      reader_country_code: "IN",
+      handover_point: true,
+    },
+  ],
+]);
 
 const movements: RfidMovement[] = [
   {
@@ -37,10 +54,12 @@ describe("EventDetailsDialog", () => {
         s9="INBOMBJPTYOAAEM60760004100101"
         movements={movements}
         timeMode="utc"
+        readerMap={readerMap}
       />
     );
     expect(screen.getAllByText(/INBOMBJPTYOAAEM60760004100101/).length).toBeGreaterThan(0);
     expect(screen.getByText("2026-07-03T10:00:00+00:00")).toBeInTheDocument();
+    expect(screen.getByText("MT")).toBeInTheDocument();
   });
 
   it("does not render content when closed", () => {
@@ -51,6 +70,7 @@ describe("EventDetailsDialog", () => {
         s9={null}
         movements={[]}
         timeMode="utc"
+        readerMap={readerMap}
       />
     );
     expect(screen.queryByText("2026-07-03T10:00:00+00:00")).not.toBeInTheDocument();

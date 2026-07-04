@@ -1,4 +1,4 @@
-import type { RfidMovement } from "@/lib/supabase";
+import type { RfidMovement, ReaderMaster } from "@/lib/supabase";
 import { formatTimestamp, type TimeMode } from "@/lib/time";
 import { strings } from "@/i18n/strings";
 import {
@@ -8,9 +8,11 @@ import {
 export function EventDetailsTable({
   movements,
   timeMode,
+  readerMap,
 }: {
   movements: RfidMovement[];
   timeMode: TimeMode;
+  readerMap: Map<string, ReaderMaster>;
 }) {
   if (movements.length === 0) {
     return <p className="text-sm text-muted-foreground p-4">{strings.states.selectS9}</p>;
@@ -28,21 +30,28 @@ export function EventDetailsTable({
           <TableHead>{strings.columns.time}</TableHead>
           <TableHead>{strings.columns.site}</TableHead>
           <TableHead>{strings.columns.rfidReader}</TableHead>
+          <TableHead>{strings.columns.gate}</TableHead>
           <TableHead>{strings.columns.handover}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sorted.map((m) => (
-          <TableRow key={m.movement_id}>
-            <TableCell className="font-mono text-xs">{m.s9_id}</TableCell>
-            <TableCell className="font-mono text-xs">{m.tag_id ?? "—"}</TableCell>
-            <TableCell className="font-mono text-xs">{m.movement_id}</TableCell>
-            <TableCell className="font-mono text-xs">{formatTimestamp(m, timeMode)}</TableCell>
-            <TableCell>{m.site_impc_code ?? m.centre_code}</TableCell>
-            <TableCell className="font-mono text-xs">{m.reader_id}</TableCell>
-            <TableCell>{m.handover_quality_status ?? "—"}</TableCell>
-          </TableRow>
-        ))}
+        {sorted.map((m) => {
+          const reader = readerMap.get(m.reader_id);
+          return (
+            <TableRow key={m.movement_id}>
+              <TableCell className="font-mono text-xs">{m.s9_id}</TableCell>
+              <TableCell className="font-mono text-xs">{m.tag_id ?? "—"}</TableCell>
+              <TableCell className="font-mono text-xs">{m.movement_id}</TableCell>
+              <TableCell className="font-mono text-xs">{formatTimestamp(m, timeMode)}</TableCell>
+              <TableCell>{m.site_impc_code ?? m.centre_code}</TableCell>
+              <TableCell className="font-mono text-xs">{m.reader_id}</TableCell>
+              <TableCell>{reader?.gate_name ?? "—"}</TableCell>
+              <TableCell>
+                {reader?.handover_point ? strings.common.yes : strings.common.no}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
