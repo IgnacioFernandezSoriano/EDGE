@@ -179,3 +179,19 @@ movimientos sin EDI para que haya incidencias que mostrar y corregir.
   incidencia y otro spec.
 - Autorización fina de la RPC/Edge Function de reproceso (qué usuarios de Leg2 pueden
   disparar reproceso) — definir en implementación.
+- **Filtro/marcado de inconsistencias temporales según el flujo físico.** Las columnas de
+  checkpoints del pivot están ordenadas por el **flujo físico real** del trayecto (secuencia
+  de checkpoints, p.ej. 2300→2310→2320→2400→2410→2420…). Para una misma fila (S9), las marcas
+  de tiempo deberían ser **monótonas no decrecientes** al avanzar por las columnas en orden de
+  flujo. Si un checkpoint físicamente **posterior** tiene una fecha **anterior** a uno previo,
+  es una **inconsistencia temporal** y hay que marcarla (resaltar la celda/fila; opcionalmente
+  un filtro "solo inconsistencias"). Nota de implementación: la ordenación física la da la
+  secuencia de códigos EDI (más su rol inbound/outbound), no el orden alfabético/numérico
+  simple; hay que fijar el orden canónico de checkpoints. Enlaza con el objetivo de reconstruir
+  la cadena completa de checkpoints.
+- **Marcar una lectura como excluida del cálculo.** A raíz de lo anterior: poder marcar una
+  lectura/movimiento concreto como **fuera de consideración para el cálculo** (p.ej. una lectura
+  espuria que provoca la inconsistencia temporal), y que el transform/reproceso la ignore. Implica
+  una capa de override en Leg2 (tabla de exclusiones por `source_edge_id`/`movement_id`) que el
+  `rfid_transform_run` y `rfid_reprocess_scope` respeten, más UI para marcar/desmarcar y reprocesar.
+  Decidir dónde vive el override (Leg2 local vs GMS) sin que el sync lo pise.
