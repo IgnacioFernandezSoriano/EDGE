@@ -1,10 +1,52 @@
 export type TimeMode = "utc" | "local";
 
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const TS_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
+
+/**
+ * Extract date/time components directly from an ISO-ish string without
+ * constructing a Date object. This is intentional: event_datetime_local is a
+ * naive local timestamp with no offset, and parsing it via `new Date()` /
+ * `Date.parse()` would apply the runtime's local timezone, shifting the
+ * displayed value. Component-based parsing keeps display tz-safe.
+ */
+export function formatTimestampParts(
+  mov: { event_datetime_utc: string; event_datetime_local: string },
+  mode: TimeMode
+): { date: string; time: string } {
+  const raw = mode === "utc" ? mov.event_datetime_utc : mov.event_datetime_local;
+  const match = TS_RE.exec(raw);
+  if (!match) {
+    return { date: raw, time: "" };
+  }
+  const [, year, month, day, hour, minute, second] = match;
+  const monthAbbrev = MONTHS[Number(month) - 1] ?? month;
+  return {
+    date: `${day} ${monthAbbrev} ${year}`,
+    time: `${hour}:${minute}:${second}`,
+  };
+}
+
 export function formatTimestamp(
   mov: { event_datetime_utc: string; event_datetime_local: string },
   mode: TimeMode
 ): string {
-  return mode === "utc" ? mov.event_datetime_utc : mov.event_datetime_local;
+  const parts = formatTimestampParts(mov, mode);
+  return parts.time ? `${parts.date}, ${parts.time}` : parts.date;
 }
 
 /**

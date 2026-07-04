@@ -58,7 +58,7 @@ describe("EventDetailsDialog", () => {
       />
     );
     expect(screen.getAllByText(/INBOMBJPTYOAAEM60760004100101/).length).toBeGreaterThan(0);
-    expect(screen.getByText("2026-07-03T10:00:00+00:00")).toBeInTheDocument();
+    expect(screen.getByText("03 Jul 2026, 10:00:00")).toBeInTheDocument();
     expect(screen.getByText("MT")).toBeInTheDocument();
     expect(screen.getByText("OK")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
@@ -75,6 +75,6 @@ describe("EventDetailsDialog", () => {
         readerMap={readerMap}
       />
     );
-    expect(screen.queryByText("2026-07-03T10:00:00+00:00")).not.toBeInTheDocument();
+    expect(screen.queryByText("03 Jul 2026, 10:00:00")).not.toBeInTheDocument();
   });
 });

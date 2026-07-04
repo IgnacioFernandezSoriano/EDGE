@@ -1,6 +1,6 @@
 import type { RfidEventsReport } from "@/lib/pivot";
 import type { ReaderMaster } from "@/lib/supabase";
-import { formatTimestamp, type TimeMode } from "@/lib/time";
+import { formatTimestampParts, type TimeMode } from "@/lib/time";
 import { strings } from "@/i18n/strings";
 import { cn } from "@/lib/utils";
 import {
@@ -73,9 +73,11 @@ export function RfidEventsPivot({
                     return <TableCell key={c.code} className="font-mono text-xs" />;
                   }
                   const reader = readerMap.get(m.reader_id);
+                  const parts = formatTimestampParts(m, timeMode);
                   return (
                     <TableCell key={c.code} className="font-mono text-xs">
-                      <div>{formatTimestamp(m, timeMode)}</div>
+                      <div>{parts.time}</div>
+                      <div className="text-[10px] text-muted-foreground">{parts.date}</div>
                       <div className="text-muted-foreground">{m.reader_id}</div>
                       <div className="text-muted-foreground">
                         {strings.columns.gate}: {reader?.gate_name ?? "—"}
