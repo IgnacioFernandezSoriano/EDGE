@@ -34,13 +34,30 @@ Deno.serve(async (req) => {
 
   const p_filters: Record<string, unknown> = { from: DATA_START };
   if (parsed.scope === "reader") p_filters.readers = [parsed.lpi];
-  if (parsed.scope === "site") p_filters.sites = [parsed.site_impc_code];
 
   const db = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
   try {
+    // Site = a CENTRE. Most centres have no site_impc_code, but every read carries
+    // a centre_code, so we reprocess a centre via its readers (a reader reads only
+    // at its own centre). Resolve the centre's readers, then use the readers filter.
+    if (parsed.scope === "site") {
+      const { data: rows, error: rErr } = await db
+        .from("vw_centre_readers")
+        .select("reader_id")
+        .eq("centre_code", parsed.centre_code);
+      if (rErr) {
+        return json({ ok: false, status: "reader_lookup_failed", movements_upserted: 0, error: rErr.message }, 500);
+      }
+      const readers = [...new Set((rows ?? []).map((r) => r.reader_id as string).filter(Boolean))];
+      if (readers.length === 0) {
+        return json({ ok: true, status: "skipped_empty", movements_upserted: 0 });
+      }
+      p_filters.readers = readers;
+    }
+
     // 1) Refresh masters from GMS IOT so any external reader/site change lands first.
     const syncResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-site-snapshot`, {
       method: "POST",

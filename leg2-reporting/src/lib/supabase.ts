@@ -182,22 +182,24 @@ export async function fetchReaderMaster(
   );
 }
 
+// A "site" in the picker is a CENTRE (keyed by centre_code): most centres have no
+// site_impc_code, but every reading carries a centre. See sql/vw_reprocess_pickers.sql.
 export interface SiteOption {
-  site_impc_code: string;
+  centre_code: string;
   site_name: string | null;
-  country_name: string | null;
+  country_code: string | null;
 }
 
 // Pickers are sourced from the RFID READINGS (rfid_edge_input_reads), not the
-// master snapshot: only sites/readers that actually have readings in the
+// master snapshot: only centres/readers that actually have readings in the
 // solution can be reprocessed. See sql/vw_reprocess_pickers.sql.
 const SITES_VIEW = "vw_reprocess_sites";
-export const SITES_SELECT_COLS = ["site_impc_code", "site_name", "country_name"].join(",");
+export const SITES_SELECT_COLS = ["centre_code", "site_name", "country_code"].join(",");
 
 export function buildSitesUrl(baseUrl: string, opts: { offset: number; limit: number }): string {
   const url = new URL(baseUrl);
   url.searchParams.set("select", SITES_SELECT_COLS);
-  url.searchParams.set("order", "site_impc_code");
+  url.searchParams.set("order", "site_name");
   url.searchParams.set("offset", String(opts.offset));
   url.searchParams.set("limit", String(opts.limit));
   return url.toString();

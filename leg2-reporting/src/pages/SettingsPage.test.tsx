@@ -7,7 +7,7 @@ import { strings } from "@/i18n/strings";
 const deps = (over = {}) => ({
   triggerReprocessFn: vi.fn(async () => ({ ok: true, status: "success", movements_upserted: 7, reprocess_run_id: "run-1" })),
   fetchReadersFn: vi.fn(async () => [{ reader_id: "LPI-1", facility_name: "Sao Paulo", site_impc_code: "BRSAOA" }]),
-  fetchSitesFn: vi.fn(async () => [{ site_impc_code: "BRSAOA", site_name: "Sao Paulo", country_name: "Brazil" }]),
+  fetchSitesFn: vi.fn(async () => [{ centre_code: "centre-abc", site_name: "TECA Guarulhos", country_code: "BR" }]),
   ...over,
 });
 

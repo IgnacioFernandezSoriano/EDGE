@@ -191,17 +191,17 @@ import {
 } from "@/lib/supabase";
 
 describe("buildSitesUrl", () => {
-  it("selects from the sites picker view ordered by code", () => {
+  it("selects from the sites (centre) picker view ordered by name", () => {
     const url = buildSitesUrl("https://x.supabase.co/rest/v1/vw_reprocess_sites", { offset: 0, limit: 1000 });
     expect(url).toContain("/vw_reprocess_sites");
     expect(url).toContain(`select=${encodeURIComponent(SITES_SELECT_COLS)}`);
-    expect(url).toContain("order=site_impc_code");
+    expect(url).toContain("order=site_name");
   });
 });
 
 describe("fetchSites", () => {
   it("returns rows from a single page", async () => {
-    const rows = [{ site_impc_code: "INMUBA", site_name: "Mumbai", country_name: "India" }];
+    const rows = [{ centre_code: "centre-abc", site_name: "TECA Guarulhos", country_code: "BR" }];
     const fetchFn = vi.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve(""), json: () => Promise.resolve(rows) } as Response));
     const out = await fetchSites({ fetchFn: fetchFn as unknown as typeof fetch, token: "t", anonKey: "a", baseUrl: "https://x.supabase.co/rest/v1/vw_reprocess_sites" });
     expect(out).toEqual(rows);

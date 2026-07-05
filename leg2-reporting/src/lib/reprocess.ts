@@ -31,7 +31,7 @@ export async function triggerReprocess(
 
   const body =
     scope === "reader" ? { scope, lpi: value ?? "" }
-    : scope === "site" ? { scope, site_impc_code: value ?? "" }
+    : scope === "site" ? { scope, centre_code: value ?? "" }
     : { scope: "global" as const };
 
   const res = await fetchFn(url, {

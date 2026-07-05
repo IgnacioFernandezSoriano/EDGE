@@ -1,24 +1,24 @@
--- Picker views for the Settings reprocess panel.
+-- Picker + resolution views for the Settings reprocess panel.
 -- Applied on EDGE Leg2 (project ubgatxfwpmyaqyfrwias).
 --
--- The reprocess (rfid_reprocess_scope) operates on the RAW RFID READINGS
--- table public.rfid_edge_input_reads: the `sites` filter matches
--- reads.site_impc_code and the `readers` filter matches reads.reader_id
--- (== readers_master.lpi). So the pickers must list ONLY the sites/readers
--- that actually have readings in the solution — NOT the master snapshot
--- (which carries hundreds of sites, only a handful with any reads).
+-- The reprocess (rfid_reprocess_scope) operates on the RAW RFID READINGS table
+-- public.rfid_edge_input_reads. Only ~4 sites carry a site_impc_code, but EVERY
+-- read carries a centre (centre_code = the GMS site_id / site_impc, plus site_name
+-- for display). So the Site picker lists CENTRES (all that have readings), and a
+-- centre is reprocessed via its readers (rfid_reprocess_scope `readers` filter),
+-- resolved through vw_centre_readers — no change to the core ETL function.
 
--- Sites that have RFID readings, with a display name + country.
+-- Centres that have RFID readings (keyed by centre_code, labelled by site_name).
 create or replace view public.vw_reprocess_sites as
 select
-  r.site_impc_code,
-  max(r.site_name)    as site_name,
-  max(s.country_name) as country_name
+  r.centre_code,
+  max(r.site_name)           as site_name,
+  max(r.reader_country_code) as country_code
 from public.rfid_edge_input_reads r
-left join public.rfid_site_snapshot s on s.site_impc_code = r.site_impc_code
-where nullif(btrim(r.site_impc_code), '') is not null
-group by r.site_impc_code
-order by r.site_impc_code;
+where nullif(btrim(r.centre_code), '') is not null
+  and nullif(btrim(r.site_name), '') is not null
+group by r.centre_code
+order by max(r.site_name);
 
 grant select on public.vw_reprocess_sites to authenticated;
 
@@ -35,3 +35,12 @@ group by r.reader_id
 order by r.reader_id;
 
 grant select on public.vw_reprocess_readers to authenticated;
+
+-- Centre -> its readers, so a whole centre can be reprocessed via the readers filter.
+create or replace view public.vw_centre_readers as
+select distinct r.centre_code, r.reader_id
+from public.rfid_edge_input_reads r
+where nullif(btrim(r.centre_code), '') is not null
+  and nullif(btrim(r.reader_id), '') is not null;
+
+grant select on public.vw_centre_readers to authenticated;

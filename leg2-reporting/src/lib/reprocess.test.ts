@@ -13,10 +13,10 @@ describe("triggerReprocess", () => {
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ scope: "reader", lpi: "LPI-1" });
   });
 
-  it("posts scope=site with site_impc_code", async () => {
+  it("posts scope=site with centre_code", async () => {
     const fetchFn = vi.fn((_url: string, _init?: RequestInit) => okResp({ ok: true, status: "success", movements_upserted: 0 }));
-    await triggerReprocess("site", "INMUBA", { fetchFn: fetchFn as unknown as typeof fetch, token: "t", anonKey: "a", baseUrl: "http://fn/rfid-reprocess" });
-    expect(JSON.parse((fetchFn.mock.calls[0][1] as RequestInit).body as string)).toEqual({ scope: "site", site_impc_code: "INMUBA" });
+    await triggerReprocess("site", "centre-abc", { fetchFn: fetchFn as unknown as typeof fetch, token: "t", anonKey: "a", baseUrl: "http://fn/rfid-reprocess" });
+    expect(JSON.parse((fetchFn.mock.calls[0][1] as RequestInit).body as string)).toEqual({ scope: "site", centre_code: "centre-abc" });
   });
 
   it("posts scope=global with no value", async () => {

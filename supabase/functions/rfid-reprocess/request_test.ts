@@ -11,9 +11,9 @@ Deno.test("reader requires a non-empty lpi", () => {
   assertEquals(parseReprocessRequest({ scope: "reader" }).ok, false);
 });
 
-Deno.test("site requires a non-empty site_impc_code", () => {
-  assertEquals(parseReprocessRequest({ scope: "site", site_impc_code: "INMUBA" }), { ok: true, scope: "site", site_impc_code: "INMUBA" });
-  assertEquals(parseReprocessRequest({ scope: "site", site_impc_code: "" }).ok, false);
+Deno.test("site requires a non-empty centre_code", () => {
+  assertEquals(parseReprocessRequest({ scope: "site", centre_code: "abc-123" }), { ok: true, scope: "site", centre_code: "abc-123" });
+  assertEquals(parseReprocessRequest({ scope: "site", centre_code: "" }).ok, false);
 });
 
 Deno.test("unknown or missing scope is rejected", () => {

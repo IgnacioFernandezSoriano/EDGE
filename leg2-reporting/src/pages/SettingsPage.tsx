@@ -111,7 +111,7 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
               <SelectTrigger><SelectValue placeholder={strings.settings.selectSite} /></SelectTrigger>
               <SelectContent>
                 {sites.map((s) => (
-                  <SelectItem key={s.site_impc_code} value={s.site_impc_code}>{s.site_impc_code}{s.site_name ? ` — ${s.site_name}` : ""}</SelectItem>
+                  <SelectItem key={s.centre_code} value={s.centre_code}>{s.site_name ?? s.centre_code}{s.country_code ? ` (${s.country_code})` : ""}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
