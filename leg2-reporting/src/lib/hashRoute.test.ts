@@ -27,3 +27,13 @@ describe("receptacleHash", () => {
     expect(parseHash(h)).toEqual({ name: "receptacle", s9: "ABC 1" });
   });
 });
+
+describe("parseHash settings", () => {
+  it("parses #/settings", () => {
+    expect(parseHash("#/settings")).toEqual({ name: "settings" });
+  });
+  it("still parses receptacle and defaults to report", () => {
+    expect(parseHash("#/receptacle/ABC")).toEqual({ name: "receptacle", s9: "ABC" });
+    expect(parseHash("#/")).toEqual({ name: "report" });
+  });
+});
