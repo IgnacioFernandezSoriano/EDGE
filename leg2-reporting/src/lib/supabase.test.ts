@@ -184,3 +184,23 @@ describe("fetchMovementsByS9", () => {
     expect(fetchFn.mock.calls[0][0]).toContain("s9_id=eq.ABC");
   });
 });
+
+import { buildSitesUrl, fetchSites, SITES_SELECT_COLS } from "@/lib/supabase";
+
+describe("buildSitesUrl", () => {
+  it("selects from vw_sites ordered by code", () => {
+    const url = buildSitesUrl("https://x.supabase.co/rest/v1/vw_sites", { offset: 0, limit: 1000 });
+    expect(url).toContain("/vw_sites");
+    expect(url).toContain(`select=${encodeURIComponent(SITES_SELECT_COLS)}`);
+    expect(url).toContain("order=site_impc_code");
+  });
+});
+
+describe("fetchSites", () => {
+  it("returns rows from a single page", async () => {
+    const rows = [{ site_impc_code: "INMUBA", site_name: "Mumbai", country_name: "India" }];
+    const fetchFn = vi.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve(""), json: () => Promise.resolve(rows) } as Response));
+    const out = await fetchSites({ fetchFn: fetchFn as unknown as typeof fetch, token: "t", anonKey: "a", baseUrl: "https://x.supabase.co/rest/v1/vw_sites" });
+    expect(out).toEqual(rows);
+  });
+});

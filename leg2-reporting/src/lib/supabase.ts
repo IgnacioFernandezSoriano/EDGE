@@ -182,6 +182,35 @@ export async function fetchReaderMaster(
   );
 }
 
+export interface SiteOption {
+  site_impc_code: string;
+  site_name: string | null;
+  country_name: string | null;
+}
+
+const SITES_VIEW = "vw_sites";
+export const SITES_SELECT_COLS = ["site_impc_code", "site_name", "country_name"].join(",");
+
+export function buildSitesUrl(baseUrl: string, opts: { offset: number; limit: number }): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", SITES_SELECT_COLS);
+  url.searchParams.set("order", "site_impc_code");
+  url.searchParams.set("offset", String(opts.offset));
+  url.searchParams.set("limit", String(opts.limit));
+  return url.toString();
+}
+
+export async function fetchSites(deps: FetchDeps = {}): Promise<SiteOption[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${SITES_VIEW}`;
+  return fetchAllPages<SiteOption>(
+    (offset, limit) => buildSitesUrl(baseUrl, { offset, limit }),
+    fetchFn,
+    headers,
+    "Leg2 sites fetch"
+  );
+}
+
 export interface EdiEvent {
   message: string | null;
   event: string | null;
