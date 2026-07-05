@@ -146,7 +146,16 @@ function dedupeEdi(events: AtatEvent[]): AtatEvent[] {
   });
 }
 
-/** Merge RFID movements + EDI events into one chronological timeline. */
+/**
+ * Merge RFID movements + EDI events into one chronological timeline.
+ *
+ * Ordering is by NAIVE wall-clock: RFID uses reader-local time, EDI uses the
+ * reporting office's local time, both compared on one axis with no timezone
+ * conversion (the EDI date string carries no zone). For a receptacle crossing
+ * timezones the interleaving can therefore be off by the zone offset. This is
+ * a documented product decision (see spec §5/§11) — revisit if the EDI zone is
+ * ever confirmed.
+ */
 export function buildAtatTimeline(
   movements: RfidMovement[],
   edi: EdiEventInput[]
