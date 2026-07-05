@@ -29,8 +29,14 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "Use POST" }, 405);
 
-  const parsed = parseReprocessRequest(await req.json().catch(() => ({})));
+  const body = await req.json().catch(() => ({}));
+  const parsed = parseReprocessRequest(body);
   if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
+  // Optional correlation token so the client can poll this exact run's status.
+  const token = typeof (body as { token?: unknown }).token === "string"
+    ? (body as { token: string }).token.slice(0, 64)
+    : "";
+  const reason = `settings_reprocess_${parsed.scope}${token ? `:${token}` : ""}`;
 
   const p_filters: Record<string, unknown> = { from: DATA_START };
   if (parsed.scope === "reader") p_filters.readers = [parsed.lpi];
@@ -74,7 +80,7 @@ Deno.serve(async (req) => {
       p_filters,
       p_environment: "production",
       p_max_reads: 100000,
-      p_reason: `settings_reprocess_${parsed.scope}`,
+      p_reason: reason,
     });
     if (error) {
       return json({ ok: false, status: "reprocess_failed", movements_upserted: 0, error: error.message }, 500);

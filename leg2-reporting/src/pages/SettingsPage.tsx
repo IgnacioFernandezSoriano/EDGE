@@ -8,7 +8,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  triggerReprocess as realTrigger, type ReprocessScope, type ReprocessResult,
+  triggerReprocess as realTrigger, fetchReprocessStatus as realFetchStatus,
+  reprocessReason, REPROCESS_TERMINAL,
+  type ReprocessScope, type ReprocessResult, type ReprocessStatus,
 } from "@/lib/reprocess";
 import {
   fetchReaderOptions as realFetchReaders, fetchSites as realFetchSites,
@@ -21,18 +23,28 @@ async function sessionToken(): Promise<string | undefined> {
   return data.session?.access_token;
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export type SettingsDeps = {
-  triggerReprocessFn?: (scope: ReprocessScope, value: string | null) => Promise<ReprocessResult>;
+  triggerReprocessFn?: (scope: ReprocessScope, value: string | null, token?: string) => Promise<ReprocessResult>;
   fetchReadersFn?: () => Promise<ReaderOption[]>;
   fetchSitesFn?: () => Promise<SiteOption[]>;
+  fetchStatusFn?: (reason: string) => Promise<ReprocessStatus | null>;
+  makeToken?: () => string;
+  pollMs?: number;
+  maxMs?: number;
 };
 
 type Status = "idle" | "running" | "done" | "error";
 
 export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
-  const trigger = deps.triggerReprocessFn ?? ((s, v) => realTrigger(s, v));
+  const trigger = deps.triggerReprocessFn ?? ((s, v, tok) => realTrigger(s, v, { reprocessToken: tok }));
   const loadReaders = deps.fetchReadersFn ?? (async () => realFetchReaders({ token: await sessionToken() }));
   const loadSites = deps.fetchSitesFn ?? (async () => realFetchSites({ token: await sessionToken() }));
+  const fetchStatus = deps.fetchStatusFn ?? (async (reason: string) => realFetchStatus(reason, { token: await sessionToken() }));
+  const genToken = deps.makeToken ?? (() => globalThis.crypto?.randomUUID?.() ?? `t${Date.now()}-${Math.round(Math.random() * 1e9)}`);
+  const pollMs = deps.pollMs ?? 3000;
+  const maxMs = deps.maxMs ?? 6 * 60 * 1000;
 
   const [scope, setScope] = useState<ReprocessScope>("site");
   const [readers, setReaders] = useState<ReaderOption[]>([]);
@@ -58,19 +70,47 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
     : strings.settings.scopeGlobal;
   const confirmTarget = scope === "global" ? strings.settings.confirmGlobalTarget : value ?? "";
 
+  function finishRun(runStatus: string, movements: number, runId?: string, err?: string) {
+    setResult({ ok: runStatus === "success", status: runStatus, movements_upserted: movements, reprocess_run_id: runId });
+    if (runStatus === "success") { setStatus("done"); setMessage(`${strings.settings.donePrefix}${movements}`); }
+    else if (runStatus === "skipped_empty") { setStatus("done"); setMessage(strings.settings.nothingToDo); }
+    else if (runStatus === "skipped_locked") { setStatus("error"); setMessage(strings.settings.anotherRunning); }
+    else { setStatus("error"); setMessage(`${strings.settings.errorPrefix}${err ?? runStatus}`); }
+  }
+
   async function run() {
     setConfirmOpen(false);
     setStatus("running");
     setMessage("");
-    try {
-      const res = await trigger(scope, needsValue ? value : null);
-      setResult(res);
-      if (res.ok) { setStatus("done"); setMessage(`${strings.settings.donePrefix}${res.movements_upserted}`); }
-      else { setStatus("error"); setMessage(`${strings.settings.errorPrefix}${res.error ?? res.status}`); }
-    } catch (e) {
-      setStatus("error");
-      setMessage(`${strings.settings.errorPrefix}${e instanceof Error ? e.message : String(e)}`);
+    setResult(null);
+    const token = genToken();
+    const reason = reprocessReason(scope, token);
+    const v = needsValue ? value : null;
+
+    // Fire the reprocess (a long job). Keep the promise so a fast, direct answer
+    // (e.g. skipped_empty, or an immediate error) is honoured; the outcome of a
+    // long run is read from the audit poll below. (Holder object so the closure
+    // assignment is visible to the loop's reads.)
+    const box: { fast: ReprocessResult | null } = { fast: null };
+    trigger(scope, v, token).then((r) => { box.fast = r; }).catch(() => {});
+
+    const startMs = Date.now();
+    while (Date.now() - startMs < maxMs) {
+      const f = box.fast;
+      if (f && REPROCESS_TERMINAL.has(f.status)) {
+        finishRun(f.status, f.movements_upserted, f.reprocess_run_id, f.error);
+        return;
+      }
+      const st = await fetchStatus(reason).catch(() => null);
+      if (st && REPROCESS_TERMINAL.has(st.status)) {
+        finishRun(st.status, st.movements_upserted ?? 0, st.reprocess_run_id, st.error_message ?? undefined);
+        return;
+      }
+      await sleep(pollMs);
     }
+    // Gave up waiting — the run keeps going on the server.
+    setStatus("error");
+    setMessage(strings.settings.stillRunning);
   }
 
   return (
@@ -133,6 +173,15 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
             <span className="text-xs text-muted-foreground">{strings.settings.runId}{result.reprocess_run_id}</span>
           )}
         </div>
+
+        {status === "running" && (
+          <div className="space-y-1" role="status" aria-live="polite">
+            <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+              <div className="h-full w-full animate-pulse rounded bg-primary/60" />
+            </div>
+            <p className="text-xs text-muted-foreground">{strings.settings.runningNote}</p>
+          </div>
+        )}
       </div>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
