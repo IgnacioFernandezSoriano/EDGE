@@ -1,15 +1,35 @@
 import type { AtatEvent } from "@/lib/atat";
+import { formatIso, type TimeMode } from "@/lib/time";
 import { strings } from "@/i18n/strings";
 import { cn } from "@/lib/utils";
 
-export function AtatEventRow({ event }: { event: AtatEvent }) {
+/** Which timestamp + zone label to show for the current mode. */
+function timeFor(event: AtatEvent, mode: TimeMode): { text: string; zone: string } {
+  if (mode === "utc") {
+    if (event.eventDatetimeUtc) {
+      return { text: formatIso(event.eventDatetimeUtc), zone: "UTC" };
+    }
+    // unresolved: show the local wall time, flagged no TZ
+    return { text: formatIso(event.eventDatetimeLocal) || event.rawDate, zone: strings.atat.noTz };
+  }
+  return {
+    text: formatIso(event.eventDatetimeLocal) || event.rawDate,
+    zone: event.localZone ?? strings.atat.noTz,
+  };
+}
+
+export function AtatEventRow({ event, mode }: { event: AtatEvent; mode: TimeMode }) {
   const isRfid = event.source === "RFID";
   const sourceLabel = isRfid ? strings.atat.sourceRfid : strings.atat.sourceEdi;
+  const { text, zone } = timeFor(event, mode);
   return (
     <div className="relative flex gap-4 pb-6">
       {/* time column */}
-      <div className="w-36 shrink-0 text-right font-mono text-xs text-muted-foreground">
-        {event.displayTime || event.rawDate}
+      <div className="w-40 shrink-0 text-right">
+        <div className="font-mono text-xs">{text}</div>
+        <div data-role="zone" className="text-[10px] font-semibold uppercase text-muted-foreground">
+          {zone}
+        </div>
       </div>
       {/* axis dot */}
       <div className="relative flex justify-center">

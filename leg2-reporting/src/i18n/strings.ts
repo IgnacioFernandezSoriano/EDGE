@@ -109,6 +109,8 @@ export const strings = {
     fieldTransport: "Transport",
     fieldTransportDate: "Transport date",
     fieldReference: "Reference",
+    noTz: "no TZ",
+    timeLabel: "Time",
   },
   states: {
     loading: "Loading…",
