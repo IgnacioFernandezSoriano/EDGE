@@ -111,3 +111,9 @@ temp/
 
 # Deno test lockfile (local tooling only; functions deploy via MCP)
 deno.lock
+
+# MCP server config — contiene un PAT de Supabase (secreto). Nunca subir.
+.mcp.json
+
+# Supabase CLI scratch (functions deploy)
+supabase/.temp/
