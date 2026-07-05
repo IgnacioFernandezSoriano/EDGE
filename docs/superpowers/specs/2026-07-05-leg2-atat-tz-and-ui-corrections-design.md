@@ -33,7 +33,13 @@ timezone and convert in Postgres.
 Timezone conversion lives in the **database** (a self-healing view), mirroring the RFID timezone
 fix. Postgres has the full IANA/DST database (`AT TIME ZONE`); the browser deliberately avoids tz
 math. UTC is canonical; local + an explicit zone label are for presentation. No external API — the
-only reference data is a small static seed (90 distinct location codes in the data).
+only reference data is a small static seed.
+
+**Zone is defined per site/centre, not per country.** Country granularity (BR/US/RU span several
+zones) is explicitly rejected. Each centre code (IMPC office) and each transit airport gets its own
+IANA zone in one reference table — site-level precision. Our own RFID sites carry an exact
+`reader_timezone`, but they cover only 1 of the 58 EDI office codes, so the reference table (not the
+RFID site data) is the source of truth; where a code overlaps an RFID site, the two must agree.
 
 **Proven SQL** (validated against Leg2):
 - Parse `"Mon,16-02-2026 08:30"` → `regexp_replace(date,'^[A-Za-z]{3},','')` then
@@ -43,27 +49,32 @@ only reference data is a small static seed (90 distinct location codes in the da
 
 ## 3. DB layer (Leg2 — confirmation-gated writes)
 
-### 3.1 `edi_iata_timezone` (seed table)
+### 3.1 `edi_location_timezone` (per-site/centre reference table)
 
 ```
-iata text primary key,
-iana_zone text not null
+location  text primary key,   -- the edi_events.location code (IMPC office or IATA airport)
+iana_zone text not null,      -- the centre's actual IANA zone (site-level, e.g. America/Sao_Paulo)
+kind      text,               -- 'office' | 'airport' (informational)
+note      text                -- optional: city/centre name for auditability
 ```
 
-Seeded with the **32 IATA airport codes** present in `edi_events.location` (3-char codes), zones
-from OpenFlights open data (e.g. `GRU→America/Sao_Paulo`, `BOM→Asia/Kolkata`, `ICN→Asia/Seoul`,
-`HND→Asia/Tokyo`, `FRA→Europe/Berlin`, `SIN→Asia/Singapore`, …). One-time seed; a new airport is
-one INSERT. Gets a `SELECT` RLS policy for `authenticated` (same pattern as `atat_edi_rls.sql`).
+One row per distinct `location` code present in the data (**58 offices + 32 airports = 90**), each
+mapped to the **actual centre timezone** (site-level, not country). Seed sources:
+- **Airports (3-char):** IATA → IANA from OpenFlights open data (`GRU→America/Sao_Paulo`,
+  `ICN→Asia/Seoul`, `FRA→Europe/Berlin`, …).
+- **Offices (6-char IMPC):** each code embeds the city in chars 3–5 (IATA-style: `INBOMA`→BOM,
+  `CHZRHB`→ZRH, `AUSYDB`→SYD, `BRSAOD`→SAO, `JPKWSA`→KWS…); seed each with that city's IANA zone.
+  Verified against `reader_timezone` where the code is also an RFID site.
+
+One-time seed; a new office or airport is one INSERT. Gets a `SELECT` RLS policy for `authenticated`
+(same pattern as `atat_edi_rls.sql`). `rfid_timezone_map` (country-level) is **not** used here.
 
 ### 3.2 `vw_edi_events_tz` (self-healing view over `edi_events`)
 
 Per row, exposes the original columns plus:
 - `event_datetime_local timestamp` — parsed naive wall-clock (both text formats; unparseable → null).
-- `resolved_zone text` — IANA zone:
-  - `location` length 6 (IMPC office) → `left(location,2)` country → `rfid_timezone_map.iana_zone`
-    (prefer a `city`-specific row if one exists, else the country row with `city is null`),
-  - `location` length 3 (IATA airport) → `edi_iata_timezone.iana_zone`,
-  - else → `null`.
+- `resolved_zone text` — a single `left join edi_location_timezone t on t.location = e.location`
+  → `t.iana_zone` (null when the code is not yet in the reference table).
 - `event_datetime_utc timestamptz` — `event_datetime_local AT TIME ZONE resolved_zone` when
   `resolved_zone` and `event_datetime_local` are both non-null; else `null`.
 - `tz_resolved boolean` — `event_datetime_utc is not null`.
@@ -111,28 +122,29 @@ consumed by both `AtatPage` (full page) and a new **`AtatDialog`** (modal).
   `tz_resolved=false`. In UTC mode an unresolved EDI event shows its local value flagged `no TZ`
   (never a fabricated UTC). New i18n keys under `strings.atat` (English UI copy).
 
-## 6. Maintenance — new offices / airports
+## 6. Maintenance — new sites / airports
 
-- **Offices (6-char):** auto-resolve via country → `rfid_timezone_map`; zero maintenance. A new
-  country only needs the row you already maintain there for RFID.
-- **Airports (3-char):** a new code surfaces in `vw_edi_locations_unresolved` and renders `no TZ`;
-  fix is one INSERT into `edi_iata_timezone` (zone from OpenFlights). No silent wrong conversion.
+Every location resolves through the one `edi_location_timezone` table (site-level). A new office or
+airport code not yet in the table surfaces in `vw_edi_locations_unresolved` and renders `no TZ` (no
+silent wrong conversion); the fix is one INSERT with the centre's IANA zone (city from the IMPC
+code / OpenFlights for airports). This is the detect→correct pattern, consistent across offices and
+airports — no country-level guessing.
 
 ## 7. Error handling & edge cases
 
 - Unparseable EDI `date` → `event_datetime_local` null → `tz_resolved` false → row still shown,
   sorted last, raw `date` text displayed, `no TZ` badge.
 - `location` null → unresolved; row shown, `no TZ`.
-- Multi-zone countries (BR/US/RU) resolve at country granularity — acceptable; a `city` override
-  row in `rfid_timezone_map` refines when needed.
+- Zone is site-level (per centre), never country-level — a code in a multi-zone country (BR/US/RU)
+  still resolves to its own centre's zone via the reference table.
 - Modal open with no data / RFID-only / EDI-only → same states as the full page.
 - Report list state (filters, scroll) preserved because the modal never navigates.
 
 ## 8. Testing
 
-- **DB:** verification queries — both date formats parse; office→country→zone; airport→seed→zone;
-  unresolved→(null utc, false); a known JPKWSA row converts to UTC −9h; `vw_edi_locations_unresolved`
-  lists only unmapped codes.
+- **DB:** verification queries — both date formats parse; office→`edi_location_timezone`→zone;
+  airport→`edi_location_timezone`→zone; unresolved→(null utc, false); a known JPKWSA row converts to
+  UTC −9h; `vw_edi_locations_unresolved` lists only unmapped codes.
 - **Client (Vitest/TDD):**
   - `buildAtatTimeline` orders by UTC when present, naive-local fallback, stable, nulls last.
   - EDI + RFID format identically; unresolved EDI flagged `no TZ`, never given a fake UTC.
@@ -144,9 +156,12 @@ consumed by both `AtatPage` (full page) and a new **`AtatDialog`** (modal).
 
 ## 9. Out of scope (YAGNI)
 
-- No in-app editor for the IATA seed table (correction is a one-row INSERT; surfaced by the
-  unresolved view). Revisit only if new airports become frequent.
-- No city-level office overrides beyond what `rfid_timezone_map` already provides.
+- No in-app editor for `edi_location_timezone` (correction is a one-row INSERT; surfaced by the
+  unresolved view). Revisit only if new codes become frequent.
+- **Not sourcing zones from GMS IoT `sites`.** Evaluated and rejected: GMS's `sites.timezone` is
+  null for all 480 sites, and GMS covers only 1 of the 58 EDI office codes (GMS sites are operational
+  RFID sites, not UPU offices of exchange). The Leg2 reference table is the source of truth; if GMS
+  later populates site timezones and adds the offices, the view's join can switch source.
 - No duration/time-between-events UI yet — this spec only establishes the canonical UTC that such a
   feature would consume.
 - No materialized column on `edi_events` (the view is canonical; revisit only if query performance
