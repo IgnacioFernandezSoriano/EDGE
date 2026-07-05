@@ -12,9 +12,14 @@ import {
 } from "@/lib/reprocess";
 import {
   fetchReaderOptions as realFetchReaders, fetchSites as realFetchSites,
-  type ReaderOption, type SiteOption,
+  supabase, type ReaderOption, type SiteOption,
 } from "@/lib/supabase";
 import { strings } from "@/i18n/strings";
+
+async function sessionToken(): Promise<string | undefined> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token;
+}
 
 export type SettingsDeps = {
   triggerReprocessFn?: (scope: ReprocessScope, value: string | null) => Promise<ReprocessResult>;
@@ -26,8 +31,8 @@ type Status = "idle" | "running" | "done" | "error";
 
 export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
   const trigger = deps.triggerReprocessFn ?? ((s, v) => realTrigger(s, v));
-  const loadReaders = deps.fetchReadersFn ?? (() => realFetchReaders());
-  const loadSites = deps.fetchSitesFn ?? (() => realFetchSites());
+  const loadReaders = deps.fetchReadersFn ?? (async () => realFetchReaders({ token: await sessionToken() }));
+  const loadSites = deps.fetchSitesFn ?? (async () => realFetchSites({ token: await sessionToken() }));
 
   const [scope, setScope] = useState<ReprocessScope>("site");
   const [readers, setReaders] = useState<ReaderOption[]>([]);
