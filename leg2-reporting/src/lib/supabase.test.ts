@@ -130,6 +130,14 @@ describe("buildEdiEventsUrl", () => {
     expect(url).toContain("select=");
     expect(EDI_EVENTS_SELECT_COLS).toContain("transport_date");
   });
+
+  it("selects the canonical-UTC columns from the tz view", () => {
+    const url = buildEdiEventsUrl("https://x.supabase.co/rest/v1/vw_edi_events_tz", { s9: "ABC", offset: 0, limit: 1000 });
+    expect(EDI_EVENTS_SELECT_COLS).toContain("event_datetime_utc");
+    expect(EDI_EVENTS_SELECT_COLS).toContain("resolved_zone");
+    expect(EDI_EVENTS_SELECT_COLS).toContain("tz_resolved");
+    expect(url).toContain("s9code=eq.ABC");
+  });
 });
 
 describe("fetchEdiEvents", () => {

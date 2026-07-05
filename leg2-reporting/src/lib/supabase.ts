@@ -190,6 +190,10 @@ export interface EdiEvent {
   transport: string | null;
   transport_date: string | null;
   reference: string | null;
+  event_datetime_local: string | null;
+  event_datetime_utc: string | null;
+  resolved_zone: string | null;
+  tz_resolved: boolean;
 }
 
 export interface EdiDetail {
@@ -203,10 +207,11 @@ export interface EdiDetail {
   items: string | null;
 }
 
-const EDI_EVENTS_VIEW = "edi_events";
+const EDI_EVENTS_VIEW = "vw_edi_events_tz";
 const EDI_DETAILS_VIEW = "edi_details";
 export const EDI_EVENTS_SELECT_COLS = [
   "message", "event", "date", "location", "transport", "transport_date", "reference",
+  "event_datetime_local", "event_datetime_utc", "resolved_zone", "tz_resolved",
 ].join(",");
 export const EDI_DETAILS_SELECT_COLS = [
   "s9code", "origin_office", "destination_office", "mail_category",
