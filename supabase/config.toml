@@ -8,3 +8,8 @@ verify_jwt = true
 # [project] id above. Only authenticated Leg2 users may trigger a reprocess.
 [functions.rfid-reprocess-site]
 verify_jwt = true
+
+# In-app reader Operation editor. Deployed to EDGE Leg2 via `--project-ref`.
+# Holds the GMS service_role key as the GMS_SERVICE_ROLE_KEY secret.
+[functions.apply-reader-edit]
+verify_jwt = true
