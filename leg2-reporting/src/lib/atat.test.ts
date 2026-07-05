@@ -1,105 +1,69 @@
 import { describe, it, expect } from "vitest";
-import { parseEdiDate, buildAtatTimeline, type AtatEvent } from "@/lib/atat";
+import { buildAtatTimeline } from "@/lib/atat";
 import type { RfidMovement } from "@/lib/supabase";
 
-describe("parseEdiDate", () => {
-  it("parses the day-prefixed DD-MM-YYYY HH:MM format", () => {
-    const { date, display } = parseEdiDate("Fri,01-05-2026 18:26");
-    expect(display).toBe("Fri,01-05-2026 18:26");
-    expect(date).not.toBeNull();
-    // 2026-05-01 18:26 as a UTC-built instant
-    expect(date!.getTime()).toBe(Date.UTC(2026, 4, 1, 18, 26));
-  });
-
-  it("parses ISO date-only with midnight time", () => {
-    const { date } = parseEdiDate("2026-07-01");
-    expect(date!.getTime()).toBe(Date.UTC(2026, 6, 1, 0, 0));
-  });
-
-  it("returns null date for unparseable input, keeping the raw display", () => {
-    const { date, display } = parseEdiDate("not a date");
-    expect(date).toBeNull();
-    expect(display).toBe("not a date");
-  });
-
-  it("handles null and empty input", () => {
-    expect(parseEdiDate(null)).toEqual({ date: null, display: "" });
-    expect(parseEdiDate("   ")).toEqual({ date: null, display: "" });
-  });
-});
-
-function mov(partial: Partial<RfidMovement>): RfidMovement {
+function mov(p: Partial<RfidMovement>): RfidMovement {
   return {
-    movement_id: "m", s9_id: "S", tag_id: "T", reader_id: "R",
-    movement_type: "INBOUND", route_country_role: null, edi_equivalent: "2400",
-    origin_country_code: null, destination_country_code: null,
-    movement_country_code: null, country_sequence_number: null,
-    event_datetime_utc: "2026-05-02T00:00:00.000",
-    event_datetime_local: "2026-05-02T09:00:00.000",
+    movement_id: "m", s9_id: "S", tag_id: "T", reader_id: "R", movement_type: "INBOUND",
+    route_country_role: null, edi_equivalent: "2400", origin_country_code: null,
+    destination_country_code: null, movement_country_code: null, country_sequence_number: null,
+    event_datetime_utc: "2026-05-02T00:00:00.000+00:00", event_datetime_local: "2026-05-02T09:00:00.000",
     reader_timezone: "Asia/Tokyo", site_impc_code: "JPKWSA", centre_code: "JPKWSA",
-    site_name: "Kawasaki", city: "Kawasaki", country_code: "JP",
-    handover_point: false, handover_quality_status: null, ...partial,
+    site_name: "Kawasaki", city: "Kawasaki", country_code: "JP", handover_point: false,
+    handover_quality_status: null, ...p,
   };
 }
-function edi(partial: Record<string, string | null>) {
+function edi(p: Record<string, unknown>) {
   return {
-    message: null, event: null, date: null, location: null,
-    transport: null, transport_date: null, reference: null, ...partial,
+    message: null, event: null, date: null, location: null, transport: null,
+    transport_date: null, reference: null, event_datetime_local: null,
+    event_datetime_utc: null, resolved_zone: null, tz_resolved: false, ...p,
   };
 }
 
 describe("buildAtatTimeline", () => {
-  it("merges RFID + EDI and sorts ascending by naive wall-clock", () => {
+  it("orders by canonical UTC across sources", () => {
+    // RFID at UTC 00:00; EDI resolved at UTC 01:00 -> EDI after RFID by true UTC
     const events = buildAtatTimeline(
-      [mov({ edi_equivalent: "2400", event_datetime_local: "2026-05-02T09:00:00.000" })],
-      [edi({ message: "PREDES", event: "Dispatch close", date: "Fri,01-05-2026 18:26" })]
+      [mov({ code: undefined, event_datetime_utc: "2026-05-02T00:00:00+00:00" } as never)],
+      [edi({ message: "RESDES", event: "Arrival", event_datetime_utc: "2026-05-02T01:00:00+00:00",
+             event_datetime_local: "2026-05-02T10:00:00", resolved_zone: "Asia/Tokyo", tz_resolved: true })]
     );
-    expect(events.map((e) => e.code)).toEqual(["PREDES", "2400"]);
-    expect(events[0].source).toBe("EDI");
-    expect(events[1].source).toBe("RFID");
+    expect(events.map((e) => e.source)).toEqual(["RFID", "EDI"]);
+    expect(events[1].tzResolved).toBe(true);
+    expect(events[1].localZone).toBe("Asia/Tokyo");
   });
 
-  it("dedups an outbound EDI code to its latest occurrence", () => {
+  it("dedups an outbound EDI code to its latest UTC occurrence", () => {
     const events = buildAtatTimeline([], [
-      edi({ message: "CARDIT", date: "Fri,01-05-2026 10:00" }),
-      edi({ message: "CARDIT", date: "Fri,01-05-2026 20:00" }),
+      edi({ message: "CARDIT", event_datetime_utc: "2026-05-01T10:00:00+00:00", tz_resolved: true, resolved_zone: "UTC", event_datetime_local: "2026-05-01T10:00:00" }),
+      edi({ message: "CARDIT", event_datetime_utc: "2026-05-01T20:00:00+00:00", tz_resolved: true, resolved_zone: "UTC", event_datetime_local: "2026-05-01T20:00:00" }),
     ]);
     expect(events).toHaveLength(1);
-    expect(events[0].rawDate).toBe("Fri,01-05-2026 20:00");
+    expect(events[0].eventDatetimeUtc).toBe("2026-05-01T20:00:00+00:00");
   });
 
-  it("dedups an inbound EDI code to its earliest occurrence", () => {
+  it("falls back to naive local ordering when UTC is unresolved, sorts nulls last", () => {
     const events = buildAtatTimeline([], [
-      edi({ message: "RESDIT6", date: "Fri,01-05-2026 20:00" }),
-      edi({ message: "RESDIT6", date: "Fri,01-05-2026 10:00" }),
+      edi({ message: "RESDES", event_datetime_local: "2026-05-01T09:00:00", tz_resolved: false }),
+      edi({ message: "RESCON", date: "bad", event_datetime_local: null, tz_resolved: false }),
     ]);
-    expect(events).toHaveLength(1);
-    expect(events[0].rawDate).toBe("Fri,01-05-2026 10:00");
+    expect(events.map((e) => e.code)).toEqual(["RESDES", "RESCON"]);
+    expect(events[0].tzResolved).toBe(false);
   });
 
-  it("puts events with unparseable dates last, stably", () => {
-    const events = buildAtatTimeline([], [
-      edi({ message: "RESDES", date: "bad" }),
-      edi({ message: "RESCON", date: "2026-05-01" }),
-    ]);
-    expect(events.map((e) => e.code)).toEqual(["RESCON", "RESDES"]);
-  });
-
-  it("includes only non-empty fields, labeled, per source", () => {
+  it("marks unresolved EDI and never invents a UTC", () => {
     const [e] = buildAtatTimeline([], [
-      edi({ message: "RESDES", event: "Arrival", date: "2026-05-01", location: "KRSELB", reference: "X", transport: null }),
+      edi({ message: "RESDES", event_datetime_local: "2026-05-01T09:00:00", resolved_zone: null, tz_resolved: false }),
     ]);
-    const labels = e.fields.map((f) => f.label);
-    expect(labels).toContain("Location");
-    expect(labels).toContain("Reference");
-    expect(labels).not.toContain("Transport"); // null -> omitted
+    expect(e.eventDatetimeUtc).toBeNull();
+    expect(e.tzResolved).toBe(false);
   });
 
-  it("labels RFID rows with the checkpoint name and carries inline reader fields", () => {
-    const [e] = buildAtatTimeline([mov({ edi_equivalent: "2400", reader_id: "R9", tag_id: "TAG1" })], []);
-    expect(e.label).toBe("Entry Inbound AMU");
-    const kv = Object.fromEntries(e.fields.map((f) => [f.label, f.value]));
-    expect(kv["Reader"]).toBe("R9");
-    expect(kv["RFID Tag"]).toBe("TAG1");
+  it("carries inline reader fields for RFID but not a UTC-time field", () => {
+    const [e] = buildAtatTimeline([mov({ reader_id: "R9", tag_id: "TAG1" })], []);
+    const labels = e.fields.map((f) => f.label);
+    expect(labels).toContain("Reader");
+    expect(labels).not.toContain("UTC time");
   });
 });

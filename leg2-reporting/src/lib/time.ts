@@ -54,6 +54,22 @@ export function formatTimestamp(
 }
 
 /**
+ * Format an ISO-ish timestamp string as "DD Mon YYYY (Wd), HH:MM:SS", reading
+ * the wall-clock components directly (tz-safe — never constructs a local Date).
+ * For a UTC string ("…+00:00") the components ARE UTC; for a naive local string
+ * they are the local wall time.
+ */
+export function formatIso(iso: string | null): string {
+  if (!iso) return "";
+  const match = TS_RE.exec(iso);
+  if (!match) return iso;
+  const [, year, month, day, hour, minute, second] = match;
+  const monthAbbrev = MONTHS[Number(month) - 1] ?? month;
+  const weekday = WD[new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).getUTCDay()];
+  return `${day} ${monthAbbrev} ${year} (${weekday}), ${hour}:${minute}:${second}`;
+}
+
+/**
  * Hours between two events. HARD RULE: always computed from event_datetime_utc,
  * never from local (DST/timezone changes would introduce artificial hours).
  */
