@@ -1,5 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildMovementsUrl, fetchRfidMovements, buildReaderMasterUrl, fetchReaderMaster } from "@/lib/supabase";
+import { buildMovementsUrl, fetchRfidMovements, buildReaderMasterUrl, fetchReaderMaster, READER_MASTER_SELECT_COLS } from "@/lib/supabase";
+
+describe("reader master select columns", () => {
+  it("requests the curated Operation + Identification fields, never product/nms", () => {
+    for (const c of [
+      "edi_equivalent_inbound", "edi_equivalent_outbound", "operations_scope",
+      "facility_type", "city", "operator",
+    ]) {
+      expect(READER_MASTER_SELECT_COLS).toContain(c);
+    }
+    expect(READER_MASTER_SELECT_COLS).not.toContain("product");
+    expect(READER_MASTER_SELECT_COLS).not.toContain("nms_reader_url");
+  });
+});
 
 const BASE = "https://x.supabase.co/rest/v1/vw_quicksight_rfid_report_movements";
 const READER_BASE = "https://x.supabase.co/rest/v1/vw_reader_master";

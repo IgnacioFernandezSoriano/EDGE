@@ -53,12 +53,28 @@ export interface ReaderMaster {
   site_id: string | null;
   reader_country_code: string | null;
   handover_point: boolean;
+  // Curated fields for the reader editor. Optional so existing partial reader
+  // fixtures keep type-checking; the vw_reader_master view always provides them.
+  facility_type?: string | null;
+  country_name?: string | null;
+  city?: string | null;
+  facility_latitude?: string | null;
+  facility_longitude?: string | null;
+  operator?: string | null;
+  priority?: string | null;
+  inactive?: boolean | null;
+  operations_scope?: string | null;
+  edi_equivalent_inbound?: string | null;
+  edi_equivalent_outbound?: string | null;
 }
 
 const READER_MASTER_VIEW = "vw_reader_master";
-const READER_MASTER_SELECT_COLS = [
+export const READER_MASTER_SELECT_COLS = [
   "lpi", "gate_id", "gate_name", "gate_purpose", "reading_direction",
-  "facility_name", "site_id", "reader_country_code", "handover_point",
+  "facility_name", "facility_type", "site_id", "reader_country_code",
+  "country_name", "city", "facility_latitude", "facility_longitude",
+  "operator", "priority", "inactive", "operations_scope", "handover_point",
+  "edi_equivalent_inbound", "edi_equivalent_outbound",
 ].join(",");
 
 type FetchDeps = {
