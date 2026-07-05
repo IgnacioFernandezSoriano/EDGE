@@ -137,3 +137,16 @@ patrón inyectable que `reprocess.ts` (fetchFn/token/anonKey/baseUrl para test).
   quitar `CorrectionDialog`; retirar en una limpieza futura o dejar como utilidad.
 - El editor se abre solo desde las celdas de incidencia; extender el "click en LPI → editor" a todas
   las celdas del pivot es posible más adelante.
+
+**Review 2026-07-05 (rama, "with fixes"):** aplicado #3 (guard del cast `inactive`), #2 (Save envía solo
+campos cambiados + vacío→null), #1 mitigado (nota in-modal "RFID codes per site" + aviso si `site_id`
+nulo), #6/#7/#9 (dead `strings.correction` fuera; `reload()` no borra "Applied"; comentario export).
+Deuda pendiente:
+- **#1 fondo:** el EDI en Leg2 se agrega por SITE ("primer no-nulo por site_id" en sync). Editar un
+  lector cuyo site tiene otros lectores con código puede no reflejar el valor del lector concreto; un
+  lector con `site_id` nulo no puede enriquecer EDI. Fix real = EDI a nivel lector en el enrich.
+- **#4:** reproceso síncrono (statement_timeout 240s) puede exceder el wall-clock de la Edge Function →
+  la UI ve fallo con la BD ya OK. Fix = reproceso asíncrono + polling, o acotar.
+- **#5:** autorización = solo autenticación (cualquier usuario Leg2 puede PATCH cualquier lector en GMS).
+  Añadir auditoría de actor (JWT `sub`) en la escritura y/o autorización fina.
+- **#10:** `rfid-reprocess-site` (edge fn) queda desplegada sin uso.

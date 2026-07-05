@@ -78,7 +78,8 @@ Deno.serve(async (req) => {
     }
     const row = Array.isArray(data) ? data[0] : data;
 
-    // 4) Re-export CSV (non-blocking).
+    // 4) Re-export CSV. Awaited (keeps the runtime alive) but its failure is
+    //    swallowed — the edit + reprocess already succeeded.
     await fetch(`${SUPABASE_URL}/functions/v1/export-rfid-csv-to-s3`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },

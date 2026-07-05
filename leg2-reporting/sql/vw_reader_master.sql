@@ -27,7 +27,11 @@ select
   raw_payload->>'facility_longitude'      as facility_longitude,
   raw_payload->>'operator'                as operator,
   raw_payload->>'priority'                as priority,
-  (raw_payload->>'inactive')::boolean     as inactive,
+  case
+    when lower(raw_payload->>'inactive') in ('true','false','t','f','yes','no','1','0')
+    then (raw_payload->>'inactive')::boolean
+    else null
+  end                                     as inactive,
   raw_payload->>'operations_scope'        as operations_scope,
   handover_point,
   raw_payload->>'edi_equivalent_inbound'  as edi_equivalent_inbound,

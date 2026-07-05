@@ -28,20 +28,25 @@ describe("ReaderEditorDialog", () => {
     expect(screen.queryByText(/nms_reader_url/i)).not.toBeInTheDocument();
   });
 
-  it("saves only the Operation fields via applyReaderEdit and reports applied", async () => {
+  it("sends only the changed Operation field and reports applied", async () => {
     const onApplied = vi.fn();
     render(<ReaderEditorDialog open onOpenChange={() => {}} reader={reader} onApplied={onApplied} />);
+    fireEvent.change(screen.getByDisplayValue("Office entrance and exit"), {
+      target: { value: "Main gate" },
+    });
     fireEvent.click(screen.getByText("Save & apply"));
     await waitFor(() => expect(applyReaderEdit).toHaveBeenCalledTimes(1));
     const call = (applyReaderEdit as unknown as { mock: { calls: unknown[][] } }).mock.calls[0];
-    const lpi = call[0] as string;
-    const operation = call[1] as Record<string, unknown>;
-    expect(lpi).toBe("J11DJ0002100000037");
-    expect(Object.keys(operation).sort()).toEqual([
-      "edi_equivalent_inbound", "edi_equivalent_outbound", "gate_purpose",
-      "handover_point", "operations_scope", "reading_direction",
-    ]);
+    expect(call[0]).toBe("J11DJ0002100000037");
+    expect(call[1]).toEqual({ gate_purpose: "Main gate" }); // only the changed field
     await waitFor(() => expect(screen.getByText(/Applied/)).toBeInTheDocument());
     expect(onApplied).toHaveBeenCalled();
+  });
+
+  it("does not call the endpoint when nothing changed", async () => {
+    render(<ReaderEditorDialog open onOpenChange={() => {}} reader={reader} onApplied={() => {}} />);
+    fireEvent.click(screen.getByText("Save & apply"));
+    await waitFor(() => expect(screen.getByText(/No changes to apply/)).toBeInTheDocument());
+    expect(applyReaderEdit).not.toHaveBeenCalled();
   });
 });

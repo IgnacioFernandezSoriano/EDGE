@@ -29,6 +29,20 @@ function opFromReader(r: ReaderMaster): Required<ReaderOperation> {
   };
 }
 
+// Only send the fields the user actually changed, mapping "empty" to SQL null
+// (so clearing a field truly nulls it in GMS instead of writing "").
+const normStr = (v: string | null | undefined) => (v == null || v === "" ? null : v);
+function changedFields(orig: ReaderMaster, op: Required<ReaderOperation>): ReaderOperation {
+  const changed: ReaderOperation = {};
+  if (normStr(op.gate_purpose) !== normStr(orig.gate_purpose)) changed.gate_purpose = normStr(op.gate_purpose);
+  if (normStr(op.edi_equivalent_inbound) !== normStr(orig.edi_equivalent_inbound)) changed.edi_equivalent_inbound = normStr(op.edi_equivalent_inbound);
+  if (normStr(op.edi_equivalent_outbound) !== normStr(orig.edi_equivalent_outbound)) changed.edi_equivalent_outbound = normStr(op.edi_equivalent_outbound);
+  if ((op.handover_point ?? false) !== (orig.handover_point ?? false)) changed.handover_point = op.handover_point;
+  if (normStr(op.reading_direction) !== normStr(orig.reading_direction)) changed.reading_direction = normStr(op.reading_direction);
+  if (normStr(op.operations_scope) !== normStr(orig.operations_scope)) changed.operations_scope = normStr(op.operations_scope);
+  return changed;
+}
+
 function ReadOnlyRow({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="flex justify-between gap-4 text-sm">
@@ -52,13 +66,17 @@ export function ReaderEditorDialog({
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
 
+  // Re-init only when a DIFFERENT reader opens (by LPI), so a post-apply
+  // reload() — which yields a new object for the same LPI — doesn't wipe the
+  // "Applied" confirmation.
   useEffect(() => {
     if (reader) {
       setOp(opFromReader(reader));
       setStatus("idle");
       setMessage("");
     }
-  }, [reader]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reader?.lpi]);
 
   if (!reader) return null;
   const inboundOpts = ediCodeOptions(reader.edi_equivalent_inbound ?? null);
@@ -68,10 +86,16 @@ export function ReaderEditorDialog({
 
   async function handleSave() {
     if (!reader) return;
+    const changed = changedFields(reader, op);
+    if (Object.keys(changed).length === 0) {
+      setStatus("done");
+      setMessage(strings.readerEditor.noChanges);
+      return;
+    }
     setStatus("saving");
     setMessage("");
     try {
-      const res = await applyReaderEdit(reader.lpi, op);
+      const res = await applyReaderEdit(reader.lpi, changed);
       if (!res.ok) throw new Error(res.error ?? res.status);
       setStatus("done");
       setMessage(strings.readerEditor.applied);
@@ -104,6 +128,10 @@ export function ReaderEditorDialog({
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">{strings.readerEditor.operation}</h3>
+            {!reader.site_id && (
+              <p className="text-xs text-amber-700">{strings.readerEditor.noSiteWarning}</p>
+            )}
+            <p className="text-xs text-muted-foreground">{strings.readerEditor.siteNote}</p>
             <div className="space-y-1">
               <Label>{strings.readerEditor.gatePurpose}</Label>
               <Input
