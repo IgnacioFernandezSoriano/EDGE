@@ -38,6 +38,9 @@ function NoEventCodeCell({
       <div className="text-muted-foreground">
         {strings.columns.gate}: {reader?.gate_name ?? "—"}
       </div>
+      {m.site_name && (
+        <div className="text-muted-foreground">{m.site_name}</div>
+      )}
       {movements.length > 1 && (
         <div className="text-[10px] text-amber-800">+{movements.length - 1}</div>
       )}
@@ -148,6 +151,9 @@ export function RfidEventsPivot({
                           </span>
                         )}
                       </div>
+                      {m.site_name && (
+                        <div className="text-muted-foreground">{m.site_name}</div>
+                      )}
                     </TableCell>
                   );
                 })}
