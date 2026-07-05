@@ -11,12 +11,12 @@ import {
 } from "@/components/ui/tooltip";
 
 function NoEventCodeCell({
-  movements, timeMode, readerMap, onSelectIncident,
+  movements, timeMode, readerMap, onSelectReader,
 }: {
   movements: RfidMovement[];
   timeMode: TimeMode;
   readerMap: Map<string, ReaderMaster>;
-  onSelectIncident: (movements: RfidMovement[]) => void;
+  onSelectReader: (lpi: string) => void;
 }) {
   if (movements.length === 0) {
     return <TableCell className="bg-amber-50/40" />;
@@ -25,16 +25,16 @@ function NoEventCodeCell({
   const reader = readerMap.get(m.reader_id);
   const parts = formatTimestampParts(m, timeMode);
   return (
-    <TableCell
-      className="font-mono text-xs bg-amber-50/40 cursor-pointer"
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelectIncident(movements);
-      }}
-    >
+    <TableCell className="font-mono text-xs bg-amber-50/40">
       <div className="font-semibold">{parts.date} ({parts.weekday})</div>
       <div className="font-semibold">{parts.time}</div>
-      <div className="text-muted-foreground">{m.reader_id}</div>
+      <button
+        type="button"
+        className="text-blue-700 underline"
+        onClick={(e) => { e.stopPropagation(); onSelectReader(m.reader_id); }}
+      >
+        {m.reader_id}
+      </button>
       <div className="text-muted-foreground">
         {strings.columns.gate}: {reader?.gate_name ?? "—"}
       </div>
@@ -50,14 +50,14 @@ export function RfidEventsPivot({
   timeMode,
   selectedS9,
   onSelectS9,
-  onSelectIncident,
+  onSelectReader,
   readerMap,
 }: {
   report: RfidEventsReport;
   timeMode: TimeMode;
   selectedS9: string | null;
   onSelectS9: (s9: string) => void;
-  onSelectIncident: (movements: RfidMovement[]) => void;
+  onSelectReader: (lpi: string) => void;
   readerMap: Map<string, ReaderMaster>;
 }) {
   if (report.rows.length === 0) {
@@ -122,7 +122,7 @@ export function RfidEventsPivot({
                     movements={row.noEventCodeOutbound}
                     timeMode={timeMode}
                     readerMap={readerMap}
-                    onSelectIncident={onSelectIncident}
+                    onSelectReader={onSelectReader}
                   />
                 )}
                 {report.columns.map((c) => {
@@ -156,7 +156,7 @@ export function RfidEventsPivot({
                     movements={row.noEventCodeInbound}
                     timeMode={timeMode}
                     readerMap={readerMap}
-                    onSelectIncident={onSelectIncident}
+                    onSelectReader={onSelectReader}
                   />
                 )}
               </TableRow>

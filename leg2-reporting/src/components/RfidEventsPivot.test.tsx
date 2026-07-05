@@ -57,7 +57,7 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={() => {}}
-        onSelectIncident={() => {}}
+        onSelectReader={() => {}}
         readerMap={readerMap}
       />
     );
@@ -83,7 +83,7 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={() => {}}
-        onSelectIncident={() => {}}
+        onSelectReader={() => {}}
         readerMap={readerMap}
       />
     );
@@ -102,7 +102,7 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={onSelect}
-        onSelectIncident={() => {}}
+        onSelectReader={() => {}}
         readerMap={readerMap}
       />
     );
@@ -117,7 +117,7 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={() => {}}
-        onSelectIncident={() => {}}
+        onSelectReader={() => {}}
         readerMap={readerMap}
       />
     );
@@ -154,27 +154,26 @@ describe("RfidEventsPivot", () => {
         timeMode="utc"
         selectedS9={null}
         onSelectS9={() => {}}
-        onSelectIncident={() => {}}
+        onSelectReader={() => {}}
         readerMap={readerMap}
       />
     );
     expect(screen.getByText("No RFID event code")).toBeInTheDocument();
   });
 
-  it("fires onSelectIncident with the gap movements when a No Event Code cell is clicked", () => {
-    const onIncident = vi.fn();
+  it("fires onSelectReader with the LPI when the reader code is clicked", () => {
+    const onReader = vi.fn();
     render(
       <RfidEventsPivot
         report={reportWithGap}
         timeMode="utc"
         selectedS9={null}
         onSelectS9={() => {}}
-        onSelectIncident={onIncident}
+        onSelectReader={onReader}
         readerMap={readerMap}
       />
     );
-    fireEvent.click(screen.getByText("02 Jul 2026 (Thu)"));
-    expect(onIncident).toHaveBeenCalledTimes(1);
-    expect(onIncident.mock.calls[0][0][0].reader_id).toBe("R2");
+    fireEvent.click(screen.getByText("R2"));
+    expect(onReader).toHaveBeenCalledWith("R2");
   });
 });
