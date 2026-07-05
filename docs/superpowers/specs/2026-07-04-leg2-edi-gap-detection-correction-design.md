@@ -179,6 +179,17 @@ movimientos sin EDI para que haya incidencias que mostrar y corregir.
   incidencia y otro spec.
 - Autorización fina de la RPC/Edge Function de reproceso (qué usuarios de Leg2 pueden
   disparar reproceso) — definir en implementación.
+- **Duplicación de la lógica de selección** de movements en `rfid_transform_run` (sql/06)
+  y `rfid_reprocess_scope` (sql/07): el bloque `valid_reads→country_groups→candidates→
+  selected` está copiado en ambas (ya venía así de producción). Riesgo de divergencia futura.
+  Extraer a un helper compartido (función set-returning o vista parametrizada) o añadir un
+  check CI que compare ambos bloques. (Detectado en review 2026-07-05.)
+- **Reproceso interactivo síncrono vs wall-clock de la Edge Function**: `rfid_reprocess_scope`
+  tiene `statement_timeout=240s`, pero la Edge Function tiene su propio límite de wall-clock
+  (~150s) y el `fetch` del frontend puede morir antes de que el RPC devuelva → la BD reprocesa
+  OK pero la UI muestra "failed". Hoy no se alcanza (máx observado 26s, JPKWSA). Fix real:
+  reproceso asíncrono con job + polling, o acotar `p_max_reads` en el camino interactivo.
+  (Detectado en review 2026-07-05.)
 - **Filtro/marcado de inconsistencias temporales según el flujo físico.** Las columnas de
   checkpoints del pivot están ordenadas por el **flujo físico real** del trayecto (secuencia
   de checkpoints, p.ej. 2300→2310→2320→2400→2410→2420…). Para una misma fila (S9), las marcas

@@ -58,6 +58,7 @@ export const strings = {
     reprocess: "Reprocess",
     reprocessing: "Reprocessing…",
     reprocessDone: "Reprocess complete. The movement will appear under its checkpoint.",
+    reprocessSkipped: "Nothing to reprocess right now (no matching reads, or a reprocess is already running). Try again shortly.",
   },
   states: {
     loading: "Loading…",

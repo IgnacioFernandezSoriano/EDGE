@@ -63,6 +63,13 @@ export function pivotByS9(movs: RfidMovement[]): RfidEventsReport {
     const transits = group.filter(
       (m) => m.movement_type === "TRANSIT_ENTRY" || m.movement_type === "TRANSIT_EXIT"
     );
+    // Deterministic display order for the No Event Code cells (earliest first).
+    noEventCodeOutbound.sort((a, b) =>
+      a.event_datetime_utc.localeCompare(b.event_datetime_utc)
+    );
+    noEventCodeInbound.sort((a, b) =>
+      a.event_datetime_utc.localeCompare(b.event_datetime_utc)
+    );
     const rte = group.find((m) => m.tag_id)?.tag_id ?? null;
     rows.push({
       s9_id,

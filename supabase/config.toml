@@ -3,3 +3,8 @@ id = "ewyhmmixqcubqokphebh"
 
 [functions.process-rfid-etl]
 verify_jwt = true
+
+# Deployed to EDGE Leg2 (ubgatxfwpmyaqyfrwias) via `--project-ref`, not the
+# [project] id above. Only authenticated Leg2 users may trigger a reprocess.
+[functions.rfid-reprocess-site]
+verify_jwt = true

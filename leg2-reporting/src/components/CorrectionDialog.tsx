@@ -8,7 +8,7 @@ import { buildReaderMasterUrl } from "@/lib/gms";
 import { reprocessSite } from "@/lib/reprocess";
 import { strings } from "@/i18n/strings";
 
-type Status = "idle" | "running" | "done" | "error";
+type Status = "idle" | "running" | "done" | "warn" | "error";
 
 export function CorrectionDialog({
   open, onOpenChange, movements, readerMap,
@@ -35,7 +35,13 @@ export function CorrectionDialog({
     try {
       for (const site of sites) {
         const res = await reprocessSite(site);
-        if (!res.ok) throw new Error(res.error ?? res.status);
+        if (res.ok) continue;
+        if (res.status === "skipped_empty" || res.status === "skipped_locked") {
+          setStatus("warn");
+          setMessage(strings.correction.reprocessSkipped);
+          return;
+        }
+        throw new Error(res.error ?? res.status);
       }
       setStatus("done");
       setMessage(strings.correction.reprocessDone);
@@ -87,7 +93,15 @@ export function CorrectionDialog({
             {status === "running" ? strings.correction.reprocessing : strings.correction.reprocess}
           </Button>
           {message && (
-            <span className={status === "error" ? "text-red-600 text-sm" : "text-green-700 text-sm"}>
+            <span
+              className={
+                status === "error"
+                  ? "text-red-600 text-sm"
+                  : status === "warn"
+                    ? "text-amber-700 text-sm"
+                    : "text-green-700 text-sm"
+              }
+            >
               {message}
             </span>
           )}

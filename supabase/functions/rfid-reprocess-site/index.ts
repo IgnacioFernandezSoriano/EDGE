@@ -79,6 +79,7 @@ Deno.serve(async (req) => {
       status: row?.status ?? "unknown",
       movements_upserted: row?.movements_upserted ?? 0,
       reprocess_run_id: row?.reprocess_run_id,
+      error: row?.status === "success" ? undefined : row?.error_message ?? undefined,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

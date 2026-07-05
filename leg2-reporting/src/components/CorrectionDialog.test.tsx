@@ -67,4 +67,19 @@ describe("CorrectionDialog", () => {
     await waitFor(() => expect(reprocessSite).toHaveBeenCalledWith("INMUBA"));
     await waitFor(() => expect(screen.getByText(/Reprocess complete/)).toBeInTheDocument());
   });
+
+  it("shows a neutral message (not an error) when the reprocess is skipped", async () => {
+    vi.mocked(reprocessSite).mockResolvedValueOnce({
+      ok: false,
+      status: "skipped_locked",
+      movements_upserted: 0,
+    });
+    render(
+      <CorrectionDialog open onOpenChange={() => {}} movements={movements} readerMap={readerMap} />
+    );
+    fireEvent.click(screen.getByText("Reprocess"));
+    await waitFor(() =>
+      expect(screen.getByText(/Nothing to reprocess right now/)).toBeInTheDocument()
+    );
+  });
 });
