@@ -158,7 +158,7 @@ describe("RfidEventsPivot", () => {
         readerMap={readerMap}
       />
     );
-    expect(screen.getByText("No Event Code")).toBeInTheDocument();
+    expect(screen.getByText("No RFID event code")).toBeInTheDocument();
   });
 
   it("fires onSelectIncident with the gap movements when a No Event Code cell is clicked", () => {

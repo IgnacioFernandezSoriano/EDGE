@@ -23,7 +23,7 @@ export const strings = {
     searchRfidTag: "Search RFID Tag",
     from: "From",
     to: "To",
-    onlyNoEventCode: "Only No Event Code",
+    onlyNoEventCode: "Only No RFID event code",
   },
   datePresets: {
     today: "Today",
@@ -46,7 +46,7 @@ export const strings = {
     handoverStatus: "Handover status",
     readerHandover: "Reader HO",
     gate: "Gate",
-    noEventCode: "No Event Code",
+    noEventCode: "No RFID event code",
   },
   common: {
     yes: "Yes",
