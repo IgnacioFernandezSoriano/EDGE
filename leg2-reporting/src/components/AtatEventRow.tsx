@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 function timeFor(event: AtatEvent, mode: TimeMode): { text: string; zone: string } {
   if (mode === "utc") {
     if (event.eventDatetimeUtc) {
-      return { text: formatIso(event.eventDatetimeUtc), zone: "UTC" };
+      return { text: formatIso(event.eventDatetimeUtc), zone: strings.timeMode.utc };
     }
     // unresolved: show the local wall time, flagged no TZ
     return { text: formatIso(event.eventDatetimeLocal) || event.rawDate, zone: strings.atat.noTz };

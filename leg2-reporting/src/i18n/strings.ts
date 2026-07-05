@@ -104,13 +104,11 @@ export const strings = {
     fieldCountry: "Country",
     fieldTag: "RFID Tag",
     fieldHandover: "Handover",
-    fieldUtc: "UTC time",
     fieldLocation: "Location",
     fieldTransport: "Transport",
     fieldTransportDate: "Transport date",
     fieldReference: "Reference",
     noTz: "no TZ",
-    timeLabel: "Time",
   },
   states: {
     loading: "Loading…",
