@@ -55,21 +55,22 @@ New function generalizing `rfid-reprocess-site` over scope. `rfid-reprocess-site
   (`sync_failed` / `reprocess_failed`) mirroring `rfid-reprocess-site`.
 - `config.toml`: `[functions.rfid-reprocess] verify_jwt = true`.
 
-## 3. DB — `vw_sites` (Leg2 read)
+## 3. DB — picker views (Leg2 read)
 
-Small curated view backing the **site** dropdown (a complete list, incl. sites with no movements):
+**Correction (post-testing):** the reprocess (`rfid_reprocess_scope`) operates on the raw RFID
+**readings** table `rfid_edge_input_reads` — its `sites` filter matches `reads.site_impc_code`
+and its `readers` filter matches `reads.reader_id` (== `readers_master.lpi`). So BOTH pickers must
+list only sites/readers that actually have readings in the solution, sourced from
+`rfid_edge_input_reads` — NOT the master snapshot (`rfid_site_snapshot` carries ~480 sites, only 4
+with any reads) and NOT the movements output. Two views in
+`leg2-reporting/sql/vw_reprocess_pickers.sql`, both `grant`ed to `authenticated`:
 
-```sql
-create or replace view public.vw_sites as
-select site_impc_code, site_name, country_name
-from public.rfid_site_snapshot
-where site_impc_code is not null
-order by site_impc_code;
-grant select on public.vw_sites to authenticated;
-```
-
-The **reader** dropdown reuses the existing `vw_reader_master` (already `grant`ed to
-`authenticated`) — LPI + facility_name for the label.
+- **`vw_reprocess_sites`** `(site_impc_code, site_name, country_name)` — `distinct` sites with
+  readings; name from the reads, country left-joined from `rfid_site_snapshot`. (Currently 4:
+  CHZRHC, INMUBA, JPKWSA, TRISTF.)
+- **`vw_reprocess_readers`** `(reader_id, facility_name, site_impc_code)` — `distinct` readers
+  (LPI) with readings; facility label best-effort from `readers_master` then the reads.
+  (Currently 167.)
 
 ## 4. Client
 

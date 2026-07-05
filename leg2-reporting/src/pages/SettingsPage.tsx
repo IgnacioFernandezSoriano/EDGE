@@ -11,14 +11,14 @@ import {
   triggerReprocess as realTrigger, type ReprocessScope, type ReprocessResult,
 } from "@/lib/reprocess";
 import {
-  fetchReaderMaster as realFetchReaders, fetchSites as realFetchSites,
-  type ReaderMaster, type SiteOption,
+  fetchReaderOptions as realFetchReaders, fetchSites as realFetchSites,
+  type ReaderOption, type SiteOption,
 } from "@/lib/supabase";
 import { strings } from "@/i18n/strings";
 
 export type SettingsDeps = {
   triggerReprocessFn?: (scope: ReprocessScope, value: string | null) => Promise<ReprocessResult>;
-  fetchReadersFn?: () => Promise<ReaderMaster[]>;
+  fetchReadersFn?: () => Promise<ReaderOption[]>;
   fetchSitesFn?: () => Promise<SiteOption[]>;
 };
 
@@ -30,7 +30,7 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
   const loadSites = deps.fetchSitesFn ?? (() => realFetchSites());
 
   const [scope, setScope] = useState<ReprocessScope>("site");
-  const [readers, setReaders] = useState<ReaderMaster[]>([]);
+  const [readers, setReaders] = useState<ReaderOption[]>([]);
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [value, setValue] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -92,7 +92,7 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
               <SelectTrigger><SelectValue placeholder={strings.settings.selectReader} /></SelectTrigger>
               <SelectContent>
                 {readers.map((r) => (
-                  <SelectItem key={r.lpi} value={r.lpi}>{r.lpi}{r.facility_name ? ` — ${r.facility_name}` : ""}</SelectItem>
+                  <SelectItem key={r.reader_id} value={r.reader_id}>{r.reader_id}{r.facility_name ? ` — ${r.facility_name}` : ""}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
