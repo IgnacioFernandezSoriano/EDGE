@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import type { ReaderMaster } from "@/lib/supabase";
 import { ediCodeOptions } from "@/lib/ediCodes";
+import { optionsWithCurrent, READING_DIRECTIONS, OPERATIONS_SCOPES } from "@/lib/selectOptions";
 import { applyReaderEdit, type ReaderOperation } from "@/lib/readerEdit";
 import { strings } from "@/i18n/strings";
 
@@ -62,6 +63,8 @@ export function ReaderEditorDialog({
   if (!reader) return null;
   const inboundOpts = ediCodeOptions(reader.edi_equivalent_inbound ?? null);
   const outboundOpts = ediCodeOptions(reader.edi_equivalent_outbound ?? null);
+  const rdOpts = optionsWithCurrent(READING_DIRECTIONS, reader.reading_direction ?? null);
+  const osOpts = optionsWithCurrent(OPERATIONS_SCOPES, reader.operations_scope ?? null);
 
   async function handleSave() {
     if (!reader) return;
@@ -93,11 +96,9 @@ export function ReaderEditorDialog({
             <ReadOnlyRow label={strings.columns.gate} value={reader.gate_name} />
             <ReadOnlyRow label={strings.readerEditor.facility} value={reader.facility_name} />
             <ReadOnlyRow label={strings.readerEditor.facilityType} value={reader.facility_type} />
-            <ReadOnlyRow label={strings.columns.site} value={reader.site_id} />
             <ReadOnlyRow label={strings.readerEditor.country} value={reader.country_name ?? reader.reader_country_code} />
             <ReadOnlyRow label={strings.readerEditor.city} value={reader.city} />
             <ReadOnlyRow label={strings.readerEditor.operator} value={reader.operator} />
-            <ReadOnlyRow label={strings.readerEditor.priority} value={reader.priority} />
             <ReadOnlyRow label={strings.readerEditor.inactive} value={reader.inactive} />
           </section>
 
@@ -148,17 +149,31 @@ export function ReaderEditorDialog({
             </div>
             <div className="space-y-1">
               <Label>{strings.readerEditor.readingDirection}</Label>
-              <Input
-                value={op.reading_direction ?? ""}
-                onChange={(e) => setOp((o) => ({ ...o, reading_direction: e.target.value }))}
-              />
+              <Select
+                value={op.reading_direction || EMPTY}
+                onValueChange={(v) => setOp((o) => ({ ...o, reading_direction: v === EMPTY ? "" : v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {rdOpts.map((o) => (
+                    <SelectItem key={o.value || EMPTY} value={o.value || EMPTY}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label>{strings.readerEditor.operationsScope}</Label>
-              <Input
-                value={op.operations_scope ?? ""}
-                onChange={(e) => setOp((o) => ({ ...o, operations_scope: e.target.value }))}
-              />
+              <Select
+                value={op.operations_scope || EMPTY}
+                onValueChange={(v) => setOp((o) => ({ ...o, operations_scope: v === EMPTY ? "" : v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {osOpts.map((o) => (
+                    <SelectItem key={o.value || EMPTY} value={o.value || EMPTY}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </section>
         </div>

@@ -5,10 +5,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 
-function formatSite(m: RfidMovement): string {
-  const site = m.site_impc_code ?? m.centre_code;
-  if (!site) return m.country_code ? `(${m.country_code})` : "—";
-  return site + (m.country_code ? ` (${m.country_code})` : "");
+function formatFacility(reader: ReaderMaster | undefined, m: RfidMovement): string {
+  const facility = reader?.facility_name;
+  const cc = m.country_code ? ` (${m.country_code})` : "";
+  return facility ? facility + cc : (m.country_code ? `(${m.country_code})` : "—");
 }
 
 export function EventDetailsTable({
@@ -34,7 +34,7 @@ export function EventDetailsTable({
           <TableHead>{strings.columns.rfidTag}</TableHead>
           <TableHead>{strings.columns.movementId}</TableHead>
           <TableHead>{strings.columns.time}</TableHead>
-          <TableHead>{strings.columns.site}</TableHead>
+          <TableHead>{strings.columns.facility}</TableHead>
           <TableHead>{strings.columns.rfidReader}</TableHead>
           <TableHead>{strings.columns.gate}</TableHead>
           <TableHead>{strings.columns.handoverStatus}</TableHead>
@@ -50,7 +50,7 @@ export function EventDetailsTable({
               <TableCell className="font-mono text-xs">{m.tag_id ?? "—"}</TableCell>
               <TableCell className="font-mono text-xs">{m.movement_id}</TableCell>
               <TableCell className="font-mono text-xs">{formatTimestamp(m, timeMode)}</TableCell>
-              <TableCell>{formatSite(m)}</TableCell>
+              <TableCell>{formatFacility(reader, m)}</TableCell>
               <TableCell className="font-mono text-xs">{m.reader_id}</TableCell>
               <TableCell>{reader?.gate_name ?? "—"}</TableCell>
               <TableCell>{m.handover_quality_status ?? "—"}</TableCell>

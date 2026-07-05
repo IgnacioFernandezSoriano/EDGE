@@ -60,7 +60,7 @@ describe("EventDetailsDialog", () => {
     );
     expect(screen.getAllByText(/INBOMBJPTYOAAEM60760004100101/).length).toBeGreaterThan(0);
     expect(screen.getByText("03 Jul 2026 (Fri), 10:00:00")).toBeInTheDocument();
-    expect(screen.getByText("INMUBA (IN)")).toBeInTheDocument();
+    expect(screen.getByText("Facility A (IN)")).toBeInTheDocument();
     expect(screen.getByText("MT")).toBeInTheDocument();
     expect(screen.getByText("OK")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
