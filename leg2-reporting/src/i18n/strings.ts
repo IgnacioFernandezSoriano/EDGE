@@ -23,6 +23,7 @@ export const strings = {
     searchRfidTag: "Search RFID Tag",
     from: "From",
     to: "To",
+    onlyNoEventCode: "Only No Event Code",
   },
   datePresets: {
     today: "Today",

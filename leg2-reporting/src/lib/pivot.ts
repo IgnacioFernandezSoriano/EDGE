@@ -24,6 +24,11 @@ export interface RfidEventsReport {
   hasNoEventCodeInbound: boolean;
 }
 
+/** True when a row carries at least one movement with no EDI event code. */
+export function rowHasNoEventCode(row: S9PivotRow): boolean {
+  return row.noEventCodeOutbound.length > 0 || row.noEventCodeInbound.length > 0;
+}
+
 function latestUtc(movs: RfidMovement[]): string {
   return movs.reduce(
     (max, m) => (m.event_datetime_utc > max ? m.event_datetime_utc : max),

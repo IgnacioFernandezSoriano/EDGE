@@ -23,7 +23,7 @@ function mov(p: Partial<RfidMovement>): RfidMovement {
 }
 
 const base: ReportFilterState = {
-  originCountry: null, destCountry: null, s9Query: "", rteQuery: "",
+  originCountry: null, destCountry: null, s9Query: "", rteQuery: "", onlyNoEventCode: false,
 };
 
 describe("filterMovements", () => {

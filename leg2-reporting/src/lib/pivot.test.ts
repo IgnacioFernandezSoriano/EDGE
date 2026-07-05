@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pivotByS9 } from "@/lib/pivot";
+import { pivotByS9, rowHasNoEventCode } from "@/lib/pivot";
 import type { RfidMovement } from "@/lib/supabase";
 
 function mov(p: Partial<RfidMovement>): RfidMovement {
@@ -75,5 +75,12 @@ describe("pivotByS9", () => {
     ]);
     expect(Object.keys(report.rows[0].cells)).toEqual(["2320"]);
     expect(report.rows[0].noEventCodeOutbound).toHaveLength(1);
+  });
+
+  it("rowHasNoEventCode is true only for rows carrying a gap movement", () => {
+    const gap = pivotByS9([mov({ s9_id: "S1", edi_equivalent: null, movement_type: "INBOUND" })]);
+    const clean = pivotByS9([mov({ s9_id: "S2", edi_equivalent: "2320", movement_type: "OUTBOUND" })]);
+    expect(rowHasNoEventCode(gap.rows[0])).toBe(true);
+    expect(rowHasNoEventCode(clean.rows[0])).toBe(false);
   });
 });

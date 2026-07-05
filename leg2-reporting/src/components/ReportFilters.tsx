@@ -18,6 +18,7 @@ export function ReportFilters({
   setFilter,
   originOptions,
   destOptions,
+  hasIncidents,
   timeMode,
   onTimeModeChange,
   dateRange,
@@ -28,6 +29,7 @@ export function ReportFilters({
   setFilter: Dispatch<SetStateAction<ReportFilterState>>;
   originOptions: string[];
   destOptions: string[];
+  hasIncidents: boolean;
   timeMode: TimeMode;
   onTimeModeChange: (m: TimeMode) => void;
   dateRange: DateRange;
@@ -130,6 +132,17 @@ export function ReportFilters({
             value={filter.rteQuery}
             onChange={(e) => setFilter((f) => ({ ...f, rteQuery: e.target.value }))}
           />
+        </div>
+        <div className="flex items-center gap-2 self-end pb-1">
+          <Switch
+            id="only-no-event-code"
+            checked={filter.onlyNoEventCode}
+            disabled={!hasIncidents}
+            onCheckedChange={(c) =>
+              setFilter((f) => ({ ...f, onlyNoEventCode: c }))
+            }
+          />
+          <Label htmlFor="only-no-event-code">{strings.filters.onlyNoEventCode}</Label>
         </div>
       </div>
     </div>

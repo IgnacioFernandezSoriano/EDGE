@@ -5,6 +5,7 @@ export interface ReportFilterState {
   destCountry: string | null;
   s9Query: string;
   rteQuery: string;
+  onlyNoEventCode: boolean;
 }
 
 export function filterMovements(

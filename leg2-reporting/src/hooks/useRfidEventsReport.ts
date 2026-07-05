@@ -7,7 +7,7 @@ import {
   keepMovementsForS9Set,
   type ReportFilterState,
 } from "@/lib/filter";
-import { pivotByS9, type RfidEventsReport } from "@/lib/pivot";
+import { pivotByS9, rowHasNoEventCode, type RfidEventsReport } from "@/lib/pivot";
 import { presetRange, type DateRange, type DatePreset } from "@/lib/datePresets";
 
 const INITIAL_FILTER: ReportFilterState = {
@@ -15,6 +15,7 @@ const INITIAL_FILTER: ReportFilterState = {
   destCountry: null,
   s9Query: "",
   rteQuery: "",
+  onlyNoEventCode: false,
 };
 
 export function useRfidEventsReport() {
@@ -88,9 +89,21 @@ export function useRfidEventsReport() {
     () => filterMovements(windowMovements, filter),
     [windowMovements, filter]
   );
-  const report: RfidEventsReport = useMemo(
+  const fullReport: RfidEventsReport = useMemo(
     () => pivotByS9(filtered),
     [filtered]
+  );
+  const hasIncidents =
+    fullReport.hasNoEventCodeOutbound || fullReport.hasNoEventCodeInbound;
+  // "Only No Event Code" trims the visible rows to those carrying an incident.
+  // Ignored when the current view has none, so the checkbox can never strand
+  // the table empty.
+  const report: RfidEventsReport = useMemo(
+    () =>
+      filter.onlyNoEventCode && hasIncidents
+        ? { ...fullReport, rows: fullReport.rows.filter(rowHasNoEventCode) }
+        : fullReport,
+    [fullReport, filter.onlyNoEventCode, hasIncidents]
   );
 
   // Country options come from the date-window-selected movements (ignoring country/query filters).
@@ -107,6 +120,7 @@ export function useRfidEventsReport() {
     loading,
     error,
     report,
+    hasIncidents,
     readerMap,
     filter,
     setFilter,
