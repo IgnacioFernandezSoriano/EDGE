@@ -20,6 +20,8 @@ vi.mock("@/hooks/useRfidEventsReport", () => ({
   }),
 }));
 
+vi.mock("@/pages/SettingsPage", () => ({ default: () => <div>SETTINGS_PAGE</div> }));
+
 import App from "@/App";
 
 beforeEach(() => { window.location.hash = ""; });
@@ -33,5 +35,17 @@ describe("App routing", () => {
     await waitFor(() =>
       expect(screen.getByLabelText(/Receptacle .* code/i)).toBeInTheDocument()
     );
+  });
+});
+
+describe("App settings route", () => {
+  it("shows the Settings nav item", () => {
+    render(<App />);
+    expect(screen.getByRole("button", { name: strings.settings.nav })).toBeInTheDocument();
+  });
+  it("renders SettingsPage at #/settings", () => {
+    window.location.hash = "#/settings";
+    render(<App />);
+    expect(screen.getByText("SETTINGS_PAGE")).toBeInTheDocument();
   });
 });
