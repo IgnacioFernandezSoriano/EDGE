@@ -43,7 +43,15 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
   const needsValue = scope !== "global";
   const canRun = !needsValue || (value != null && value !== "");
 
-  function pickScope(s: ReprocessScope) { setScope(s); setValue(null); setStatus("idle"); setResult(null); setMessage(""); }
+  function reset() { setStatus("idle"); setResult(null); setMessage(""); }
+  function pickScope(s: ReprocessScope) { setScope(s); setValue(null); reset(); }
+  function pickValue(v: string) { setValue(v); reset(); }
+
+  const scopeLabel =
+    scope === "reader" ? strings.settings.scopeReader
+    : scope === "site" ? strings.settings.scopeSite
+    : strings.settings.scopeGlobal;
+  const confirmTarget = scope === "global" ? strings.settings.confirmGlobalTarget : value ?? "";
 
   async function run() {
     setConfirmOpen(false);
@@ -80,7 +88,7 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
         {scope === "reader" && (
           <div className="space-y-1">
             <Label>{strings.settings.selectReader}</Label>
-            <Select value={value ?? undefined} onValueChange={setValue}>
+            <Select value={value ?? undefined} onValueChange={pickValue}>
               <SelectTrigger><SelectValue placeholder={strings.settings.selectReader} /></SelectTrigger>
               <SelectContent>
                 {readers.map((r) => (
@@ -94,7 +102,7 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
         {scope === "site" && (
           <div className="space-y-1">
             <Label>{strings.settings.selectSite}</Label>
-            <Select value={value ?? undefined} onValueChange={setValue}>
+            <Select value={value ?? undefined} onValueChange={pickValue}>
               <SelectTrigger><SelectValue placeholder={strings.settings.selectSite} /></SelectTrigger>
               <SelectContent>
                 {sites.map((s) => (
@@ -125,6 +133,9 @@ export default function SettingsPage({ deps = {} }: { deps?: SettingsDeps }) {
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>{strings.settings.confirmTitle}</DialogTitle></DialogHeader>
+          <p className={`text-sm font-medium ${scope === "global" ? "text-amber-700" : ""}`}>
+            {strings.settings.confirmScopePrefix}{scopeLabel} — {confirmTarget}
+          </p>
           <p className="text-sm">{strings.settings.confirmBody}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>{strings.settings.cancel}</Button>

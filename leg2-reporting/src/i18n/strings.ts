@@ -131,6 +131,8 @@ export const strings = {
     recalc: "Recalculate",
     running: "Recalculating…",
     confirmTitle: "Confirm reprocess",
+    confirmScopePrefix: "Scope: ",
+    confirmGlobalTarget: "ALL movements from 2026-01-01 — heavy, full rebuild",
     confirmBody: "This rewrites production movements and re-exports the QuickSight CSV. Continue?",
     confirm: "Yes, recalculate",
     cancel: "Cancel",
