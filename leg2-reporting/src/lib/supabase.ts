@@ -181,3 +181,96 @@ export async function fetchReaderMaster(
     "Leg2 reader master fetch"
   );
 }
+
+export interface EdiEvent {
+  message: string | null;
+  event: string | null;
+  date: string | null;
+  location: string | null;
+  transport: string | null;
+  transport_date: string | null;
+  reference: string | null;
+}
+
+export interface EdiDetail {
+  s9code: string;
+  origin_office: string | null;
+  destination_office: string | null;
+  mail_category: string | null;
+  mail_subclass: string | null;
+  rec_no: string | null;
+  gross_weight: string | null;
+  items: string | null;
+}
+
+const EDI_EVENTS_VIEW = "edi_events";
+const EDI_DETAILS_VIEW = "edi_details";
+export const EDI_EVENTS_SELECT_COLS = [
+  "message", "event", "date", "location", "transport", "transport_date", "reference",
+].join(",");
+export const EDI_DETAILS_SELECT_COLS = [
+  "s9code", "origin_office", "destination_office", "mail_category",
+  "mail_subclass", "rec_no", "gross_weight", "items",
+].join(",");
+
+export function buildEdiEventsUrl(
+  baseUrl: string,
+  opts: { s9: string; offset: number; limit: number }
+): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", EDI_EVENTS_SELECT_COLS);
+  url.searchParams.set("s9code", `eq.${opts.s9}`);
+  url.searchParams.set("offset", String(opts.offset));
+  url.searchParams.set("limit", String(opts.limit));
+  return url.toString();
+}
+
+export async function fetchEdiEvents(s9: string, deps: FetchDeps = {}): Promise<EdiEvent[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${EDI_EVENTS_VIEW}`;
+  return fetchAllPages<EdiEvent>(
+    (offset, limit) => buildEdiEventsUrl(baseUrl, { s9, offset, limit }),
+    fetchFn,
+    headers,
+    "Leg2 edi_events fetch"
+  );
+}
+
+export async function fetchEdiDetails(s9: string, deps: FetchDeps = {}): Promise<EdiDetail | null> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${EDI_DETAILS_VIEW}`;
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", EDI_DETAILS_SELECT_COLS);
+  url.searchParams.set("s9code", `eq.${s9}`);
+  url.searchParams.set("limit", "1");
+  const res = await fetchFn(url.toString(), { headers });
+  if (!res.ok) {
+    throw new Error(`Leg2 edi_details fetch failed: ${res.status} ${await res.text()}`);
+  }
+  const rows = (await res.json()) as EdiDetail[];
+  return rows[0] ?? null;
+}
+
+export function buildMovementsByS9Url(
+  baseUrl: string,
+  opts: { s9: string; offset: number; limit: number }
+): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", SELECT_COLS);
+  url.searchParams.set("s9_id", `eq.${opts.s9}`);
+  url.searchParams.set("order", "event_datetime_utc.asc");
+  url.searchParams.set("offset", String(opts.offset));
+  url.searchParams.set("limit", String(opts.limit));
+  return url.toString();
+}
+
+export async function fetchMovementsByS9(s9: string, deps: FetchDeps = {}): Promise<RfidMovement[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${VIEW}`;
+  return fetchAllPages<RfidMovement>(
+    (offset, limit) => buildMovementsByS9Url(baseUrl, { s9, offset, limit }),
+    fetchFn,
+    headers,
+    "Leg2 movements-by-s9 fetch"
+  );
+}
