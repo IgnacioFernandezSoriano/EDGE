@@ -16,13 +16,13 @@ const deps = {
 
 describe("AtatDialog", () => {
   it("loads and renders the timeline when open", async () => {
-    render(<AtatDialog s9="ABC" open onOpenChange={() => {}} deps={deps} />);
+    render(<AtatDialog s9="INBOMAJPKWSAAUY60597001100039" open onOpenChange={() => {}} deps={deps} />);
     await waitFor(() => expect(screen.getByText("RESDES")).toBeInTheDocument());
-    expect(screen.getByText("ABC")).toBeInTheDocument();
+    expect(screen.getByText("INBOMAJPKWSAAUY60597001100039")).toBeInTheDocument();
   });
 
   it("renders nothing visible when closed", () => {
-    render(<AtatDialog s9="ABC" open={false} onOpenChange={() => {}} deps={deps} />);
+    render(<AtatDialog s9="INBOMAJPKWSAAUY60597001100039" open={false} onOpenChange={() => {}} deps={deps} />);
     expect(screen.queryByText("RESDES")).not.toBeInTheDocument();
   });
 });
