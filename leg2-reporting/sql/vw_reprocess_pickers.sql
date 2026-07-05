@@ -9,7 +9,10 @@
 -- resolved through vw_centre_readers — no change to the core ETL function.
 
 -- Centres that have RFID readings (keyed by centre_code, labelled by site_name).
-create or replace view public.vw_reprocess_sites as
+-- DROP first: the column set changed from an earlier version (site_impc_code ->
+-- centre_code), which `create or replace` cannot do. Safe: only the frontend reads it.
+drop view if exists public.vw_reprocess_sites;
+create view public.vw_reprocess_sites as
 select
   r.centre_code,
   max(r.site_name)           as site_name,
