@@ -65,12 +65,6 @@ rfid_code as (  -- code anchor: earliest movement per (S9, edi_equivalent)
   where edi_equivalent is not null and event_datetime_utc is not null
   group by s9_id, edi_equivalent
 ),
-edi as (        -- EDI anchor: earliest canonical-UTC event per (S9, message)
-  select s9code, message, min(event_datetime_utc) as edi_utc
-  from public.vw_edi_events_tz
-  where event_datetime_utc is not null
-  group by s9code, message
-),
 anchor as (     -- resolve each comparison's RFID selector to a per-S9 anchor
   select c.comparison_key, c.edi_messages, a.s9code, a.rfid_utc
   from public.ref_event_comparison c
@@ -84,15 +78,17 @@ anchor as (     -- resolve each comparison's RFID selector to a per-S9 anchor
 ),
 pairs as (
   -- earliest EDI of the matching type WITHIN the ±7-day window of the RFID
-  -- anchor (window constrained inside the subquery, so an out-of-window
-  -- earlier EDI does not shadow a valid in-window match).
+  -- anchor. Aggregate over the RAW events (not a pre-collapsed per-message
+  -- min), so an out-of-window earlier duplicate does not shadow a valid
+  -- in-window match — the window is the only thing that constrains the min().
   select
     an.comparison_key, an.s9code, an.rfid_utc,
-    (select min(e.edi_utc) from edi e
+    (select min(e.event_datetime_utc) from public.vw_edi_events_tz e
      where e.s9code = an.s9code
        and e.message = any(an.edi_messages)
-       and e.edi_utc between an.rfid_utc - interval '7 days'
-                         and an.rfid_utc + interval '7 days') as edi_utc
+       and e.event_datetime_utc is not null
+       and e.event_datetime_utc between an.rfid_utc - interval '7 days'
+                                    and an.rfid_utc + interval '7 days') as edi_utc
   from anchor an
 )
 select
