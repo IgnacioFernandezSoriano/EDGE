@@ -1,5 +1,7 @@
 // Pure helpers for the Event-pair gaps screen. No I/O.
 
+import { CHECKPOINT_LABELS } from "@/lib/checkpoints";
+
 export type Granularity = "centre" | "country";
 
 // Product filter sentinels. PRODUCT_ALL = every product; PRODUCT_NONE = rows
@@ -10,8 +12,12 @@ export const PRODUCT_NONE = "__none__";
 // A comparison column, sourced from ref_event_comparison (never hardcoded).
 export interface EventComparison {
   comparison_key: string;
+  name: string;
+  a_source: string;
+  a_code: string;
+  b_source: string;
+  b_code: string;
   priority: number;
-  label: string;
 }
 
 // One aggregated row returned by the event_pair_matrix RPC.
@@ -61,4 +67,34 @@ export interface MailCategory {
 // 2-char country of a corridor endpoint at the given granularity.
 export function endpointCountry(endpoint: string, g: Granularity): string {
   return g === "country" ? endpoint : endpoint.slice(0, 2);
+}
+
+export interface EventVocabItem {
+  source: string;
+  code: string;
+  n: number;
+}
+
+export const HANDOVER_CODE = "__HO__";
+
+export function eventShortCode(_source: string, code: string): string {
+  return code === HANDOVER_CODE ? "HO" : code;
+}
+
+export function eventFullLabel(source: string, code: string): string {
+  if (code === HANDOVER_CODE) return "Handover (any gate)";
+  if (source === "RFID") {
+    const l = CHECKPOINT_LABELS[code];
+    return l ? `${code} · ${l}` : code;
+  }
+  return code;
+}
+
+export function comparisonCodeLabel(c: {
+  a_source: string;
+  a_code: string;
+  b_source: string;
+  b_code: string;
+}): string {
+  return `${eventShortCode(c.a_source, c.a_code)} → ${eventShortCode(c.b_source, c.b_code)}`;
 }

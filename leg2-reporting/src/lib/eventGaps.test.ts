@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { pivotMatrix, formatGapDays, type EventPairMatrixRow } from "@/lib/eventGaps";
+import {
+  pivotMatrix,
+  formatGapDays,
+  eventShortCode,
+  eventFullLabel,
+  comparisonCodeLabel,
+  HANDOVER_CODE,
+  type EventPairMatrixRow,
+} from "@/lib/eventGaps";
 
 const rows: EventPairMatrixRow[] = [
   { origin: "IN", destination: "JP", comparison_key: "ho_rescon", mean_days: 3.2, n: 10 },
@@ -31,5 +39,28 @@ describe("formatGapDays", () => {
     expect(formatGapDays(null)).toBe("—");
     expect(formatGapDays(undefined)).toBe("—");
     expect(formatGapDays(NaN)).toBe("—");
+  });
+});
+
+describe("event label helpers", () => {
+  it("eventShortCode maps handover to HO, else the code", () => {
+    expect(eventShortCode("RFID", HANDOVER_CODE)).toBe("HO");
+    expect(eventShortCode("RFID", "2320")).toBe("2320");
+    expect(eventShortCode("EDI", "RESCON")).toBe("RESCON");
+  });
+  it("eventFullLabel names handover and annotates known RFID codes", () => {
+    expect(eventFullLabel("RFID", HANDOVER_CODE)).toBe("Handover (any gate)");
+    expect(eventFullLabel("RFID", "2320")).toBe("2320 · Exit Outbound AMU");
+    expect(eventFullLabel("EDI", "RESCON")).toBe("RESCON");
+  });
+  it("comparisonCodeLabel joins A and B with an arrow", () => {
+    expect(
+      comparisonCodeLabel({
+        a_source: "RFID",
+        a_code: HANDOVER_CODE,
+        b_source: "EDI",
+        b_code: "RESCON",
+      })
+    ).toBe("HO → RESCON");
   });
 });
