@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import {
   PRODUCT_ALL, PRODUCT_NONE,
-  type Granularity, type EventComparison, type EventPairMatrixRow,
+  type Granularity, type EventComparison, type EventPairMatrixRow, type MailCategory,
 } from "@/lib/eventGaps";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -299,6 +299,10 @@ export interface EventPairDetailRow {
   gap_days: number;
   colocation_valid: boolean;
   excluded: boolean;
+  origin_gate: string | null;
+  origin_site: string | null;
+  dest_gate: string | null;
+  dest_site: string | null;
 }
 
 export interface EventPairMatrixParams {
@@ -321,12 +325,14 @@ export interface EventPairDetailParams {
 const REF_COMPARISON_VIEW = "ref_event_comparison";
 const EVENT_PAIR_MATRIX_RPC = "event_pair_matrix";
 const EVENT_PAIR_GAPS_VIEW = "vw_event_pair_gaps_s9";
+const EVENT_PAIR_DETAIL_VIEW = "vw_event_pair_detail_s9";
 const EVENT_PAIR_EXCLUSION_TABLE = "event_pair_exclusion";
 
 const EVENT_PAIR_DETAIL_SELECT_COLS = [
   "s9code", "comparison_key", "origin_office", "dest_office",
   "origin_country", "dest_country", "product", "rfid_utc", "edi_utc",
   "gap_days", "colocation_valid", "excluded",
+  "origin_gate", "origin_site", "dest_gate", "dest_site",
 ].join(",");
 
 export function buildEventPairMatrixBody(p: EventPairMatrixParams): Record<string, unknown> {
@@ -391,11 +397,22 @@ export async function fetchEventPairDetail(
   params: EventPairDetailParams, deps: FetchDeps = {}
 ): Promise<EventPairDetailRow[]> {
   const { fetchFn, headers } = resolveAuth(deps);
-  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${EVENT_PAIR_GAPS_VIEW}`;
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${EVENT_PAIR_DETAIL_VIEW}`;
   return fetchAllPages<EventPairDetailRow>(
     (offset, limit) => buildEventPairDetailUrl(baseUrl, { ...params, offset, limit }),
     fetchFn, headers, "Leg2 event_pair detail fetch"
   );
+}
+
+export async function fetchMailCategories(deps: FetchDeps = {}): Promise<MailCategory[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/ref_mail_category`;
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", "code,name");
+  url.searchParams.set("order", "code");
+  const res = await fetchFn(url.toString(), { headers });
+  if (!res.ok) throw new Error(`Leg2 mail categories fetch failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as MailCategory[];
 }
 
 export async function setEventPairExclusion(

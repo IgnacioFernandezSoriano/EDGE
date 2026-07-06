@@ -26,6 +26,16 @@ describe("buildEventPairDetailUrl", () => {
     expect(u).toContain("comparison_key=eq.ho_rescon");
     expect(u).not.toContain("product="); // 'all' -> no product filter
   });
+  it("requests the new detail gate/site columns", () => {
+    const u = buildEventPairDetailUrl(base, {
+      origin: "INBOMB", destination: "JPTYOA", comparisonKey: "ho_rescon",
+      product: "all", from: "2026-01-01", to: "2026-03-31", granularity: "centre",
+      offset: 0, limit: 1000,
+    });
+    const select = decodeURIComponent(u);
+    expect(select).toContain("origin_gate");
+    expect(select).toContain("dest_site");
+  });
   it("filters by 2-char country columns when granularity=country", () => {
     const u = buildEventPairDetailUrl(base, {
       origin: "IN", destination: "JP", comparisonKey: "ho_rescon",

@@ -52,3 +52,13 @@ export function formatGapDays(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v)) return "—";
   return v.toFixed(1);
 }
+
+export interface MailCategory {
+  code: string;
+  name: string;
+}
+
+// 2-char country of a corridor endpoint at the given granularity.
+export function endpointCountry(endpoint: string, g: Granularity): string {
+  return g === "country" ? endpoint : endpoint.slice(0, 2);
+}
