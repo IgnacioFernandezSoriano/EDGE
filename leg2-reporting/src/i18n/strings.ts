@@ -162,5 +162,6 @@ export const strings = {
     rfidGroup: "RFID events",
     ediGroup: "EDI events",
     empty: "No comparisons yet. Add one.",
+    samePairWarning: "Event A and Event B must differ.",
   },
 } as const;

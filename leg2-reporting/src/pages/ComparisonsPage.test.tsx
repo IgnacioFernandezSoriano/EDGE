@@ -50,6 +50,16 @@ describe("ComparisonsPage", () => {
     ));
   });
 
+  it("disables Save when Event A and Event B are the same", async () => {
+    render(<ComparisonsPage />);
+    await waitFor(() => expect(screen.getByText("Handover → RESCON")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add comparison" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "My cmp" } });
+    fireEvent.change(screen.getByLabelText("Event A"), { target: { value: "RFID|2320" } });
+    fireEvent.change(screen.getByLabelText("Event B"), { target: { value: "RFID|2320" } });
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
   it("deletes a comparison", async () => {
     render(<ComparisonsPage />);
     await waitFor(() => expect(screen.getByText("Handover → RESCON")).toBeInTheDocument());

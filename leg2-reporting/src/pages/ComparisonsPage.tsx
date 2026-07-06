@@ -123,14 +123,17 @@ export default function ComparisonsPage() {
             value={draft.a} onChange={(v) => setDraft({ ...draft, a: v })} />
           <EventSelect id="cmp-b" label={strings.comparisons.eventB} vocab={vocab}
             value={draft.b} onChange={(v) => setDraft({ ...draft, b: v })} />
+          {draft.a && draft.b && draft.a === draft.b && (
+            <p className="text-sm text-red-600">{strings.comparisons.samePairWarning}</p>
+          )}
           <div className="flex flex-col gap-1 w-32">
             <Label htmlFor="cmp-prio">{strings.comparisons.priority}</Label>
             <Input id="cmp-prio" type="number" value={draft.priority}
-              onChange={(e) => setDraft({ ...draft, priority: Number(e.target.value) })} />
+              onChange={(e) => setDraft({ ...draft, priority: Number(e.target.value) || 0 })} />
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={save}
-              disabled={!draft.name || !draft.a || !draft.b}>{strings.comparisons.save}</Button>
+              disabled={!draft.name || !draft.a || !draft.b || draft.a === draft.b}>{strings.comparisons.save}</Button>
             <Button size="sm" variant="outline" onClick={() => setDraft(null)}>{strings.comparisons.cancel}</Button>
           </div>
         </div>

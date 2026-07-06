@@ -8,6 +8,7 @@ import { AtatDialog } from "@/components/AtatDialog";
 import {
   supabase, fetchEventPairDetail, setEventPairExclusion, type EventPairDetailRow,
 } from "@/lib/supabase";
+import { comparisonCodeLabel } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 
 interface Selection { origin: string; destination: string; comparisonKey: string; }
@@ -61,7 +62,14 @@ export default function EventGapsPage() {
     await reload();                              // refresh the matrix means
   }, [selection, loadDetail, reload, user?.email]);
 
-  const title = selection ? `${selection.origin} → ${selection.destination}` : "";
+  const selectedComparison = selection
+    ? comparisons.find((c) => c.comparison_key === selection.comparisonKey)
+    : undefined;
+  const title = selection
+    ? `${selection.origin} → ${selection.destination} · ${
+        selectedComparison ? comparisonCodeLabel(selectedComparison) : selection.comparisonKey
+      }`
+    : "";
 
   return (
     <div className="flex h-full flex-col">

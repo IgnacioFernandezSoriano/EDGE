@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 const { matrix, comparisons, detail, mailCategories } = vi.hoisted(() => ({
   matrix: [{ origin: "IN", destination: "JP", comparison_key: "ho_rescon", mean_days: 3.2, n: 4 }],
@@ -41,6 +41,8 @@ describe("EventGapsPage", () => {
     await waitFor(() => expect(screen.getByText("3.2")).toBeInTheDocument());
     fireEvent.click(screen.getByText("3.2"));
     await waitFor(() => expect(screen.getByText("S9A")).toBeInTheDocument());
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/HO → RESCON/)).toBeInTheDocument();
   });
 
   it("writes an exclusion when a detail checkbox is toggled", async () => {
