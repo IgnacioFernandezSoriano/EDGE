@@ -39,3 +39,9 @@ describe("gaps route", () => {
     expect(parseHash("#/receptacle/ABC")).toEqual({ name: "receptacle", s9: "ABC" });
   });
 });
+
+describe("comparisons route", () => {
+  it("parses #/comparisons to the comparisons route", () => {
+    expect(parseHash("#/comparisons")).toEqual({ name: "comparisons" });
+  });
+});

@@ -39,4 +39,9 @@ describe("App routing", () => {
     render(<App />);
     expect(screen.getByRole("button", { name: strings.gaps.nav })).toBeInTheDocument();
   });
+
+  it("shows the Comparisons nav button", () => {
+    render(<App />);
+    expect(screen.getByRole("button", { name: strings.comparisons.nav })).toBeInTheDocument();
+  });
 });
