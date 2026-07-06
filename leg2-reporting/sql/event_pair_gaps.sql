@@ -17,10 +17,10 @@ create table if not exists public.ref_event_comparison (
 insert into public.ref_event_comparison
   (comparison_key, priority, rfid_selector, edi_messages, requires_colocation, direction, label)
 values
-  ('ho_rescon',    1, 'handover_flag', array['RESCON'], true,  'rfid_first', 'HO vs RESCON'),
-  ('ho_resdes',    2, 'handover_flag', array['RESDES'], true,  'rfid_first', 'HO vs RESDES'),
-  ('ho_predes',    3, 'handover_flag', array['PREDES'], false, 'either',     'HO vs PREDES'),
-  ('arroe_rescon', 4, '2420',          array['RESCON'], true,  'rfid_first', 'ARR_OE vs RESCON')
+  ('ho_rescon',    1, 'handover_flag', array['RESCON'], true,  'rfid_first', '2320/2400/2420 → RESCON'),
+  ('ho_resdes',    2, 'handover_flag', array['RESDES'], true,  'rfid_first', '2320/2400/2420 → RESDES'),
+  ('ho_predes',    3, 'handover_flag', array['PREDES'], false, 'either',     '2320/2400/2420 → PREDES'),
+  ('arroe_rescon', 4, '2420',          array['RESCON'], true,  'rfid_first', '2420 → RESCON')
 on conflict (comparison_key) do update set
   priority            = excluded.priority,
   rfid_selector       = excluded.rfid_selector,
@@ -48,6 +48,28 @@ alter table public.event_pair_exclusion enable row level security;
 drop policy if exists epx_all on public.event_pair_exclusion;
 create policy epx_all on public.event_pair_exclusion
   for all to authenticated using (true) with check (true);
+
+-- 2b) Mail-category display names (UPU transport category). Editable config: the
+-- product filter shows `name`; the pipeline still keys on `code` (mail_category).
+-- Seeded with best-known UPU names — CORRECT THEM HERE if any are off.
+create table if not exists public.ref_mail_category (
+  code text primary key,
+  name text not null
+);
+
+insert into public.ref_mail_category (code, name) values
+  ('A',  'Aéreo / Prioritario'),
+  ('B',  'No prioritario'),
+  ('C',  'S.A.L. (Surface Air Lifted)'),
+  ('D',  'Superficie'),
+  ('E',  'EMS'),
+  ('LC', 'Cartas (LC/AO)')
+on conflict (code) do update set name = excluded.name;
+
+alter table public.ref_mail_category enable row level security;
+drop policy if exists rmc_read on public.ref_mail_category;
+create policy rmc_read on public.ref_mail_category
+  for select to authenticated using (true);
 
 -- 3) Detail view: one row per (S9, comparison) that has both anchors within ±7d.
 create or replace view public.vw_event_pair_gaps_s9
@@ -134,3 +156,35 @@ language sql stable security invoker as $$
 $$;
 
 grant execute on function public.event_pair_matrix(date, date, text, text) to authenticated;
+
+-- 5) Detail-enrichment view: the base gaps view + the receptacle's ORIGIN-role
+-- and DESTINATION-role RFID readings (earliest of each), with gate name (from the
+-- reader master) and site name. Kept SEPARATE from the base view so the matrix
+-- aggregation stays lean and unaffected. Used only by the cell drill-down.
+create or replace view public.vw_event_pair_detail_s9
+with (security_invoker = on) as
+select
+  g.*,
+  orm.gate_name as origin_gate,
+  ord.site_name as origin_site,
+  drm.gate_name as dest_gate,
+  drd.site_name as dest_site
+from public.vw_event_pair_gaps_s9 g
+left join lateral (
+  select m.reader_id, m.site_name
+  from public.vw_quicksight_rfid_report_movements m
+  where m.s9_id = g.s9code and m.route_country_role = 'ORIGIN'
+    and m.event_datetime_utc is not null
+  order by m.event_datetime_utc asc
+  limit 1
+) ord on true
+left join public.vw_reader_master orm on orm.lpi = ord.reader_id
+left join lateral (
+  select m.reader_id, m.site_name
+  from public.vw_quicksight_rfid_report_movements m
+  where m.s9_id = g.s9code and m.route_country_role = 'DESTINATION'
+    and m.event_datetime_utc is not null
+  order by m.event_datetime_utc asc
+  limit 1
+) drd on true
+left join public.vw_reader_master drm on drm.lpi = drd.reader_id;
