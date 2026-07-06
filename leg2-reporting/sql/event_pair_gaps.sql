@@ -136,10 +136,26 @@ with events as (
     where handover_point = true and event_datetime_utc is not null
     group by s9_id
   union all
-  -- EDI events (canonical UTC), first per (S9, message)
-  select s9code, 'EDI', message, min(event_datetime_utc)
-    from public.vw_edi_events_tz
-    where message is not null and event_datetime_utc is not null
+  -- EDI events, first per (S9, message). Canonical UTC when the message carries a
+  -- location we can resolve; otherwise fall back to the S9 origin-country zone so
+  -- location-less messages (e.g. CARDIT, which has a local datetime but no location)
+  -- still land on the UTC axis. Rows that resolve to no timestamp at all are dropped.
+  select s9code, 'EDI'::text, message, min(ts) as ts
+    from (
+      select
+        e.s9code, e.message,
+        coalesce(
+          e.event_datetime_utc,
+          case when e.event_datetime_local is not null
+            then e.event_datetime_local at time zone tz.iana_zone
+          end
+        ) as ts
+      from public.vw_edi_events_tz e
+      left join public.rfid_timezone_map tz
+        on tz.country_code = upper(substr(e.s9code, 1, 2)) and tz.city is null
+      where e.message is not null
+    ) edi
+    where ts is not null
     group by s9code, message
 )
 select
