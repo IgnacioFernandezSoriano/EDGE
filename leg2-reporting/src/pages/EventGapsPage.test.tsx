@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-const { matrix, comparisons, detail } = vi.hoisted(() => ({
+const { matrix, comparisons, detail, mailCategories } = vi.hoisted(() => ({
   matrix: [{ origin: "IN", destination: "JP", comparison_key: "ho_rescon", mean_days: 3.2, n: 4 }],
   comparisons: [{ comparison_key: "ho_rescon", priority: 1, label: "HO vs RESCON" }],
   detail: [{
     s9code: "S9A", comparison_key: "ho_rescon", origin_office: "INBOMB", dest_office: "JPTYOA",
     origin_country: "IN", dest_country: "JP", product: "A",
+    origin_gate: "G1", origin_site: "Site A", dest_gate: null, dest_site: null,
     rfid_utc: "2026-02-01T10:00:00+00:00", edi_utc: "2026-02-04T12:00:00+00:00",
     gap_days: 3.08, colocation_valid: true, excluded: false,
   }],
+  mailCategories: [{ code: "A", name: "Aéreo / Prioritario" }],
 }));
 
 vi.mock("@/lib/supabase", () => ({
@@ -18,9 +20,13 @@ vi.mock("@/lib/supabase", () => ({
   fetchEventPairMatrix: vi.fn().mockResolvedValue(matrix),
   fetchEventPairDetail: vi.fn().mockResolvedValue(detail),
   setEventPairExclusion: vi.fn().mockResolvedValue(undefined),
+  fetchMailCategories: vi.fn().mockResolvedValue(mailCategories),
 }));
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ user: { email: "u@example.com" } }),
+}));
+vi.mock("@/components/AtatDialog", () => ({
+  AtatDialog: ({ s9 }: { s9: string | null }) => (s9 ? <div>atat:{s9}</div> : null),
 }));
 
 import EventGapsPage from "@/pages/EventGapsPage";
@@ -48,5 +54,22 @@ describe("EventGapsPage", () => {
         expect.anything()
       )
     );
+  });
+
+  it("shows the mail category name in the product filter", async () => {
+    render(<EventGapsPage />);
+    await waitFor(() => expect(screen.getByText("3.2")).toBeInTheDocument());
+    const triggers = screen.getAllByRole("combobox");
+    fireEvent.click(triggers[0]);
+    await waitFor(() => expect(screen.getByText("Aéreo / Prioritario")).toBeInTheDocument());
+  });
+
+  it("opens the ATAT dialog when an S9 in the detail dialog is clicked", async () => {
+    render(<EventGapsPage />);
+    await waitFor(() => expect(screen.getByText("3.2")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("3.2"));
+    await waitFor(() => expect(screen.getByText("S9A")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("S9A"));
+    await waitFor(() => expect(screen.getByText("atat:S9A")).toBeInTheDocument());
   });
 });

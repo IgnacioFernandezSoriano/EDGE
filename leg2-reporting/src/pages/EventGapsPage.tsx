@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEventGaps } from "@/hooks/useEventGaps";
 import { EventGapsFilters } from "@/components/EventGapsFilters";
 import { EventGapsMatrix } from "@/components/EventGapsMatrix";
 import { EventGapsDetailDialog } from "@/components/EventGapsDetailDialog";
+import { AtatDialog } from "@/components/AtatDialog";
 import {
   supabase, fetchEventPairDetail, setEventPairExclusion, type EventPairDetailRow,
 } from "@/lib/supabase";
@@ -16,26 +17,14 @@ export default function EventGapsPage() {
   const {
     loading, error, comparisons, rows,
     dateRange, setDateRange, applyPreset,
-    product, setProduct, granularity, setGranularity, reload,
+    product, setProduct, productOptions, granularity, setGranularity, reload,
+    originCountry, setOriginCountry, destCountry, setDestCountry, countryOptions,
   } = useEventGaps();
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [detail, setDetail] = useState<EventPairDetailRow[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
-
-  // Product options = distinct real products seen in the current matrix rows are
-  // not available (matrix is aggregated), so derive from a fixed known set plus
-  // whatever detail exposes. Keep the known categories from the data.
-  const productOptions = useMemo(() => [
-    { code: "A", name: "A" },
-    { code: "B", name: "B" },
-    { code: "D", name: "D" },
-    { code: "LC", name: "LC" },
-  ], []);
-  // TODO(task-5): wire origin/dest country filters through useEventGaps.
-  const [originCountry, setOriginCountry] = useState("");
-  const [destCountry, setDestCountry] = useState("");
-  const countryOptions = useMemo<string[]>(() => [], []);
+  const [atatS9, setAtatS9] = useState<string | null>(null);
 
   async function token(): Promise<{ token: string } | {}> {
     const { data } = await supabase.auth.getSession();
@@ -107,7 +96,13 @@ export default function EventGapsPage() {
         rows={detail}
         loading={detailLoading}
         onToggleExclude={onToggleExclude}
-        onSelectS9={() => {}}
+        onSelectS9={setAtatS9}
+      />
+      <AtatDialog
+        s9={atatS9}
+        open={atatS9 !== null}
+        onOpenChange={(o) => { if (!o) setAtatS9(null); }}
+        initialMode="utc"
       />
     </div>
   );
