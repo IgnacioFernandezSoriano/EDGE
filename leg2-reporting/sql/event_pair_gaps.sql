@@ -161,7 +161,10 @@ grant execute on function public.event_pair_matrix(date, date, text, text) to au
 -- and DESTINATION-role RFID readings (earliest of each), with gate name (from the
 -- reader master) and site name. Kept SEPARATE from the base view so the matrix
 -- aggregation stays lean and unaffected. Used only by the cell drill-down.
-create or replace view public.vw_event_pair_detail_s9
+-- drop+recreate (not create-or-replace): g.* expands the base view's columns,
+-- so if the base view later gains a column a plain replace would fail on reorder.
+drop view if exists public.vw_event_pair_detail_s9;
+create view public.vw_event_pair_detail_s9
 with (security_invoker = on) as
 select
   g.*,
