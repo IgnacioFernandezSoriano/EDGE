@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   PRODUCT_ALL, PRODUCT_NONE,
   type Granularity, type EventComparison, type EventPairMatrixRow, type MailCategory,
+  type EventVocabItem,
 } from "@/lib/eventGaps";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -294,10 +295,9 @@ export interface EventPairDetailRow {
   origin_country: string;
   dest_country: string;
   product: string | null;
-  rfid_utc: string;
-  edi_utc: string;
+  a_utc: string;
+  b_utc: string;
   gap_days: number;
-  colocation_valid: boolean;
   excluded: boolean;
   origin_gate: string | null;
   origin_site: string | null;
@@ -327,11 +327,13 @@ const EVENT_PAIR_MATRIX_RPC = "event_pair_matrix";
 const EVENT_PAIR_GAPS_VIEW = "vw_event_pair_gaps_s9";
 const EVENT_PAIR_DETAIL_VIEW = "vw_event_pair_detail_s9";
 const EVENT_PAIR_EXCLUSION_TABLE = "event_pair_exclusion";
+const COMPARISON_TABLE = "ref_event_comparison";
+const COMPARISON_EVENTS_VIEW = "vw_comparison_events";
 
 const EVENT_PAIR_DETAIL_SELECT_COLS = [
   "s9code", "comparison_key", "origin_office", "dest_office",
-  "origin_country", "dest_country", "product", "rfid_utc", "edi_utc",
-  "gap_days", "colocation_valid", "excluded",
+  "origin_country", "dest_country", "product", "a_utc", "b_utc",
+  "gap_days", "excluded",
   "origin_gate", "origin_site", "dest_gate", "dest_site",
 ].join(",");
 
@@ -355,8 +357,8 @@ export function buildEventPairDetailUrl(
   } else if (opts.product !== PRODUCT_ALL) {
     url.searchParams.set("product", `eq.${opts.product}`);
   }
-  url.searchParams.append("rfid_utc", `gte.${opts.from}T00:00:00`);
-  url.searchParams.append("rfid_utc", `lte.${opts.to}T23:59:59`);
+  url.searchParams.append("a_utc", `gte.${opts.from}T00:00:00`);
+  url.searchParams.append("a_utc", `lte.${opts.to}T23:59:59`);
   url.searchParams.set("order", "gap_days.desc");
   url.searchParams.set("offset", String(opts.offset));
   url.searchParams.set("limit", String(opts.limit));
@@ -374,11 +376,66 @@ export async function fetchEventComparisons(deps: FetchDeps = {}): Promise<Event
   const { fetchFn, headers } = resolveAuth(deps);
   const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${REF_COMPARISON_VIEW}`;
   const url = new URL(baseUrl);
-  url.searchParams.set("select", "comparison_key,priority,label");
+  url.searchParams.set("select", "comparison_key,name,priority,a_source,a_code,b_source,b_code");
   url.searchParams.set("order", "priority");
   const res = await fetchFn(url.toString(), { headers });
   if (!res.ok) throw new Error(`Leg2 comparisons fetch failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as EventComparison[];
+}
+
+export function buildComparisonUpsertBody(c: EventComparison): Record<string, unknown> {
+  return {
+    comparison_key: c.comparison_key, name: c.name,
+    a_source: c.a_source, a_code: c.a_code,
+    b_source: c.b_source, b_code: c.b_code, priority: c.priority,
+  };
+}
+
+export function buildComparisonDeleteUrl(baseUrl: string, comparisonKey: string): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("comparison_key", `eq.${comparisonKey}`);
+  return url.toString();
+}
+
+export async function fetchComparisonEvents(deps: FetchDeps = {}): Promise<EventVocabItem[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${COMPARISON_EVENTS_VIEW}`;
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", "source,code,n");
+  url.searchParams.set("order", "source,code");
+  const res = await fetchFn(url.toString(), { headers });
+  if (!res.ok) throw new Error(`Leg2 comparison events fetch failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as EventVocabItem[];
+}
+
+export async function createComparison(c: EventComparison, deps: FetchDeps = {}): Promise<void> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${COMPARISON_TABLE}`;
+  const res = await fetchFn(baseUrl, {
+    method: "POST",
+    headers: { ...headers, Prefer: "return=minimal" },
+    body: JSON.stringify(buildComparisonUpsertBody(c)),
+  });
+  if (!res.ok) throw new Error(`Leg2 comparison insert failed: ${res.status} ${await res.text()}`);
+}
+
+export async function updateComparison(key: string, c: EventComparison, deps: FetchDeps = {}): Promise<void> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${COMPARISON_TABLE}`;
+  const url = buildComparisonDeleteUrl(baseUrl, key); // same key filter
+  const res = await fetchFn(url, {
+    method: "PATCH",
+    headers: { ...headers, Prefer: "return=minimal" },
+    body: JSON.stringify(buildComparisonUpsertBody(c)),
+  });
+  if (!res.ok) throw new Error(`Leg2 comparison update failed: ${res.status} ${await res.text()}`);
+}
+
+export async function deleteComparison(key: string, deps: FetchDeps = {}): Promise<void> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${COMPARISON_TABLE}`;
+  const res = await fetchFn(buildComparisonDeleteUrl(baseUrl, key), { method: "DELETE", headers });
+  if (!res.ok) throw new Error(`Leg2 comparison delete failed: ${res.status} ${await res.text()}`);
 }
 
 export async function fetchEventPairMatrix(

@@ -3,6 +3,8 @@ import {
   buildEventPairMatrixBody,
   buildEventPairDetailUrl,
   buildExclusionDeleteUrl,
+  buildComparisonUpsertBody,
+  buildComparisonDeleteUrl,
 } from "@/lib/supabase";
 
 describe("buildEventPairMatrixBody", () => {
@@ -46,15 +48,15 @@ describe("buildEventPairDetailUrl", () => {
     expect(u).toContain("dest_country=eq.JP");
     expect(u).toContain("product=is.null"); // __none__ -> null products
   });
-  it("filters by explicit product and by rfid_utc range", () => {
+  it("filters by explicit product and by a_utc range", () => {
     const u = buildEventPairDetailUrl(base, {
       origin: "IN", destination: "JP", comparisonKey: "ho_rescon",
       product: "A", from: "2026-01-01", to: "2026-03-31", granularity: "country",
       offset: 0, limit: 1000,
     });
     expect(u).toContain("product=eq.A");
-    expect(decodeURIComponent(u)).toContain("rfid_utc=gte.2026-01-01T00:00:00");
-    expect(decodeURIComponent(u)).toContain("rfid_utc=lte.2026-03-31T23:59:59");
+    expect(decodeURIComponent(u)).toContain("a_utc=gte.2026-01-01T00:00:00");
+    expect(decodeURIComponent(u)).toContain("a_utc=lte.2026-03-31T23:59:59");
   });
 });
 
@@ -65,5 +67,29 @@ describe("buildExclusionDeleteUrl", () => {
     );
     expect(u).toContain("s9code=eq.S9X");
     expect(u).toContain("comparison_key=eq.ho_rescon");
+  });
+});
+
+describe("incr3 comparison CRUD + detail rename", () => {
+  it("detail url selects a_utc/b_utc and filters by a_utc range", () => {
+    const u = buildEventPairDetailUrl("https://x.supabase.co/rest/v1/vw_event_pair_detail_s9", {
+      origin: "IN", destination: "JP", comparisonKey: "ho_rescon",
+      product: "all", from: "2026-01-01", to: "2026-03-31", granularity: "country",
+      offset: 0, limit: 1000,
+    });
+    expect(u).toContain("a_utc");
+    expect(u).not.toContain("rfid_utc");
+    expect(decodeURIComponent(u)).toContain("a_utc=gte.2026-01-01T00:00:00");
+  });
+  it("buildComparisonUpsertBody maps fields", () => {
+    expect(buildComparisonUpsertBody({
+      comparison_key: "k1", name: "N", a_source: "RFID", a_code: "2320",
+      b_source: "EDI", b_code: "RESCON", priority: 5,
+    })).toEqual({ comparison_key: "k1", name: "N", a_source: "RFID", a_code: "2320",
+      b_source: "EDI", b_code: "RESCON", priority: 5 });
+  });
+  it("buildComparisonDeleteUrl filters by key", () => {
+    expect(buildComparisonDeleteUrl("https://x.supabase.co/rest/v1/ref_event_comparison", "k1"))
+      .toContain("comparison_key=eq.k1");
   });
 });
