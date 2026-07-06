@@ -26,7 +26,16 @@ export default function EventGapsPage() {
   // Product options = distinct real products seen in the current matrix rows are
   // not available (matrix is aggregated), so derive from a fixed known set plus
   // whatever detail exposes. Keep the known categories from the data.
-  const productOptions = useMemo(() => ["A", "B", "D", "LC"], []);
+  const productOptions = useMemo(() => [
+    { code: "A", name: "A" },
+    { code: "B", name: "B" },
+    { code: "D", name: "D" },
+    { code: "LC", name: "LC" },
+  ], []);
+  // TODO(task-5): wire origin/dest country filters through useEventGaps.
+  const [originCountry, setOriginCountry] = useState("");
+  const [destCountry, setDestCountry] = useState("");
+  const countryOptions = useMemo<string[]>(() => [], []);
 
   async function token(): Promise<{ token: string } | {}> {
     const { data } = await supabase.auth.getSession();
@@ -71,6 +80,9 @@ export default function EventGapsPage() {
         <EventGapsFilters
           dateRange={dateRange} onDateChange={setDateRange} onApplyPreset={applyPreset}
           product={product} onProductChange={setProduct} productOptions={productOptions}
+          originCountry={originCountry} onOriginCountryChange={setOriginCountry}
+          destCountry={destCountry} onDestCountryChange={setDestCountry}
+          countryOptions={countryOptions}
           granularity={granularity} onGranularityChange={setGranularity}
         />
       </div>

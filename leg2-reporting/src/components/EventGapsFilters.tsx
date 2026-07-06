@@ -1,5 +1,5 @@
 import { PRESET_ORDER, type DateRange, type DatePreset } from "@/lib/datePresets";
-import { PRODUCT_ALL, PRODUCT_NONE, type Granularity } from "@/lib/eventGaps";
+import { PRODUCT_ALL, PRODUCT_NONE, type Granularity, type MailCategory } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,13 +8,20 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
+const ALL_COUNTRY = "__all__";
+
 export interface EventGapsFiltersProps {
   dateRange: DateRange;
   onDateChange: (r: DateRange) => void;
   onApplyPreset: (p: DatePreset) => void;
   product: string;
   onProductChange: (p: string) => void;
-  productOptions: string[];
+  productOptions: MailCategory[];
+  originCountry: string;
+  destCountry: string;
+  onOriginCountryChange: (c: string) => void;
+  onDestCountryChange: (c: string) => void;
+  countryOptions: string[];
   granularity: Granularity;
   onGranularityChange: (g: Granularity) => void;
 }
@@ -22,6 +29,7 @@ export interface EventGapsFiltersProps {
 export function EventGapsFilters({
   dateRange, onDateChange, onApplyPreset,
   product, onProductChange, productOptions,
+  originCountry, destCountry, onOriginCountryChange, onDestCountryChange, countryOptions,
   granularity, onGranularityChange,
 }: EventGapsFiltersProps) {
   return (
@@ -51,6 +59,36 @@ export function EventGapsFilters({
             <SelectItem value={PRODUCT_ALL}>{strings.gaps.allProducts}</SelectItem>
             <SelectItem value={PRODUCT_NONE}>{strings.gaps.noProduct}</SelectItem>
             {productOptions.map((c) => (
+              <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label>{strings.gaps.origCountry}</Label>
+        <Select
+          value={originCountry === "" ? ALL_COUNTRY : originCountry}
+          onValueChange={(v) => onOriginCountryChange(v === ALL_COUNTRY ? "" : v)}
+        >
+          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_COUNTRY}>{strings.filters.all}</SelectItem>
+            {countryOptions.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label>{strings.gaps.destCountry}</Label>
+        <Select
+          value={destCountry === "" ? ALL_COUNTRY : destCountry}
+          onValueChange={(v) => onDestCountryChange(v === ALL_COUNTRY ? "" : v)}
+        >
+          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_COUNTRY}>{strings.filters.all}</SelectItem>
+            {countryOptions.map((c) => (
               <SelectItem key={c} value={c}>{c}</SelectItem>
             ))}
           </SelectContent>

@@ -126,6 +126,8 @@ export const strings = {
     granularity: "Granularity",
     granularityCentre: "Centre",
     granularityCountry: "Country",
+    origCountry: "Orig country",
+    destCountry: "Dest country",
     corridor: "Corridor",
     pairs: "pairs",
     detailTitle: "Pairs",
