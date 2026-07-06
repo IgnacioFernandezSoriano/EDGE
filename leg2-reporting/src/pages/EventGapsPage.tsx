@@ -107,6 +107,7 @@ export default function EventGapsPage() {
         rows={detail}
         loading={detailLoading}
         onToggleExclude={onToggleExclude}
+        onSelectS9={() => {}}
       />
     </div>
   );

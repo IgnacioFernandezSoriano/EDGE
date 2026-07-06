@@ -138,6 +138,10 @@ export const strings = {
     colRfid: "RFID (handover)",
     colEdi: "EDI",
     colGap: "Gap (days)",
+    colOrigin: "Origin",
+    colDest: "Dest",
+    gate: "Gate",
+    site: "Site",
     noRows: "No pairs for this filter.",
   },
 } as const;
