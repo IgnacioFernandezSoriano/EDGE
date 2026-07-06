@@ -20,6 +20,8 @@ vi.mock("@/hooks/useRfidEventsReport", () => ({
   }),
 }));
 
+vi.mock("@/pages/SettingsPage", () => ({ default: () => <div>SETTINGS_PAGE</div> }));
+
 import App from "@/App";
 
 beforeEach(() => { window.location.hash = ""; });
@@ -40,8 +42,20 @@ describe("App routing", () => {
     expect(screen.getByRole("button", { name: strings.gaps.nav })).toBeInTheDocument();
   });
 
-  it("shows the Comparisons nav button", () => {
+  it("does not show a top-level Comparisons nav button (now inside Config)", () => {
     render(<App />);
-    expect(screen.getByRole("button", { name: strings.comparisons.nav })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: strings.comparisons.nav })).not.toBeInTheDocument();
+  });
+});
+
+describe("App settings route", () => {
+  it("shows the Settings nav item", () => {
+    render(<App />);
+    expect(screen.getByRole("button", { name: strings.settings.nav })).toBeInTheDocument();
+  });
+  it("renders SettingsPage at #/settings", () => {
+    window.location.hash = "#/settings";
+    render(<App />);
+    expect(screen.getByText("SETTINGS_PAGE")).toBeInTheDocument();
   });
 });

@@ -187,6 +187,69 @@ export async function fetchReaderMaster(
   );
 }
 
+// A "site" in the picker is a CENTRE (keyed by centre_code): most centres have no
+// site_impc_code, but every reading carries a centre. See sql/vw_reprocess_pickers.sql.
+export interface SiteOption {
+  centre_code: string;
+  site_name: string | null;
+  country_code: string | null;
+}
+
+// Pickers are sourced from the RFID READINGS (rfid_edge_input_reads), not the
+// master snapshot: only centres/readers that actually have readings in the
+// solution can be reprocessed. See sql/vw_reprocess_pickers.sql.
+const SITES_VIEW = "vw_reprocess_sites";
+export const SITES_SELECT_COLS = ["centre_code", "site_name", "country_code"].join(",");
+
+export function buildSitesUrl(baseUrl: string, opts: { offset: number; limit: number }): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", SITES_SELECT_COLS);
+  url.searchParams.set("order", "site_name");
+  url.searchParams.set("offset", String(opts.offset));
+  url.searchParams.set("limit", String(opts.limit));
+  return url.toString();
+}
+
+export async function fetchSites(deps: FetchDeps = {}): Promise<SiteOption[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${SITES_VIEW}`;
+  return fetchAllPages<SiteOption>(
+    (offset, limit) => buildSitesUrl(baseUrl, { offset, limit }),
+    fetchFn,
+    headers,
+    "Leg2 sites fetch"
+  );
+}
+
+export interface ReaderOption {
+  reader_id: string;
+  facility_name: string | null;
+  site_impc_code: string | null;
+}
+
+const READERS_VIEW = "vw_reprocess_readers";
+export const READER_OPTIONS_SELECT_COLS = ["reader_id", "facility_name", "site_impc_code"].join(",");
+
+export function buildReaderOptionsUrl(baseUrl: string, opts: { offset: number; limit: number }): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", READER_OPTIONS_SELECT_COLS);
+  url.searchParams.set("order", "reader_id");
+  url.searchParams.set("offset", String(opts.offset));
+  url.searchParams.set("limit", String(opts.limit));
+  return url.toString();
+}
+
+export async function fetchReaderOptions(deps: FetchDeps = {}): Promise<ReaderOption[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${READERS_VIEW}`;
+  return fetchAllPages<ReaderOption>(
+    (offset, limit) => buildReaderOptionsUrl(baseUrl, { offset, limit }),
+    fetchFn,
+    headers,
+    "Leg2 reader options fetch"
+  );
+}
+
 export interface EdiEvent {
   message: string | null;
   event: string | null;

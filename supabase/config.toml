@@ -9,6 +9,10 @@ verify_jwt = true
 [functions.rfid-reprocess-site]
 verify_jwt = true
 
+# General reprocess trigger (reader|site|global) for the Settings screen.
+[functions.rfid-reprocess]
+verify_jwt = true
+
 # In-app reader Operation editor. Deployed to EDGE Leg2 via `--project-ref`.
 # Holds the GMS service_role key as the GMS_SERVICE_ROLE_KEY secret.
 [functions.apply-reader-edit]

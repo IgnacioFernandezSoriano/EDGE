@@ -18,6 +18,7 @@ const report: RfidEventsReport = {
       cells: {
         "2320": {
           reader_id: "R1",
+          site_name: "Kawasaki Higashi OE",
           event_datetime_utc: "2026-07-03T10:00:00+00:00",
           event_datetime_local: "2026-07-03T19:00:00",
         } as any,
@@ -124,6 +125,7 @@ describe("RfidEventsPivot", () => {
     expect(screen.getByText("R1")).toBeInTheDocument();
     expect(screen.getByText(/MT/)).toBeInTheDocument();
     expect(screen.getByText("HO")).toBeInTheDocument();
+    expect(screen.getByText("Kawasaki Higashi OE")).toBeInTheDocument();
   });
 
   const reportWithGap: RfidEventsReport = {

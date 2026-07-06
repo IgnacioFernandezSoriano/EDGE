@@ -4,7 +4,7 @@ import LoginPage from "@/pages/LoginPage";
 import RfidEventsPage from "@/pages/RfidEventsPage";
 import AtatPage from "@/pages/AtatPage";
 import EventGapsPage from "@/pages/EventGapsPage";
-import ComparisonsPage from "@/pages/ComparisonsPage";
+import SettingsPage from "@/pages/SettingsPage";
 import { parseHash, type Route } from "@/lib/hashRoute";
 import { strings } from "@/i18n/strings";
 import { Button } from "@/components/ui/button";
@@ -45,11 +45,11 @@ function Nav({ route }: { route: Route }) {
         {strings.gaps.nav}
       </Button>
       <Button
-        variant={route.name === "comparisons" ? "default" : "outline"}
+        variant={route.name === "settings" ? "default" : "outline"}
         size="sm"
-        onClick={() => go("#/comparisons")}
+        onClick={() => go("#/settings")}
       >
-        {strings.comparisons.nav}
+        {strings.settings.nav}
       </Button>
     </nav>
   );
@@ -75,13 +75,13 @@ function Gate() {
         </div>
       </header>
       <div className="flex-1 min-h-0 overflow-auto">
-        {route.name === "comparisons"
-          ? <ComparisonsPage />
+        {route.name === "settings"
+          ? <SettingsPage />
           : route.name === "gaps"
-          ? <EventGapsPage />
-          : route.name === "receptacle"
-            ? <AtatPage s9={route.s9 || null} />
-            : <RfidEventsPage />}
+            ? <EventGapsPage />
+            : route.name === "receptacle"
+              ? <AtatPage s9={route.s9 || null} />
+              : <RfidEventsPage />}
       </div>
     </div>
   );
