@@ -9,8 +9,8 @@ create table if not exists public.ref_event_comparison (
   priority            int  not null,
   rfid_selector       text not null,       -- 'handover_flag' | a 4-digit code, e.g. '2420'
   edi_messages        text[] not null,     -- e.g. {RESCON}
-  requires_colocation boolean not null default false,
-  direction           text not null,       -- 'rfid_first' | 'either'
+  requires_colocation boolean not null default false,  -- reserved (v1 does not filter on colocation)
+  direction           text not null,       -- 'rfid_first' | 'either' (reserved; v1 uses a symmetric ±7d window, not enforced)
   label               text not null
 );
 
@@ -83,10 +83,16 @@ anchor as (     -- resolve each comparison's RFID selector to a per-S9 anchor
   ) a
 ),
 pairs as (
+  -- earliest EDI of the matching type WITHIN the ±7-day window of the RFID
+  -- anchor (window constrained inside the subquery, so an out-of-window
+  -- earlier EDI does not shadow a valid in-window match).
   select
     an.comparison_key, an.s9code, an.rfid_utc,
     (select min(e.edi_utc) from edi e
-     where e.s9code = an.s9code and e.message = any(an.edi_messages)) as edi_utc
+     where e.s9code = an.s9code
+       and e.message = any(an.edi_messages)
+       and e.edi_utc between an.rfid_utc - interval '7 days'
+                         and an.rfid_utc + interval '7 days') as edi_utc
   from anchor an
 )
 select
@@ -107,8 +113,7 @@ from pairs p
 left join public.edi_details d on d.s9code = p.s9code
 left join public.event_pair_exclusion x
   on x.s9code = p.s9code and x.comparison_key = p.comparison_key
-where p.edi_utc is not null
-  and p.edi_utc between p.rfid_utc - interval '7 days' and p.rfid_utc + interval '7 days';
+where p.edi_utc is not null;  -- drops anchors with no matching EDI in the window
 
 -- 4) Aggregation to the grid. security invoker -> country RLS on base data applies.
 create or replace function public.event_pair_matrix(
