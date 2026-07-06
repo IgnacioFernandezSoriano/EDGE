@@ -1,4 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  PRODUCT_ALL, PRODUCT_NONE,
+  type Granularity, type EventComparison, type EventPairMatrixRow,
+} from "@/lib/eventGaps";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -278,4 +282,140 @@ export async function fetchMovementsByS9(s9: string, deps: FetchDeps = {}): Prom
     headers,
     "Leg2 movements-by-s9 fetch"
   );
+}
+
+// ── Event-pair gaps ────────────────────────────────────────────────────────
+
+export interface EventPairDetailRow {
+  s9code: string;
+  comparison_key: string;
+  origin_office: string;
+  dest_office: string;
+  origin_country: string;
+  dest_country: string;
+  product: string | null;
+  rfid_utc: string;
+  edi_utc: string;
+  gap_days: number;
+  colocation_valid: boolean;
+  excluded: boolean;
+}
+
+export interface EventPairMatrixParams {
+  from: string;
+  to: string;
+  product: string;     // PRODUCT_ALL | PRODUCT_NONE | a mail_category
+  granularity: Granularity;
+}
+
+export interface EventPairDetailParams {
+  origin: string;
+  destination: string;
+  comparisonKey: string;
+  product: string;
+  from: string;
+  to: string;
+  granularity: Granularity;
+}
+
+const REF_COMPARISON_VIEW = "ref_event_comparison";
+const EVENT_PAIR_MATRIX_RPC = "event_pair_matrix";
+const EVENT_PAIR_GAPS_VIEW = "vw_event_pair_gaps_s9";
+const EVENT_PAIR_EXCLUSION_TABLE = "event_pair_exclusion";
+
+const EVENT_PAIR_DETAIL_SELECT_COLS = [
+  "s9code", "comparison_key", "origin_office", "dest_office",
+  "origin_country", "dest_country", "product", "rfid_utc", "edi_utc",
+  "gap_days", "colocation_valid", "excluded",
+].join(",");
+
+export function buildEventPairMatrixBody(p: EventPairMatrixParams): Record<string, unknown> {
+  return { p_from: p.from, p_to: p.to, p_product: p.product, p_granularity: p.granularity };
+}
+
+export function buildEventPairDetailUrl(
+  baseUrl: string,
+  opts: EventPairDetailParams & { offset: number; limit: number }
+): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", EVENT_PAIR_DETAIL_SELECT_COLS);
+  url.searchParams.set("comparison_key", `eq.${opts.comparisonKey}`);
+  const originCol = opts.granularity === "country" ? "origin_country" : "origin_office";
+  const destCol = opts.granularity === "country" ? "dest_country" : "dest_office";
+  url.searchParams.set(originCol, `eq.${opts.origin}`);
+  url.searchParams.set(destCol, `eq.${opts.destination}`);
+  if (opts.product === PRODUCT_NONE) {
+    url.searchParams.set("product", "is.null");
+  } else if (opts.product !== PRODUCT_ALL) {
+    url.searchParams.set("product", `eq.${opts.product}`);
+  }
+  url.searchParams.append("rfid_utc", `gte.${opts.from}T00:00:00`);
+  url.searchParams.append("rfid_utc", `lte.${opts.to}T23:59:59`);
+  url.searchParams.set("order", "gap_days.desc");
+  url.searchParams.set("offset", String(opts.offset));
+  url.searchParams.set("limit", String(opts.limit));
+  return url.toString();
+}
+
+export function buildExclusionDeleteUrl(baseUrl: string, s9code: string, comparisonKey: string): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("s9code", `eq.${s9code}`);
+  url.searchParams.set("comparison_key", `eq.${comparisonKey}`);
+  return url.toString();
+}
+
+export async function fetchEventComparisons(deps: FetchDeps = {}): Promise<EventComparison[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${REF_COMPARISON_VIEW}`;
+  const url = new URL(baseUrl);
+  url.searchParams.set("select", "comparison_key,priority,label");
+  url.searchParams.set("order", "priority");
+  const res = await fetchFn(url.toString(), { headers });
+  if (!res.ok) throw new Error(`Leg2 comparisons fetch failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as EventComparison[];
+}
+
+export async function fetchEventPairMatrix(
+  params: EventPairMatrixParams, deps: FetchDeps = {}
+): Promise<EventPairMatrixRow[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/rpc/${EVENT_PAIR_MATRIX_RPC}`;
+  const res = await fetchFn(baseUrl, {
+    method: "POST", headers, body: JSON.stringify(buildEventPairMatrixBody(params)),
+  });
+  if (!res.ok) throw new Error(`Leg2 event_pair_matrix failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as EventPairMatrixRow[];
+}
+
+export async function fetchEventPairDetail(
+  params: EventPairDetailParams, deps: FetchDeps = {}
+): Promise<EventPairDetailRow[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${EVENT_PAIR_GAPS_VIEW}`;
+  return fetchAllPages<EventPairDetailRow>(
+    (offset, limit) => buildEventPairDetailUrl(baseUrl, { ...params, offset, limit }),
+    fetchFn, headers, "Leg2 event_pair detail fetch"
+  );
+}
+
+export async function setEventPairExclusion(
+  args: { s9code: string; comparisonKey: string; excluded: boolean; excludedBy: string },
+  deps: FetchDeps = {}
+): Promise<void> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/${EVENT_PAIR_EXCLUSION_TABLE}`;
+  if (args.excluded) {
+    const res = await fetchFn(baseUrl, {
+      method: "POST",
+      headers: { ...headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        s9code: args.s9code, comparison_key: args.comparisonKey, excluded_by: args.excludedBy,
+      }),
+    });
+    if (!res.ok) throw new Error(`Leg2 exclusion insert failed: ${res.status} ${await res.text()}`);
+  } else {
+    const url = buildExclusionDeleteUrl(baseUrl, args.s9code, args.comparisonKey);
+    const res = await fetchFn(url, { method: "DELETE", headers });
+    if (!res.ok) throw new Error(`Leg2 exclusion delete failed: ${res.status} ${await res.text()}`);
+  }
 }
