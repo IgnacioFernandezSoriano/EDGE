@@ -24,6 +24,13 @@ begin
     drop function if exists public.event_pair_matrix(date, date, text, text);
     drop view if exists public.vw_event_pair_detail_s9;
     drop view if exists public.vw_event_pair_gaps_s9;
+    -- the pre-existing (old-schema) table lacks the new columns; add them before backfill.
+    alter table public.ref_event_comparison
+      add column if not exists name text,
+      add column if not exists a_source text,
+      add column if not exists a_code text,
+      add column if not exists b_source text,
+      add column if not exists b_code text;
     -- backfill new columns from the old ones for the existing 4 rows.
     update public.ref_event_comparison set
       name     = coalesce(name, label),
