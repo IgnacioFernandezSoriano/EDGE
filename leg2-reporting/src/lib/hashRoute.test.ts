@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseHash, receptacleHash } from "@/lib/hashRoute";
+import { parseHash, receptacleHash, gapsHash } from "@/lib/hashRoute";
 
 describe("parseHash", () => {
   it("defaults to the report", () => {
@@ -25,5 +25,17 @@ describe("receptacleHash", () => {
     const h = receptacleHash("  ABC 1  ");
     expect(h).toBe("#/receptacle/ABC%201");
     expect(parseHash(h)).toEqual({ name: "receptacle", s9: "ABC 1" });
+  });
+});
+
+describe("gaps route", () => {
+  it("parses #/gaps to the gaps route", () => {
+    expect(parseHash("#/gaps")).toEqual({ name: "gaps" });
+  });
+  it("gapsHash builds the hash", () => {
+    expect(gapsHash()).toBe("#/gaps");
+  });
+  it("keeps #/receptacle working", () => {
+    expect(parseHash("#/receptacle/ABC")).toEqual({ name: "receptacle", s9: "ABC" });
   });
 });

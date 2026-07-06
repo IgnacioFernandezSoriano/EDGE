@@ -1,6 +1,10 @@
-export type Route = { name: "report" } | { name: "receptacle"; s9: string };
+export type Route =
+  | { name: "report" }
+  | { name: "receptacle"; s9: string }
+  | { name: "gaps" };
 
 const RECEPTACLE_RE = /^#\/receptacle(?:\/(.*))?$/;
+const GAPS_RE = /^#\/gaps\b/;
 
 export function parseHash(hash: string): Route {
   const m = RECEPTACLE_RE.exec(hash);
@@ -8,9 +12,14 @@ export function parseHash(hash: string): Route {
     const s9 = decodeURIComponent(m[1] ?? "").trim();
     return { name: "receptacle", s9 };
   }
+  if (GAPS_RE.test(hash)) return { name: "gaps" };
   return { name: "report" };
 }
 
 export function receptacleHash(s9: string): string {
   return `#/receptacle/${encodeURIComponent(s9.trim())}`;
+}
+
+export function gapsHash(): string {
+  return "#/gaps";
 }
