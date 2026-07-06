@@ -55,8 +55,8 @@ export function EventGapsDetailDialog({
                 <TableHead>{strings.gaps.colProduct}</TableHead>
                 <TableHead>{strings.gaps.colOrigin}</TableHead>
                 <TableHead>{strings.gaps.colDest}</TableHead>
-                <TableHead>{strings.gaps.colRfid}</TableHead>
-                <TableHead>{strings.gaps.colEdi}</TableHead>
+                <TableHead>{strings.gaps.colEventA}</TableHead>
+                <TableHead>{strings.gaps.colEventB}</TableHead>
                 <TableHead className="text-right">{strings.gaps.colGap}</TableHead>
                 <TableHead className="text-center">{strings.gaps.exclude}</TableHead>
               </TableRow>
@@ -76,8 +76,8 @@ export function EventGapsDetailDialog({
                   <TableCell>{r.product ?? strings.gaps.noProduct}</TableCell>
                   <TableCell><GateSite gate={r.origin_gate} site={r.origin_site} /></TableCell>
                   <TableCell><GateSite gate={r.dest_gate} site={r.dest_site} /></TableCell>
-                  <TableCell className="font-mono text-xs">{utcStamp(r.rfid_utc)}</TableCell>
-                  <TableCell className="font-mono text-xs">{utcStamp(r.edi_utc)}</TableCell>
+                  <TableCell className="font-mono text-xs">{utcStamp(r.a_utc)}</TableCell>
+                  <TableCell className="font-mono text-xs">{utcStamp(r.b_utc)}</TableCell>
                   <TableCell className="text-right font-semibold">{formatGapDays(r.gap_days)}</TableCell>
                   <TableCell className="text-center">
                     <input

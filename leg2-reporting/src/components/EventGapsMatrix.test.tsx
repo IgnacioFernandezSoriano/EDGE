@@ -4,8 +4,10 @@ import { EventGapsMatrix } from "@/components/EventGapsMatrix";
 import type { CorridorRow, EventComparison } from "@/lib/eventGaps";
 
 const comparisons: EventComparison[] = [
-  { comparison_key: "ho_rescon", priority: 1, label: "HO vs RESCON" },
-  { comparison_key: "ho_resdes", priority: 2, label: "HO vs RESDES" },
+  { comparison_key: "ho_rescon", name: "Handover → RESCON", priority: 1,
+    a_source: "RFID", a_code: "__HO__", b_source: "EDI", b_code: "RESCON" },
+  { comparison_key: "ho_resdes", name: "Handover → RESDES", priority: 2,
+    a_source: "RFID", a_code: "__HO__", b_source: "EDI", b_code: "RESDES" },
 ];
 const rows: CorridorRow[] = [
   { origin: "IN", destination: "JP", cells: { ho_rescon: { mean_days: 3.25, n: 10 } } },
@@ -14,8 +16,8 @@ const rows: CorridorRow[] = [
 describe("EventGapsMatrix", () => {
   it("renders a column per comparison and the corridor rows", () => {
     render(<EventGapsMatrix comparisons={comparisons} rows={rows} onSelectCell={() => {}} />);
-    expect(screen.getByText("HO vs RESCON")).toBeInTheDocument();
-    expect(screen.getByText("HO vs RESDES")).toBeInTheDocument();
+    expect(screen.getByText("Handover → RESCON")).toBeInTheDocument();
+    expect(screen.getByText("HO → RESCON")).toBeInTheDocument(); // code label subtext
     expect(screen.getByText("IN → JP")).toBeInTheDocument();
     expect(screen.getByText("3.3")).toBeInTheDocument(); // mean_days 1-dp
   });

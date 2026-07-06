@@ -1,4 +1,4 @@
-import { formatGapDays, type CorridorRow, type EventComparison } from "@/lib/eventGaps";
+import { formatGapDays, comparisonCodeLabel, type CorridorRow, type EventComparison } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -22,8 +22,9 @@ export function EventGapsMatrix({ comparisons, rows, onSelectCell }: EventGapsMa
             {strings.gaps.corridor}
           </TableHead>
           {comparisons.map((c) => (
-            <TableHead key={c.comparison_key} className="sticky top-0 z-20 bg-background" title={c.label}>
-              {c.label}
+            <TableHead key={c.comparison_key} className="sticky top-0 z-20 bg-background" title={comparisonCodeLabel(c)}>
+              <div>{c.name}</div>
+              <div className="text-[10px] font-normal text-muted-foreground">{comparisonCodeLabel(c)}</div>
             </TableHead>
           ))}
         </TableRow>

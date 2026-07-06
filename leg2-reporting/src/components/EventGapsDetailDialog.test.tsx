@@ -7,15 +7,15 @@ const rows: EventPairDetailRow[] = [
   {
     s9code: "INBOMBJPTYOAAEM60760004100101", comparison_key: "ho_rescon",
     origin_office: "INBOMB", dest_office: "JPTYOA", origin_country: "IN", dest_country: "JP",
-    product: "A", rfid_utc: "2026-02-01T10:00:00+00:00", edi_utc: "2026-02-04T12:00:00+00:00",
-    gap_days: 3.08, colocation_valid: true, excluded: false,
+    product: "A", a_utc: "2026-02-01T10:00:00+00:00", b_utc: "2026-02-04T12:00:00+00:00",
+    gap_days: 3.08, excluded: false,
     origin_gate: null, origin_site: null, dest_gate: "EV7", dest_site: "Kawasaki Higashi OE",
   },
   {
     s9code: "INBOMBJPTYOAAEM60760004100102", comparison_key: "ho_rescon",
     origin_office: "INBOMB", dest_office: "JPTYOA", origin_country: "IN", dest_country: "JP",
-    product: "A", rfid_utc: "2026-02-02T10:00:00+00:00", edi_utc: "2026-02-20T12:00:00+00:00",
-    gap_days: 18.08, colocation_valid: true, excluded: true,
+    product: "A", a_utc: "2026-02-02T10:00:00+00:00", b_utc: "2026-02-20T12:00:00+00:00",
+    gap_days: 18.08, excluded: true,
     origin_gate: null, origin_site: null, dest_gate: null, dest_site: null,
   },
 ];

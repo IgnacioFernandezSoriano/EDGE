@@ -137,6 +137,8 @@ export const strings = {
     colProduct: "Product",
     colRfid: "RFID (handover)",
     colEdi: "EDI",
+    colEventA: "Event A",
+    colEventB: "Event B",
     colGap: "Gap (days)",
     colOrigin: "Origin",
     colDest: "Dest",

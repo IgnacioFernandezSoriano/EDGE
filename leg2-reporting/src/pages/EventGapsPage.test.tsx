@@ -3,13 +3,14 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const { matrix, comparisons, detail, mailCategories } = vi.hoisted(() => ({
   matrix: [{ origin: "IN", destination: "JP", comparison_key: "ho_rescon", mean_days: 3.2, n: 4 }],
-  comparisons: [{ comparison_key: "ho_rescon", priority: 1, label: "HO vs RESCON" }],
+  comparisons: [{ comparison_key: "ho_rescon", name: "Handover → RESCON", priority: 1,
+    a_source: "RFID", a_code: "__HO__", b_source: "EDI", b_code: "RESCON" }],
   detail: [{
     s9code: "S9A", comparison_key: "ho_rescon", origin_office: "INBOMB", dest_office: "JPTYOA",
     origin_country: "IN", dest_country: "JP", product: "A",
     origin_gate: "G1", origin_site: "Site A", dest_gate: null, dest_site: null,
-    rfid_utc: "2026-02-01T10:00:00+00:00", edi_utc: "2026-02-04T12:00:00+00:00",
-    gap_days: 3.08, colocation_valid: true, excluded: false,
+    a_utc: "2026-02-01T10:00:00+00:00", b_utc: "2026-02-04T12:00:00+00:00",
+    gap_days: 3.08, excluded: false,
   }],
   mailCategories: [{ code: "A", name: "Aéreo / Prioritario" }],
 }));
