@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import LoginPage from "@/pages/LoginPage";
 import RfidEventsPage from "@/pages/RfidEventsPage";
 import AtatPage from "@/pages/AtatPage";
+import EventGapsPage from "@/pages/EventGapsPage";
 import { parseHash, type Route } from "@/lib/hashRoute";
 import { strings } from "@/i18n/strings";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,13 @@ function Nav({ route }: { route: Route }) {
       >
         {strings.atat.navReceptacle}
       </Button>
+      <Button
+        variant={route.name === "gaps" ? "default" : "outline"}
+        size="sm"
+        onClick={() => go("#/gaps")}
+      >
+        {strings.gaps.nav}
+      </Button>
     </nav>
   );
 }
@@ -59,9 +67,11 @@ function Gate() {
         </div>
       </header>
       <div className="flex-1 min-h-0 overflow-auto">
-        {route.name === "receptacle"
-          ? <AtatPage s9={route.s9 || null} />
-          : <RfidEventsPage />}
+        {route.name === "gaps"
+          ? <EventGapsPage />
+          : route.name === "receptacle"
+            ? <AtatPage s9={route.s9 || null} />
+            : <RfidEventsPage />}
       </div>
     </div>
   );

@@ -34,4 +34,9 @@ describe("App routing", () => {
       expect(screen.getByLabelText(/Receptacle .* code/i)).toBeInTheDocument()
     );
   });
+
+  it("shows the Event gaps nav button", () => {
+    render(<App />);
+    expect(screen.getByRole("button", { name: strings.gaps.nav })).toBeInTheDocument();
+  });
 });
