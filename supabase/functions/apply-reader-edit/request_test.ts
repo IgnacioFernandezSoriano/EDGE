@@ -4,12 +4,12 @@ import { parseReaderEditRequest } from "./request.ts";
 Deno.test("accepts a valid lpi + whitelisted operation fields", () => {
   const r = parseReaderEditRequest({
     lpi: "J11D1",
-    operation: { edi_equivalent_outbound: "2320", handover_point: true },
+    operation: { role: "AMU", handover_point: true },
   });
   assertEquals(r.ok, true);
   if (r.ok) {
     assertEquals(r.lpi, "J11D1");
-    assertEquals(r.operation, { edi_equivalent_outbound: "2320", handover_point: true });
+    assertEquals(r.operation, { role: "AMU", handover_point: true });
   }
 });
 
@@ -20,6 +20,19 @@ Deno.test("rejects a missing lpi", () => {
 Deno.test("rejects an unknown operation key", () => {
   const r = parseReaderEditRequest({ lpi: "J11D1", operation: { product: ["leg2"] } });
   assertEquals(r.ok, false);
+});
+
+Deno.test("rejects the retired edi_equivalent code fields", () => {
+  const r = parseReaderEditRequest({ lpi: "J11D1", operation: { edi_equivalent_outbound: "2320" } });
+  assertEquals(r.ok, false);
+});
+
+Deno.test("rejects an invalid role value", () => {
+  assertEquals(parseReaderEditRequest({ lpi: "J11D1", operation: { role: "WAT" } }).ok, false);
+});
+
+Deno.test("accepts an empty role (clears the classification)", () => {
+  assertEquals(parseReaderEditRequest({ lpi: "J11D1", operation: { role: "" } }).ok, true);
 });
 
 Deno.test("rejects an empty operation", () => {

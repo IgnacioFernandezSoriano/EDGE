@@ -10,8 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import type { ReaderMaster } from "@/lib/supabase";
-import { ediCodeOptions } from "@/lib/ediCodes";
-import { optionsWithCurrent, READING_DIRECTIONS, OPERATIONS_SCOPES } from "@/lib/selectOptions";
+import { optionsWithCurrent, READING_DIRECTIONS, OPERATIONS_SCOPES, CHECKPOINT_ROLES } from "@/lib/selectOptions";
 import { applyReaderEdit, type ReaderOperation } from "@/lib/readerEdit";
 import { strings } from "@/i18n/strings";
 
@@ -21,11 +20,10 @@ const EMPTY = "__empty__";
 function opFromReader(r: ReaderMaster): Required<ReaderOperation> {
   return {
     gate_purpose: r.gate_purpose ?? "",
-    edi_equivalent_inbound: r.edi_equivalent_inbound ?? "",
-    edi_equivalent_outbound: r.edi_equivalent_outbound ?? "",
     handover_point: r.handover_point ?? false,
     reading_direction: r.reading_direction ?? "",
     operations_scope: r.operations_scope ?? "",
+    role: (r.checkpoint_role as ReaderOperation["role"]) ?? "",
   };
 }
 
@@ -35,11 +33,10 @@ const normStr = (v: string | null | undefined) => (v == null || v === "" ? null 
 function changedFields(orig: ReaderMaster, op: Required<ReaderOperation>): ReaderOperation {
   const changed: ReaderOperation = {};
   if (normStr(op.gate_purpose) !== normStr(orig.gate_purpose)) changed.gate_purpose = normStr(op.gate_purpose);
-  if (normStr(op.edi_equivalent_inbound) !== normStr(orig.edi_equivalent_inbound)) changed.edi_equivalent_inbound = normStr(op.edi_equivalent_inbound);
-  if (normStr(op.edi_equivalent_outbound) !== normStr(orig.edi_equivalent_outbound)) changed.edi_equivalent_outbound = normStr(op.edi_equivalent_outbound);
   if ((op.handover_point ?? false) !== (orig.handover_point ?? false)) changed.handover_point = op.handover_point;
   if (normStr(op.reading_direction) !== normStr(orig.reading_direction)) changed.reading_direction = normStr(op.reading_direction);
   if (normStr(op.operations_scope) !== normStr(orig.operations_scope)) changed.operations_scope = normStr(op.operations_scope);
+  if (normStr(op.role) !== normStr(orig.checkpoint_role)) changed.role = normStr(op.role) as ReaderOperation["role"];
   return changed;
 }
 
@@ -79,8 +76,7 @@ export function ReaderEditorDialog({
   }, [reader?.lpi]);
 
   if (!reader) return null;
-  const inboundOpts = ediCodeOptions(reader.edi_equivalent_inbound ?? null);
-  const outboundOpts = ediCodeOptions(reader.edi_equivalent_outbound ?? null);
+  const roleOpts = optionsWithCurrent(CHECKPOINT_ROLES, reader.checkpoint_role ?? null);
   const rdOpts = optionsWithCurrent(READING_DIRECTIONS, reader.reading_direction ?? null);
   const osOpts = optionsWithCurrent(OPERATIONS_SCOPES, reader.operations_scope ?? null);
 
@@ -140,32 +136,24 @@ export function ReaderEditorDialog({
               />
             </div>
             <div className="space-y-1">
-              <Label>{strings.readerEditor.inboundCode}</Label>
+              <Label>{strings.readerEditor.checkpointRole}</Label>
               <Select
-                value={op.edi_equivalent_inbound || EMPTY}
-                onValueChange={(v) => setOp((o) => ({ ...o, edi_equivalent_inbound: v === EMPTY ? "" : v }))}
+                value={op.role || EMPTY}
+                onValueChange={(v) => setOp((o) => ({ ...o, role: v === EMPTY ? "" : (v as Required<ReaderOperation>["role"]) }))}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {inboundOpts.map((o) => (
+                  {roleOpts.map((o) => (
                     <SelectItem key={o.value || EMPTY} value={o.value || EMPTY}>{o.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">{strings.readerEditor.checkpointRoleHelp}</p>
             </div>
-            <div className="space-y-1">
-              <Label>{strings.readerEditor.outboundCode}</Label>
-              <Select
-                value={op.edi_equivalent_outbound || EMPTY}
-                onValueChange={(v) => setOp((o) => ({ ...o, edi_equivalent_outbound: v === EMPTY ? "" : v }))}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {outboundOpts.map((o) => (
-                    <SelectItem key={o.value || EMPTY} value={o.value || EMPTY}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-1 rounded border p-2">
+              <span className="text-xs font-medium text-muted-foreground">{strings.readerEditor.legacyCodes}</span>
+              <ReadOnlyRow label={strings.readerEditor.inboundCode} value={reader.edi_equivalent_inbound} />
+              <ReadOnlyRow label={strings.readerEditor.outboundCode} value={reader.edi_equivalent_outbound} />
             </div>
             <div className="flex items-center gap-2">
               <Switch

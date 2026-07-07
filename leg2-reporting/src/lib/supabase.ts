@@ -69,6 +69,9 @@ export interface ReaderMaster {
   priority?: string | null;
   inactive?: boolean | null;
   operations_scope?: string | null;
+  // checkpoint_role (Leg2-side) drives edi_equivalent; the legacy edi codes remain
+  // read-only for the transition fallback while a reader is unclassified.
+  checkpoint_role?: string | null;
   edi_equivalent_inbound?: string | null;
   edi_equivalent_outbound?: string | null;
 }
@@ -79,7 +82,7 @@ export const READER_MASTER_SELECT_COLS = [
   "facility_name", "facility_type", "site_id", "reader_country_code",
   "country_name", "city", "facility_latitude", "facility_longitude",
   "operator", "priority", "inactive", "operations_scope", "handover_point",
-  "edi_equivalent_inbound", "edi_equivalent_outbound",
+  "checkpoint_role", "edi_equivalent_inbound", "edi_equivalent_outbound",
 ].join(",");
 
 type FetchDeps = {

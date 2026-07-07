@@ -35,33 +35,47 @@ Deno.serve(async (req) => {
   const parsed = parseReaderEditRequest(await req.json().catch(() => ({})));
   if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
   const { lpi, operation } = parsed;
+  const { role, ...gmsFields } = operation as { role?: string | null } & Record<string, unknown>;
+  const hasRole = "role" in operation;
 
   try {
-    // 1) Write-through to GMS readers_master (whitelisted fields only).
-    const patchUrl =
-      `${GMS_URL}/rest/v1/readers_master?lpi=eq.${encodeURIComponent(lpi)}`;
-    const gmsResp = await fetch(patchUrl, {
-      method: "PATCH",
-      headers: {
-        apikey: GMS_KEY,
-        Authorization: `Bearer ${GMS_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify({ ...operation, updated_at: new Date().toISOString() }),
-    });
-    if (!gmsResp.ok) {
-      const t = await gmsResp.text();
-      return json({ ok: false, status: "gms_write_failed", movements_upserted: 0, error: t.slice(0, 300) }, 502);
-    }
-    const patched = (await gmsResp.json().catch(() => [])) as unknown[];
-    if (!Array.isArray(patched) || patched.length === 0) {
-      return json({ ok: false, status: "gms_reader_not_found", movements_upserted: 0, error: `No reader ${lpi} in GMS` }, 404);
-    }
-
     const db = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+
+    // 1) Write-through the GMS-bound fields to readers_master (whitelisted only).
+    if (Object.keys(gmsFields).length > 0) {
+      const patchUrl =
+        `${GMS_URL}/rest/v1/readers_master?lpi=eq.${encodeURIComponent(lpi)}`;
+      const gmsResp = await fetch(patchUrl, {
+        method: "PATCH",
+        headers: {
+          apikey: GMS_KEY,
+          Authorization: `Bearer ${GMS_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify({ ...gmsFields, updated_at: new Date().toISOString() }),
+      });
+      if (!gmsResp.ok) {
+        const t = await gmsResp.text();
+        return json({ ok: false, status: "gms_write_failed", movements_upserted: 0, error: t.slice(0, 300) }, 502);
+      }
+      const patched = (await gmsResp.json().catch(() => [])) as unknown[];
+      if (!Array.isArray(patched) || patched.length === 0) {
+        return json({ ok: false, status: "gms_reader_not_found", movements_upserted: 0, error: `No reader ${lpi} in GMS` }, 404);
+      }
+    }
+
+    // 1b) Checkpoint role lives Leg2-side (public.rfid_checkpoint_role), not in GMS.
+    if (hasRole) {
+      const res = (role === null || role === "")
+        ? await db.from("rfid_checkpoint_role").delete().eq("lpi", lpi)
+        : await db.from("rfid_checkpoint_role").upsert({ lpi, role, source: "manual", updated_at: new Date().toISOString() });
+      if (res.error) {
+        return json({ ok: false, status: "role_write_failed", movements_upserted: 0, error: res.error.message }, 500);
+      }
+    }
 
     // 2) Refresh the Leg2 snapshot from GMS.
     const syncResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-site-snapshot`, {

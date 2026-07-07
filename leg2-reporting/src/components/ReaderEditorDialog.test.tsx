@@ -14,6 +14,7 @@ const reader: ReaderMaster = {
   reader_country_code: "JP", country_name: "Japan", city: "Yokohama", facility_latitude: "35.5",
   facility_longitude: "139.7", operator: "JP Post", priority: "1", inactive: false,
   operations_scope: "International", handover_point: true,
+  checkpoint_role: "AMU",
   edi_equivalent_inbound: "2320", edi_equivalent_outbound: null,
 };
 
@@ -26,6 +27,12 @@ describe("ReaderEditorDialog", () => {
     expect(screen.getByText(/Kawasaki/)).toBeInTheDocument();
     expect(screen.queryByText(/product/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/nms_reader_url/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the checkpoint role control and read-only legacy codes", () => {
+    render(<ReaderEditorDialog open onOpenChange={() => {}} reader={reader} onApplied={() => {}} />);
+    expect(screen.getByText("Checkpoint role")).toBeInTheDocument();
+    expect(screen.getByText(/Legacy codes/)).toBeInTheDocument();
   });
 
   it("sends only the changed Operation field and reports applied", async () => {

@@ -15,7 +15,7 @@ describe("applyReaderEdit", () => {
       .mockResolvedValue(okResponse({ ok: true, status: "success", movements_upserted: 1 }));
     const res = await applyReaderEdit(
       "J11D1",
-      { edi_equivalent_outbound: "2320", handover_point: true },
+      { role: "AMU", handover_point: true },
       { fetchFn, token: "tok", anonKey: "anon", baseUrl: "https://x/functions/v1/apply-reader-edit" }
     );
     expect(res).toEqual({ ok: true, status: "success", movements_upserted: 1 });
@@ -24,7 +24,7 @@ describe("applyReaderEdit", () => {
     expect(init.headers.Authorization).toBe("Bearer tok");
     expect(JSON.parse(init.body)).toEqual({
       lpi: "J11D1",
-      operation: { edi_equivalent_outbound: "2320", handover_point: true },
+      operation: { role: "AMU", handover_point: true },
     });
   });
 

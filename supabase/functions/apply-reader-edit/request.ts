@@ -1,11 +1,12 @@
 const ALLOWED = [
   "gate_purpose",
-  "edi_equivalent_inbound",
-  "edi_equivalent_outbound",
   "handover_point",
   "reading_direction",
   "operations_scope",
+  "role",
 ] as const;
+
+const ROLES = ["AMU", "OE", "NONE"];
 
 export type ParsedReaderEdit =
   | { ok: true; lpi: string; operation: Record<string, unknown> }
@@ -25,6 +26,12 @@ export function parseReaderEditRequest(body: unknown): ParsedReaderEdit {
       return { ok: false, error: `field not allowed: ${key}` };
     }
     operation[key] = opIn[key];
+  }
+  if ("role" in operation) {
+    const rv = operation.role;
+    if (rv !== null && rv !== "" && !ROLES.includes(rv as string)) {
+      return { ok: false, error: `invalid role: ${String(rv)}` };
+    }
   }
   if (Object.keys(operation).length === 0) {
     return { ok: false, error: "operation has no editable fields" };

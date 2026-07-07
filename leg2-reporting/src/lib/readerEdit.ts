@@ -5,11 +5,11 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export interface ReaderOperation {
   gate_purpose?: string | null;
-  edi_equivalent_inbound?: string | null;
-  edi_equivalent_outbound?: string | null;
   handover_point?: boolean;
   reading_direction?: string | null;
   operations_scope?: string | null;
+  // Checkpoint role is Leg2-side (not GMS). "" / null clears it (back to unclassified).
+  role?: "AMU" | "OE" | "NONE" | "" | null;
 }
 
 export interface ApplyResult {
