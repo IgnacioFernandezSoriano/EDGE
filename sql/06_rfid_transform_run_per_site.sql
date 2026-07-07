@@ -128,12 +128,26 @@ begin
         from valid_reads r
         join country_groups c on c.tag_id = r.tag_id and c.s9_id = r.s9_id and c.movement_country_code = r.read_cc
     ), ranked as (
-        select * from candidates where rn = 1
+        select *,
+               (direction = case when leg = 'inbound' then 'entry' else 'exit' end) as is_rep
+        from candidates where rn = 1
+    ), site_picks as (
+        -- entry-pick vs exit-pick per site. Collapse when they are the same physical
+        -- detection (same reader at the same instant: single-read sites AND duplicate
+        -- reads) to avoid a business-key clash on
+        -- (tag_id, s9_id, movement_type, event_datetime_utc, reader_id).
+        select tag_id, s9_id, movement_country_code,
+               coalesce(site_impc_code, centre_code, reader_id) as site_key,
+               max(reader_id)          filter (where direction = 'entry') as entry_reader,
+               max(event_datetime_utc) filter (where direction = 'entry') as entry_ts,
+               max(reader_id)          filter (where direction = 'exit')  as exit_reader,
+               max(event_datetime_utc) filter (where direction = 'exit')  as exit_ts
+        from ranked
+        group by tag_id, s9_id, movement_country_code, coalesce(site_impc_code, centre_code, reader_id)
     ), selected as (
         -- Emit both entry & exit for classified readers and for transit (keeps the timeline);
-        -- for unclassified (role NULL) origin/destination keep only the leg representative
-        -- (exit=outbound, entry=inbound) to preserve legacy single-code behaviour.
-        -- A single physical read that is both first & last collapses to the representative.
+        -- for unclassified (role NULL) origin/destination keep only the leg representative.
+        -- A single physical read (entry_edge = exit_edge) collapses to the representative.
         select rk.*,
                rr.role as checkpoint_role,
                case
@@ -141,21 +155,13 @@ begin
                    else 'non_handover_selected_for_' || lower(rk.route_country_role) || '_' || rk.direction
                end as handover_quality_status
         from ranked rk
+        join site_picks sp
+          on sp.tag_id = rk.tag_id and sp.s9_id = rk.s9_id
+         and sp.movement_country_code = rk.movement_country_code
+         and sp.site_key = coalesce(rk.site_impc_code, rk.centre_code, rk.reader_id)
         left join public.rfid_checkpoint_role rr on rr.lpi = rk.reader_id
-        where
-            ( rk.direction = case when rk.leg = 'inbound' then 'entry' else 'exit' end
-              or rk.leg = 'transit'
-              or rr.role is not null )
-            and not exists (
-                select 1 from ranked r2
-                where r2.tag_id = rk.tag_id and r2.s9_id = rk.s9_id
-                  and r2.movement_country_code = rk.movement_country_code
-                  and coalesce(r2.site_impc_code, r2.centre_code, r2.reader_id)
-                      = coalesce(rk.site_impc_code, rk.centre_code, rk.reader_id)
-                  and r2.edge_id = rk.edge_id
-                  and r2.direction <> rk.direction
-                  and rk.direction <> case when rk.leg = 'inbound' then 'entry' else 'exit' end
-            )
+        where ( rk.is_rep or rk.leg = 'transit' or rr.role is not null )
+          and not (sp.entry_reader = sp.exit_reader and sp.entry_ts = sp.exit_ts and not rk.is_rep)
     )
     insert into public.rfid_report_movements(
         movement_id, source_edge_id, source_run_id, tag_id, s9_id, movement_type, route_country_role,
