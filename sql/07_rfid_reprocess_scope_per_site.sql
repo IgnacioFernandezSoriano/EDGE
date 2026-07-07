@@ -272,45 +272,68 @@ begin
         from valid_reads
         group by tag_id, s9_id, read_cc
     ), candidates as (
-        select 'OUTBOUND'::varchar as movement_type, 'ORIGIN'::text as route_country_role, c.country_sequence_number,
+        -- entry (first read) + exit (last read) per (tag, s9, country, site).
+        -- leg from country role; movement_type keeps existing literals (frontend keys on them).
+        select 'entry'::text as direction,
+               case when c.movement_country_code = c.origin_cc then 'outbound'
+                    when c.movement_country_code = c.dest_cc   then 'inbound'
+                    else 'transit' end as leg,
+               (case when c.movement_country_code = c.origin_cc then 'OUTBOUND'
+                     when c.movement_country_code = c.dest_cc   then 'INBOUND'
+                     else 'TRANSIT_ENTRY' end)::varchar as movement_type,
+               case when c.movement_country_code = c.origin_cc then 'ORIGIN'
+                    when c.movement_country_code = c.dest_cc   then 'DESTINATION'
+                    else 'TRANSIT' end as route_country_role,
+               c.country_sequence_number,
                r.*, c.origin_cc as candidate_origin_cc, c.dest_cc as candidate_dest_cc, c.movement_country_code,
-               row_number() over (partition by r.tag_id, r.s9_id, c.movement_country_code, coalesce(r.site_impc_code, r.centre_code, r.reader_id) order by r.event_datetime_utc desc, r.edge_id desc) as rn
+               row_number() over (partition by r.tag_id, r.s9_id, c.movement_country_code, coalesce(r.site_impc_code, r.centre_code, r.reader_id) order by r.event_datetime_utc asc, r.edge_id asc) as rn
         from valid_reads r
         join country_groups c on c.tag_id = r.tag_id and c.s9_id = r.s9_id and c.movement_country_code = r.read_cc
-        where c.movement_country_code = c.origin_cc
         union all
-        select 'TRANSIT_ENTRY'::varchar, 'TRANSIT'::text, c.country_sequence_number,
-               r.*, c.origin_cc, c.dest_cc, c.movement_country_code,
-               row_number() over (partition by r.tag_id, r.s9_id, c.movement_country_code, coalesce(r.site_impc_code, r.centre_code, r.reader_id) order by r.event_datetime_utc asc, r.edge_id asc)
-        from valid_reads r
-        join country_groups c on c.tag_id = r.tag_id and c.s9_id = r.s9_id and c.movement_country_code = r.read_cc
-        where c.movement_country_code <> c.origin_cc and c.movement_country_code <> c.dest_cc
-        union all
-        select 'TRANSIT_EXIT'::varchar, 'TRANSIT'::text, c.country_sequence_number,
+        select 'exit'::text,
+               case when c.movement_country_code = c.origin_cc then 'outbound'
+                    when c.movement_country_code = c.dest_cc   then 'inbound'
+                    else 'transit' end,
+               (case when c.movement_country_code = c.origin_cc then 'OUTBOUND'
+                     when c.movement_country_code = c.dest_cc   then 'INBOUND'
+                     else 'TRANSIT_EXIT' end)::varchar,
+               case when c.movement_country_code = c.origin_cc then 'ORIGIN'
+                    when c.movement_country_code = c.dest_cc   then 'DESTINATION'
+                    else 'TRANSIT' end,
+               c.country_sequence_number,
                r.*, c.origin_cc, c.dest_cc, c.movement_country_code,
                row_number() over (partition by r.tag_id, r.s9_id, c.movement_country_code, coalesce(r.site_impc_code, r.centre_code, r.reader_id) order by r.event_datetime_utc desc, r.edge_id desc)
         from valid_reads r
         join country_groups c on c.tag_id = r.tag_id and c.s9_id = r.s9_id and c.movement_country_code = r.read_cc
-        where c.movement_country_code <> c.origin_cc and c.movement_country_code <> c.dest_cc
-        union all
-        select 'INBOUND'::varchar, 'DESTINATION'::text, c.country_sequence_number,
-               r.*, c.origin_cc, c.dest_cc, c.movement_country_code,
-               row_number() over (partition by r.tag_id, r.s9_id, c.movement_country_code, coalesce(r.site_impc_code, r.centre_code, r.reader_id) order by r.event_datetime_utc asc, r.edge_id asc)
-        from valid_reads r
-        join country_groups c on c.tag_id = r.tag_id and c.s9_id = r.s9_id and c.movement_country_code = r.read_cc
-        where c.movement_country_code = c.dest_cc
+    ), ranked as (
+        select * from candidates where rn = 1
     ), selected as (
-        select *,
+        -- Emit both entry & exit for classified readers and for transit (keeps the timeline);
+        -- for unclassified (role NULL) origin/destination keep only the leg representative
+        -- (exit=outbound, entry=inbound) to preserve legacy single-code behaviour.
+        -- A single physical read that is both first & last collapses to the representative.
+        select rk.*,
+               rr.role as checkpoint_role,
                case
-                   when coalesce(handover_point,false) then 'handover_ok'
-                   when movement_type = 'OUTBOUND' then 'non_handover_selected_for_origin_exit'
-                   when movement_type = 'TRANSIT_ENTRY' then 'non_handover_selected_for_transit_entry'
-                   when movement_type = 'TRANSIT_EXIT' then 'non_handover_selected_for_transit_exit'
-                   when movement_type = 'INBOUND' then 'non_handover_selected_for_destination_entry'
-                   else 'unknown'
+                   when coalesce(rk.handover_point,false) then 'handover_ok'
+                   else 'non_handover_selected_for_' || lower(rk.route_country_role) || '_' || rk.direction
                end as handover_quality_status
-        from candidates
-        where rn = 1
+        from ranked rk
+        left join public.rfid_checkpoint_role rr on rr.lpi = rk.reader_id
+        where
+            ( rk.direction = case when rk.leg = 'inbound' then 'entry' else 'exit' end
+              or rk.leg = 'transit'
+              or rr.role is not null )
+            and not exists (
+                select 1 from ranked r2
+                where r2.tag_id = rk.tag_id and r2.s9_id = rk.s9_id
+                  and r2.movement_country_code = rk.movement_country_code
+                  and coalesce(r2.site_impc_code, r2.centre_code, r2.reader_id)
+                      = coalesce(rk.site_impc_code, rk.centre_code, rk.reader_id)
+                  and r2.edge_id = rk.edge_id
+                  and r2.direction <> rk.direction
+                  and rk.direction <> case when rk.leg = 'inbound' then 'entry' else 'exit' end
+            )
     )
     insert into public.rfid_report_movements(
         movement_id, source_edge_id, source_run_id, tag_id, s9_id, movement_type, route_country_role,
@@ -319,17 +342,26 @@ begin
         country_name, city, edi_equivalent, handover_point, handover_quality_status,
         centre_code, reader_timezone, created_at_utc, updated_at_utc
     )
-    select public.rfid_make_movement_id(edge_id, movement_type, movement_country_code),
-           edge_id, v_etl_run_id, tag_id, s9_id, movement_type, route_country_role,
-           candidate_origin_cc, candidate_dest_cc, movement_country_code, country_sequence_number,
-           event_datetime_utc,
-           coalesce(event_datetime_local, (event_datetime_utc at time zone coalesce(reader_timezone,'UTC'))),
-           reader_id, site_impc_code, site_name, movement_country_code,
-           reader_country_name, reader_city,
-           case when movement_type in ('OUTBOUND','TRANSIT_EXIT') then edi_equivalent_outbound else edi_equivalent_inbound end,
-           coalesce(handover_point,false), handover_quality_status,
-           coalesce(centre_code, site_impc_code), coalesce(reader_timezone,'UTC'), now(), now()
-    from selected;
+    select public.rfid_make_movement_id(s.edge_id, s.movement_type, s.movement_country_code),
+           s.edge_id, v_etl_run_id, s.tag_id, s.s9_id, s.movement_type, s.route_country_role,
+           s.candidate_origin_cc, s.candidate_dest_cc, s.movement_country_code, s.country_sequence_number,
+           s.event_datetime_utc,
+           coalesce(s.event_datetime_local, (s.event_datetime_utc at time zone coalesce(s.reader_timezone,'UTC'))),
+           s.reader_id, s.site_impc_code, s.site_name, s.movement_country_code,
+           s.reader_country_name, s.reader_city,
+           coalesce(
+               cc.code,
+               case when s.checkpoint_role is null then
+                   case when s.leg = 'outbound' and s.direction = 'exit'  then s.edi_equivalent_outbound
+                        when s.leg = 'inbound'  and s.direction = 'entry' then s.edi_equivalent_inbound
+                        else null end
+               end
+           ),
+           coalesce(s.handover_point,false), s.handover_quality_status,
+           coalesce(s.centre_code, s.site_impc_code), coalesce(s.reader_timezone,'UTC'), now(), now()
+    from selected s
+    left join public.ref_checkpoint_code cc
+      on cc.role = s.checkpoint_role and cc.leg = s.leg and cc.direction = s.direction;
     get diagnostics v_movements = row_count;
 
     insert into public.rfid_etl_incidents(run_id, incident_type, source_edge_id, tag_id, s9_id, reader_id, event_datetime_utc, incident_description, severity, is_blocking, movement_type, route_country_role, movement_country_code, metadata, status)
