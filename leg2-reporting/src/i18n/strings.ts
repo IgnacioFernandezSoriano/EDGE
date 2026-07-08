@@ -116,7 +116,7 @@ export const strings = {
   atat: {
     title: "Receptacle timeline",
     navReport: "RFID Events",
-    navReceptacle: "Receptacle (ATAT)",
+    navReceptacle: "Receptacle Events",
     searchLabel: "Receptacle (S9) code",
     searchPlaceholder: "Enter or paste an S9 code",
     open: "Open",
@@ -160,7 +160,7 @@ export const strings = {
     allProducts: "All products",
     noProduct: "(no product)",
     granularity: "Granularity",
-    granularityCentre: "Centre",
+    granularityCentre: "IMPC",
     granularityCountry: "Country",
     origCountry: "Orig country",
     destCountry: "Dest country",
