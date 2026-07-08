@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { EventGapsFilters } from "@/components/EventGapsFilters";
+import { PRODUCT_ALL } from "@/lib/eventGaps";
 
 function setup(over: Partial<React.ComponentProps<typeof EventGapsFilters>> = {}) {
   const props = {
@@ -17,6 +18,8 @@ function setup(over: Partial<React.ComponentProps<typeof EventGapsFilters>> = {}
     countryOptions: ["IN", "JP"],
     granularity: "centre" as const,
     onGranularityChange: vi.fn(),
+    unit: "days" as const,
+    onUnitChange: vi.fn(),
     ...over,
   };
   render(<EventGapsFilters {...props} />);
@@ -55,5 +58,10 @@ describe("EventGapsFilters", () => {
     fireEvent.click(originTrigger);
     fireEvent.click(screen.getAllByText("IN")[0]);
     expect(props.onOriginCountryChange).toHaveBeenCalledWith("IN");
+  });
+  it("calls onUnitChange('hours') when Hours is clicked", () => {
+    const props = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Hours" }));
+    expect(props.onUnitChange).toHaveBeenCalledWith("hours");
   });
 });

@@ -1,5 +1,5 @@
 import { PRESET_ORDER, type DateRange, type DatePreset } from "@/lib/datePresets";
-import { PRODUCT_ALL, PRODUCT_NONE, type Granularity, type MailCategory } from "@/lib/eventGaps";
+import { PRODUCT_ALL, PRODUCT_NONE, type Granularity, type GapUnit, type MailCategory } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,8 @@ export interface EventGapsFiltersProps {
   countryOptions: string[];
   granularity: Granularity;
   onGranularityChange: (g: Granularity) => void;
+  unit: GapUnit;
+  onUnitChange: (u: GapUnit) => void;
 }
 
 export function EventGapsFilters({
@@ -31,6 +33,7 @@ export function EventGapsFilters({
   product, onProductChange, productOptions,
   originCountry, destCountry, onOriginCountryChange, onDestCountryChange, countryOptions,
   granularity, onGranularityChange,
+  unit, onUnitChange,
 }: EventGapsFiltersProps) {
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -106,6 +109,21 @@ export function EventGapsFilters({
             variant={granularity === "country" ? "default" : "outline"}
             onClick={() => onGranularityChange("country")}>
             {strings.gaps.granularityCountry}
+          </Button>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label>{strings.gaps.unit}</Label>
+        <div className="flex gap-1">
+          <Button type="button" size="sm"
+            variant={unit === "days" ? "default" : "outline"}
+            onClick={() => onUnitChange("days")}>
+            {strings.gaps.unitDays}
+          </Button>
+          <Button type="button" size="sm"
+            variant={unit === "hours" ? "default" : "outline"}
+            onClick={() => onUnitChange("hours")}>
+            {strings.gaps.unitHours}
           </Button>
         </div>
       </div>
