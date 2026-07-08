@@ -3,9 +3,9 @@ import { useRfidEventsReport } from "@/hooks/useRfidEventsReport";
 import { ReportFilters } from "@/components/ReportFilters";
 import { RfidEventsPivot } from "@/components/RfidEventsPivot";
 import { ReaderEditorDialog } from "@/components/ReaderEditorDialog";
-import { AtatDialog } from "@/components/AtatDialog";
 import { strings } from "@/i18n/strings";
 import type { TimeMode } from "@/lib/time";
+import { receptacleUrl } from "@/lib/hashRoute";
 
 export default function RfidEventsPage() {
   const {
@@ -14,7 +14,6 @@ export default function RfidEventsPage() {
   } = useRfidEventsReport();
   const [timeMode, setTimeMode] = useState<TimeMode>("utc");
   const [editorLpi, setEditorLpi] = useState<string | null>(null);
-  const [dialogS9, setDialogS9] = useState<string | null>(null);
 
   return (
     <div className="flex h-full flex-col">
@@ -42,21 +41,14 @@ export default function RfidEventsPage() {
             <RfidEventsPivot
               report={report}
               timeMode={timeMode}
-              selectedS9={dialogS9}
-              onSelectS9={(s9) => setDialogS9(s9)}
+              selectedS9={null}
+              onSelectS9={(s9) => window.open(receptacleUrl(s9), "_blank", "noopener")}
               onSelectReader={setEditorLpi}
               readerMap={readerMap}
             />
           </section>
         )}
       </div>
-
-      <AtatDialog
-        s9={dialogS9}
-        open={dialogS9 !== null}
-        onOpenChange={(o) => { if (!o) setDialogS9(null); }}
-        initialMode={timeMode}
-      />
 
       <ReaderEditorDialog
         open={editorLpi !== null}
