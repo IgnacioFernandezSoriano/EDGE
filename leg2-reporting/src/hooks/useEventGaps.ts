@@ -5,7 +5,7 @@ import {
 import {
   pivotMatrix, endpointCountry, PRODUCT_ALL,
   type Granularity, type EventComparison, type EventPairMatrixRow, type CorridorRow,
-  type MailCategory,
+  type MailCategory, type GapUnit,
 } from "@/lib/eventGaps";
 import { presetRange, type DateRange, type DatePreset } from "@/lib/datePresets";
 
@@ -20,6 +20,7 @@ export function useEventGaps() {
   const [originCountry, setOriginCountry] = useState<string>("");
   const [destCountry, setDestCountry] = useState<string>("");
   const [productOptions, setProductOptions] = useState<MailCategory[]>([]);
+  const [unit, setUnit] = useState<GapUnit>("days");
 
   async function token(): Promise<{ token: string } | {}> {
     const { data } = await supabase.auth.getSession();
@@ -93,7 +94,7 @@ export function useEventGaps() {
   return {
     loading, error, comparisons, rows,
     dateRange, setDateRange, applyPreset,
-    product, setProduct, granularity, setGranularity,
+    product, setProduct, granularity, setGranularity, unit, setUnit,
     originCountry, setOriginCountry, destCountry, setDestCountry,
     countryOptions, productOptions,
     reload: load,
