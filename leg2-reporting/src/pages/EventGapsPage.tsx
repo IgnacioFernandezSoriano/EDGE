@@ -4,11 +4,11 @@ import { useEventGaps } from "@/hooks/useEventGaps";
 import { EventGapsFilters } from "@/components/EventGapsFilters";
 import { EventGapsMatrix } from "@/components/EventGapsMatrix";
 import { EventGapsDetailDialog } from "@/components/EventGapsDetailDialog";
-import { AtatDialog } from "@/components/AtatDialog";
 import {
   supabase, fetchEventPairDetail, setEventPairExclusion, type EventPairDetailRow,
 } from "@/lib/supabase";
 import { comparisonCodeLabel } from "@/lib/eventGaps";
+import { receptacleUrl } from "@/lib/hashRoute";
 import { strings } from "@/i18n/strings";
 
 interface Selection { origin: string; destination: string; comparisonKey: string; }
@@ -20,12 +20,12 @@ export default function EventGapsPage() {
     dateRange, setDateRange, applyPreset,
     product, setProduct, productOptions, granularity, setGranularity, reload,
     originCountry, setOriginCountry, destCountry, setDestCountry, countryOptions,
+    unit, setUnit,
   } = useEventGaps();
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [detail, setDetail] = useState<EventPairDetailRow[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [atatS9, setAtatS9] = useState<string | null>(null);
 
   async function token(): Promise<{ token: string } | {}> {
     const { data } = await supabase.auth.getSession();
@@ -81,6 +81,7 @@ export default function EventGapsPage() {
           destCountry={destCountry} onDestCountryChange={setDestCountry}
           countryOptions={countryOptions}
           granularity={granularity} onGranularityChange={setGranularity}
+          unit={unit} onUnitChange={setUnit}
         />
       </div>
       <div className="flex-1 min-h-0 overflow-auto p-4">
@@ -91,6 +92,7 @@ export default function EventGapsPage() {
             <EventGapsMatrix
               comparisons={comparisons}
               rows={rows}
+              unit={unit}
               onSelectCell={(corridor, comparisonKey) =>
                 setSelection({ ...corridor, comparisonKey })}
             />
@@ -103,14 +105,9 @@ export default function EventGapsPage() {
         title={title}
         rows={detail}
         loading={detailLoading}
+        unit={unit}
         onToggleExclude={onToggleExclude}
-        onSelectS9={setAtatS9}
-      />
-      <AtatDialog
-        s9={atatS9}
-        open={atatS9 !== null}
-        onOpenChange={(o) => { if (!o) setAtatS9(null); }}
-        initialMode="utc"
+        onSelectS9={(s9) => window.open(receptacleUrl(s9), "_blank", "noopener")}
       />
     </div>
   );

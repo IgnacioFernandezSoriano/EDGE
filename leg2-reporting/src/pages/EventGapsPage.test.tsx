@@ -26,10 +26,6 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ user: { email: "u@example.com" } }),
 }));
-vi.mock("@/components/AtatDialog", () => ({
-  AtatDialog: ({ s9 }: { s9: string | null }) => (s9 ? <div>atat:{s9}</div> : null),
-}));
-
 import EventGapsPage from "@/pages/EventGapsPage";
 import { setEventPairExclusion } from "@/lib/supabase";
 
@@ -67,12 +63,21 @@ describe("EventGapsPage", () => {
     await waitFor(() => expect(screen.getByText("Aéreo / Prioritario")).toBeInTheDocument());
   });
 
-  it("opens the ATAT dialog when an S9 in the detail dialog is clicked", async () => {
+  it("opens the receptacle detail in a new tab when an S9 is clicked", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     render(<EventGapsPage />);
     await waitFor(() => expect(screen.getByText("3.2")).toBeInTheDocument());
     fireEvent.click(screen.getByText("3.2"));
     await waitFor(() => expect(screen.getByText("S9A")).toBeInTheDocument());
     fireEvent.click(screen.getByText("S9A"));
-    await waitFor(() => expect(screen.getByText("atat:S9A")).toBeInTheDocument());
+    expect(openSpy).toHaveBeenCalledWith("/#/receptacle/S9A", "_blank", "noopener");
+    openSpy.mockRestore();
+  });
+
+  it("switches matrix values to hours via the unit toggle", async () => {
+    render(<EventGapsPage />);
+    await waitFor(() => expect(screen.getByText("3.2")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Hours" }));
+    await waitFor(() => expect(screen.getByText("76.8")).toBeInTheDocument());
   });
 });
