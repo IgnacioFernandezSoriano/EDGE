@@ -5,7 +5,7 @@ import { strings } from "@/i18n/strings";
 // Force an authenticated session so the Gate renders the app, not the login page.
 vi.mock("@/contexts/AuthContext", () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useAuth: () => ({ session: { user: { email: "t@example.com" } }, user: { email: "t@example.com" }, isLoading: false, signOut: vi.fn() }),
+  useAuth: () => ({ session: { user: { email: "t@example.com" } }, user: { email: "t@example.com" }, isLoading: false, isRecovery: false, signOut: vi.fn() }),
 }));
 
 // Keep the report page cheap: stub the data hook.

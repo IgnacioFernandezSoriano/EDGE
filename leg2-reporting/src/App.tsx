@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import LoginPage from "@/pages/LoginPage";
+import AuthPage from "@/pages/AuthPage";
+import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import RfidEventsPage from "@/pages/RfidEventsPage";
 import AtatPage from "@/pages/AtatPage";
 import EventGapsPage from "@/pages/EventGapsPage";
@@ -56,11 +57,12 @@ function Nav({ route }: { route: Route }) {
 }
 
 function Gate() {
-  const { session, isLoading, signOut, user } = useAuth();
+  const { session, isLoading, isRecovery, signOut, user } = useAuth();
   const route = useRoute();
   if (isLoading)
     return <div className="min-h-screen flex items-center justify-center">{strings.states.loading}</div>;
-  if (!session) return <LoginPage />;
+  if (isRecovery) return <ResetPasswordPage />;
+  if (!session) return <AuthPage />;
 
   return (
     <div className="h-screen flex flex-col">
