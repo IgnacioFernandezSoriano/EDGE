@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseHash, receptacleHash, gapsHash } from "@/lib/hashRoute";
+import { parseHash, receptacleHash, gapsHash, receptacleUrl } from "@/lib/hashRoute";
 
 describe("parseHash", () => {
   it("defaults to the report", () => {
@@ -47,5 +47,16 @@ describe("parseHash settings", () => {
   it("still parses receptacle and defaults to report", () => {
     expect(parseHash("#/receptacle/ABC")).toEqual({ name: "receptacle", s9: "ABC" });
     expect(parseHash("#/")).toEqual({ name: "report" });
+  });
+});
+
+describe("receptacleUrl", () => {
+  it("builds pathname + search + receptacle hash", () => {
+    const orig = window.location;
+    // jsdom default location is http://localhost/
+    expect(receptacleUrl("S9A")).toBe("/#/receptacle/S9A");
+  });
+  it("url-encodes the s9", () => {
+    expect(receptacleUrl("A B")).toBe("/#/receptacle/A%20B");
   });
 });

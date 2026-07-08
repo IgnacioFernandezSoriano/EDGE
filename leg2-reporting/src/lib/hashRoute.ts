@@ -29,3 +29,7 @@ export function gapsHash(): string {
 export function settingsHash(): string {
   return "#/settings";
 }
+
+export function receptacleUrl(s9: string): string {
+  return `${window.location.pathname}${window.location.search}${receptacleHash(s9)}`;
+}
