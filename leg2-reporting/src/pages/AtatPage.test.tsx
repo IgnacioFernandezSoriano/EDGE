@@ -44,4 +44,9 @@ describe("AtatPage load", () => {
     }} />);
     await waitFor(() => expect(screen.getByText(/No events found/i)).toBeInTheDocument());
   });
+
+  it("shows the Receptacle Events heading when an s9 is active", () => {
+    render(<AtatPage s9="S9A" deps={deps} />);
+    expect(screen.getByRole("heading", { name: "Receptacle Events" })).toBeInTheDocument();
+  });
 });

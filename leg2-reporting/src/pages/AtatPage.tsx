@@ -43,6 +43,7 @@ export default function AtatPage({
 
   return (
     <div className="mx-auto max-w-4xl p-4">
+      <h2 className="mb-3 text-lg font-semibold">{strings.atat.title}</h2>
       {loading && <p className="text-sm text-muted-foreground">{strings.states.loading}</p>}
       {error && <p className="text-sm text-red-600">{strings.states.errorPrefix}{error}</p>}
       {!loading && !error && <AtatView s9={s9!} detail={detail} events={events} />}

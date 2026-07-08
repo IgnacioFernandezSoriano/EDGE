@@ -114,7 +114,7 @@ export const strings = {
     inactive: "Inactive",
   },
   atat: {
-    title: "Receptacle timeline",
+    title: "Receptacle Events",
     navReport: "RFID Events",
     navReceptacle: "Receptacle Events",
     searchLabel: "Receptacle (S9) code",
