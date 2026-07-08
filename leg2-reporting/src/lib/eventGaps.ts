@@ -61,11 +61,6 @@ export function formatGap(v: number | null | undefined, unit: GapUnit): string {
   return (unit === "hours" ? v * 24 : v).toFixed(1);
 }
 
-export function formatGapDays(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(v)) return "—";
-  return v.toFixed(1);
-}
-
 export interface MailCategory {
   code: string;
   name: string;

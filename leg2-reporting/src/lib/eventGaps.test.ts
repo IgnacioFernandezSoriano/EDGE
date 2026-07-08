@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   pivotMatrix,
-  formatGapDays,
   formatGap,
   eventShortCode,
   eventFullLabel,
@@ -28,18 +27,6 @@ describe("pivotMatrix", () => {
   it("sorts corridors alphabetically by origin then destination", () => {
     const out = pivotMatrix(rows);
     expect(out.map((r) => `${r.origin}-${r.destination}`)).toEqual(["IN-GB", "IN-JP"]);
-  });
-});
-
-describe("formatGapDays", () => {
-  it("formats to 1 decimal", () => {
-    expect(formatGapDays(3.25)).toBe("3.3");
-    expect(formatGapDays(-0.5)).toBe("-0.5");
-  });
-  it("returns em-dash for null/undefined/NaN", () => {
-    expect(formatGapDays(null)).toBe("—");
-    expect(formatGapDays(undefined)).toBe("—");
-    expect(formatGapDays(NaN)).toBe("—");
   });
 });
 
