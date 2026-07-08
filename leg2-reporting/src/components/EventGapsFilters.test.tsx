@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { EventGapsFilters } from "@/components/EventGapsFilters";
-import { PRODUCT_ALL } from "@/lib/eventGaps";
 
 function setup(over: Partial<React.ComponentProps<typeof EventGapsFilters>> = {}) {
   const props = {

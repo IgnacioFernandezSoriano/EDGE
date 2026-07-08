@@ -52,7 +52,6 @@ describe("parseHash settings", () => {
 
 describe("receptacleUrl", () => {
   it("builds pathname + search + receptacle hash", () => {
-    const orig = window.location;
     // jsdom default location is http://localhost/
     expect(receptacleUrl("S9A")).toBe("/#/receptacle/S9A");
   });
