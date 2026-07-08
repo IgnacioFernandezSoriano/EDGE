@@ -1,4 +1,4 @@
-import { formatGapDays, comparisonCodeLabel, type CorridorRow, type EventComparison } from "@/lib/eventGaps";
+import { formatGap, comparisonCodeLabel, type CorridorRow, type EventComparison } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -47,7 +47,7 @@ export function EventGapsMatrix({ comparisons, rows, onSelectCell }: EventGapsMa
                     className="text-blue-700 underline font-semibold"
                     onClick={() => onSelectCell({ origin: row.origin, destination: row.destination }, c.comparison_key)}
                   >
-                    {formatGapDays(cell.mean_days)}
+                    {formatGap(cell.mean_days, "days")}
                   </button>
                   <span className="ml-1 text-[10px] text-muted-foreground">
                     {cell.n} {strings.gaps.pairs}

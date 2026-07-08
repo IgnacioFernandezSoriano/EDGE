@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   pivotMatrix,
   formatGapDays,
+  formatGap,
   eventShortCode,
   eventFullLabel,
   comparisonCodeLabel,
@@ -39,6 +40,21 @@ describe("formatGapDays", () => {
     expect(formatGapDays(null)).toBe("—");
     expect(formatGapDays(undefined)).toBe("—");
     expect(formatGapDays(NaN)).toBe("—");
+  });
+});
+
+describe("formatGap", () => {
+  it("formats days with one decimal", () => {
+    expect(formatGap(3.2, "days")).toBe("3.2");
+  });
+  it("converts to hours (x24) with one decimal", () => {
+    expect(formatGap(2, "hours")).toBe("48.0");
+    expect(formatGap(3.08, "hours")).toBe("73.9");
+  });
+  it("renders an em dash for null / NaN", () => {
+    expect(formatGap(null, "days")).toBe("—");
+    expect(formatGap(undefined, "hours")).toBe("—");
+    expect(formatGap(NaN, "hours")).toBe("—");
   });
 });
 

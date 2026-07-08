@@ -1,5 +1,5 @@
 import type { EventPairDetailRow } from "@/lib/supabase";
-import { formatGapDays } from "@/lib/eventGaps";
+import { formatGap } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 import { cn } from "@/lib/utils";
 import {
@@ -78,7 +78,7 @@ export function EventGapsDetailDialog({
                   <TableCell><GateSite gate={r.dest_gate} site={r.dest_site} /></TableCell>
                   <TableCell className="font-mono text-xs">{utcStamp(r.a_utc)}</TableCell>
                   <TableCell className="font-mono text-xs">{utcStamp(r.b_utc)}</TableCell>
-                  <TableCell className="text-right font-semibold">{formatGapDays(r.gap_days)}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatGap(r.gap_days, "days")}</TableCell>
                   <TableCell className="text-center">
                     <input
                       type="checkbox"
