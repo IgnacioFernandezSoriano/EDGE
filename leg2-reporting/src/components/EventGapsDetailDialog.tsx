@@ -57,7 +57,7 @@ export function EventGapsDetailDialog({
                 <TableHead>{strings.gaps.colDest}</TableHead>
                 <TableHead>{strings.gaps.colEventA}</TableHead>
                 <TableHead>{strings.gaps.colEventB}</TableHead>
-                <TableHead className="text-right">{strings.gaps.colGap}</TableHead>
+                <TableHead className="text-right">{strings.gaps.colGapDays}</TableHead>
                 <TableHead className="text-center">{strings.gaps.exclude}</TableHead>
               </TableRow>
             </TableHeader>
