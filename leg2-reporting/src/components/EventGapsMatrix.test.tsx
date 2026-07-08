@@ -31,4 +31,10 @@ describe("EventGapsMatrix", () => {
     fireEvent.click(screen.getByText("3.3"));
     expect(onSel).toHaveBeenCalledWith({ origin: "IN", destination: "JP" }, "ho_rescon");
   });
+  it("renders cell values in hours when unit=hours", () => {
+    render(
+      <EventGapsMatrix comparisons={comparisons} rows={rows} unit="hours" onSelectCell={() => {}} />
+    );
+    expect(screen.getByText("78.0")).toBeInTheDocument();
+  });
 });

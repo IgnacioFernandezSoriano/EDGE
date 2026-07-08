@@ -1,4 +1,4 @@
-import { formatGap, comparisonCodeLabel, type CorridorRow, type EventComparison } from "@/lib/eventGaps";
+import { formatGap, comparisonCodeLabel, type CorridorRow, type EventComparison, type GapUnit } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -7,10 +7,11 @@ import {
 export interface EventGapsMatrixProps {
   comparisons: EventComparison[];
   rows: CorridorRow[];
+  unit?: GapUnit;
   onSelectCell: (corridor: { origin: string; destination: string }, comparisonKey: string) => void;
 }
 
-export function EventGapsMatrix({ comparisons, rows, onSelectCell }: EventGapsMatrixProps) {
+export function EventGapsMatrix({ comparisons, rows, unit = "days", onSelectCell }: EventGapsMatrixProps) {
   if (rows.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">{strings.gaps.noRows}</p>;
   }
@@ -47,7 +48,7 @@ export function EventGapsMatrix({ comparisons, rows, onSelectCell }: EventGapsMa
                     className="text-blue-700 underline font-semibold"
                     onClick={() => onSelectCell({ origin: row.origin, destination: row.destination }, c.comparison_key)}
                   >
-                    {formatGap(cell.mean_days, "days")}
+                    {formatGap(cell.mean_days, unit)}
                   </button>
                   <span className="ml-1 text-[10px] text-muted-foreground">
                     {cell.n} {strings.gaps.pairs}
