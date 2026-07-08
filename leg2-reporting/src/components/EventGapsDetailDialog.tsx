@@ -1,5 +1,5 @@
 import type { EventPairDetailRow } from "@/lib/supabase";
-import { formatGap } from "@/lib/eventGaps";
+import { formatGap, type GapUnit } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 import { cn } from "@/lib/utils";
 import {
@@ -17,6 +17,7 @@ export interface EventGapsDetailDialogProps {
   loading: boolean;
   onToggleExclude: (row: EventPairDetailRow, excluded: boolean) => void;
   onSelectS9: (s9: string) => void;
+  unit?: GapUnit;
 }
 
 function utcStamp(iso: string): string {
@@ -35,11 +36,11 @@ function GateSite({ gate, site }: { gate: string | null; site: string | null }) 
 }
 
 export function EventGapsDetailDialog({
-  open, onOpenChange, title, rows, loading, onToggleExclude, onSelectS9,
+  open, onOpenChange, title, rows, loading, onToggleExclude, onSelectS9, unit = "days",
 }: EventGapsDetailDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[75vh] overflow-auto sm:max-w-4xl">
+      <DialogContent className="max-h-[75vh] overflow-auto sm:max-w-[95vw]">
         <DialogHeader>
           <DialogTitle>{strings.gaps.detailTitle} — {title}</DialogTitle>
         </DialogHeader>
@@ -48,7 +49,8 @@ export function EventGapsDetailDialog({
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">{strings.gaps.noRows}</p>
         ) : (
-          <Table>
+          <div className="overflow-x-auto">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>{strings.gaps.colS9}</TableHead>
@@ -57,7 +59,7 @@ export function EventGapsDetailDialog({
                 <TableHead>{strings.gaps.colDest}</TableHead>
                 <TableHead>{strings.gaps.colEventA}</TableHead>
                 <TableHead>{strings.gaps.colEventB}</TableHead>
-                <TableHead className="text-right">{strings.gaps.colGapDays}</TableHead>
+                <TableHead className="text-right">{unit === "hours" ? strings.gaps.colGapHours : strings.gaps.colGapDays}</TableHead>
                 <TableHead className="text-center">{strings.gaps.exclude}</TableHead>
               </TableRow>
             </TableHeader>
@@ -78,7 +80,7 @@ export function EventGapsDetailDialog({
                   <TableCell><GateSite gate={r.dest_gate} site={r.dest_site} /></TableCell>
                   <TableCell className="font-mono text-xs">{utcStamp(r.a_utc)}</TableCell>
                   <TableCell className="font-mono text-xs">{utcStamp(r.b_utc)}</TableCell>
-                  <TableCell className="text-right font-semibold">{formatGap(r.gap_days, "days")}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatGap(r.gap_days, unit)}</TableCell>
                   <TableCell className="text-center">
                     <input
                       type="checkbox"
@@ -90,7 +92,8 @@ export function EventGapsDetailDialog({
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
         )}
       </DialogContent>
     </Dialog>

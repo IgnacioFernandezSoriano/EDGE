@@ -55,4 +55,10 @@ describe("EventGapsDetailDialog", () => {
     fireEvent.click(screen.getByText(rows[0].s9code));
     expect(onSelectS9).toHaveBeenCalledWith(rows[0].s9code);
   });
+  it("shows the gap column in hours when unit=hours", () => {
+    render(<EventGapsDetailDialog open title="IN → JP" rows={rows} loading={false} unit="hours"
+      onOpenChange={() => {}} onToggleExclude={() => {}} onSelectS9={() => {}} />);
+    expect(screen.getByText("Gap (hours)")).toBeInTheDocument();
+    expect(screen.getByText("73.9")).toBeInTheDocument();
+  });
 });
