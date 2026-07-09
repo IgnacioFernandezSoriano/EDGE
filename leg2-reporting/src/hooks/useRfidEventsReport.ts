@@ -8,7 +8,7 @@ import {
   type ReportFilterState,
 } from "@/lib/filter";
 import { pivotByS9, rowHasNoEventCode, type RfidEventsReport } from "@/lib/pivot";
-import { presetRange, type DateRange, type DatePreset } from "@/lib/datePresets";
+import { presetRange, activePreset, type DateRange, type DatePreset } from "@/lib/datePresets";
 
 const INITIAL_FILTER: ReportFilterState = {
   originCountry: null,
@@ -75,6 +75,19 @@ export function useRfidEventsReport() {
     setDateRange(presetRange(p));
   }, []);
 
+  const resetFilters = useCallback(() => {
+    setFilter(INITIAL_FILTER);
+    setDateRange(presetRange("last90Days"));
+  }, []);
+
+  const isDirty =
+    filter.originCountry !== INITIAL_FILTER.originCountry ||
+    filter.destCountry !== INITIAL_FILTER.destCountry ||
+    filter.s9Query !== INITIAL_FILTER.s9Query ||
+    filter.rteQuery !== INITIAL_FILTER.rteQuery ||
+    filter.onlyNoEventCode !== INITIAL_FILTER.onlyNoEventCode ||
+    activePreset(dateRange) !== "last90Days";
+
   // The date range selects WHICH S9 receptacles are in scope (any event in range),
   // then we show ALL of their events (full journey), including out-of-range ones.
   const windowMovements = useMemo(
@@ -129,6 +142,8 @@ export function useRfidEventsReport() {
     dateRange,
     setDateRange,
     applyPreset,
+    resetFilters,
+    isDirty,
     reload: load,
   };
 }

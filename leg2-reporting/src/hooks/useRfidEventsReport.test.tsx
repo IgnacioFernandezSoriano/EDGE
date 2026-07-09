@@ -100,4 +100,42 @@ describe("useRfidEventsReport", () => {
     expect(fetchMovements).toHaveBeenCalledTimes(1);
     expect(result.current.dateRange.from).toBe(result.current.dateRange.to);
   });
+
+  it("isDirty is false at defaults and true after a filter change", async () => {
+    fetchMovements.mockResolvedValue([mov({ s9_id: "S1" })]);
+    const { result } = renderHook(() => useRfidEventsReport());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.isDirty).toBe(false);
+
+    act(() => result.current.setFilter((f) => ({ ...f, s9Query: "abc" })));
+    await waitFor(() => expect(result.current.isDirty).toBe(true));
+  });
+
+  it("isDirty is true when the date range leaves the default preset", async () => {
+    fetchMovements.mockResolvedValue([mov({ s9_id: "S1" })]);
+    const { result } = renderHook(() => useRfidEventsReport());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.setDateRange({ from: "2026-01-01", to: "2026-01-31" }));
+    await waitFor(() => expect(result.current.isDirty).toBe(true));
+  });
+
+  it("resetFilters returns filter and dateRange to defaults", async () => {
+    fetchMovements.mockResolvedValue([mov({ s9_id: "S1" })]);
+    const { result } = renderHook(() => useRfidEventsReport());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.setFilter((f) => ({ ...f, s9Query: "abc", originCountry: "IN" }));
+      result.current.setDateRange({ from: "2026-01-01", to: "2026-01-31" });
+    });
+    await waitFor(() => expect(result.current.isDirty).toBe(true));
+
+    act(() => result.current.resetFilters());
+    await waitFor(() => expect(result.current.isDirty).toBe(false));
+    expect(result.current.filter).toEqual({
+      originCountry: null, destCountry: null, s9Query: "", rteQuery: "", onlyNoEventCode: false,
+    });
+  });
 });
