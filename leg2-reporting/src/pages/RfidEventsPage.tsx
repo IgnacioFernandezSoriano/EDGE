@@ -10,10 +10,16 @@ import { receptacleUrl } from "@/lib/hashRoute";
 export default function RfidEventsPage() {
   const {
     loading, error, report, hasIncidents, readerMap, filter, setFilter, originOptions, destOptions,
-    dateRange, setDateRange, applyPreset, reload,
+    dateRange, setDateRange, applyPreset, resetFilters, isDirty, reload,
   } = useRfidEventsReport();
   const [timeMode, setTimeMode] = useState<TimeMode>("utc");
   const [editorLpi, setEditorLpi] = useState<string | null>(null);
+
+  const canClear = isDirty || timeMode !== "utc";
+  const onClear = () => {
+    resetFilters();
+    setTimeMode("utc");
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -29,6 +35,8 @@ export default function RfidEventsPage() {
           dateRange={dateRange}
           onDateChange={setDateRange}
           onApplyPreset={applyPreset}
+          onClear={onClear}
+          canClear={canClear}
         />
       </div>
 

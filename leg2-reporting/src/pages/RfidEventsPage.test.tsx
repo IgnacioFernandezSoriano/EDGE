@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { RfidMovement } from "@/lib/supabase";
+import { strings } from "@/i18n/strings";
 
 const fetchMovements = vi.fn();
 const fetchReaderMaster = vi.fn().mockResolvedValue([
@@ -39,5 +40,20 @@ describe("RfidEventsPage new-tab S9", () => {
     fireEvent.click(s9El);
     expect(openSpy).toHaveBeenCalledWith("/#/receptacle/S1", "_blank", "noopener");
     openSpy.mockRestore();
+  });
+
+  it("Clear filters resets timeMode and disables itself", async () => {
+    fetchMovements.mockResolvedValue([mov({ s9_id: "S1" })]);
+    render(<RfidEventsPage />);
+
+    const clearBtn = await screen.findByRole("button", { name: strings.filters.clearFilters });
+    expect(clearBtn).toBeDisabled();
+
+    // Only timeMode changes (UTC -> Local); the "UTC" label targets the tz switch.
+    fireEvent.click(screen.getByLabelText(strings.timeMode.utc));
+    expect(clearBtn).toBeEnabled();
+
+    fireEvent.click(clearBtn);
+    expect(clearBtn).toBeDisabled();
   });
 });
