@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { FilterX } from "lucide-react";
 
 const ALL_COUNTRY = "__all__";
 
@@ -27,6 +28,8 @@ export interface EventGapsFiltersProps {
   onGranularityChange: (g: Granularity) => void;
   unit: GapUnit;
   onUnitChange: (u: GapUnit) => void;
+  onClear: () => void;
+  canClear: boolean;
 }
 
 export function EventGapsFilters({
@@ -35,10 +38,24 @@ export function EventGapsFilters({
   originCountry, destCountry, onOriginCountryChange, onDestCountryChange, countryOptions,
   granularity, onGranularityChange,
   unit, onUnitChange,
+  onClear, canClear,
 }: EventGapsFiltersProps) {
   const active = activePreset(dateRange);
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={!canClear}
+          onClick={onClear}
+        >
+          <FilterX />
+          {strings.filters.clearFilters}
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
       <div className="flex flex-col gap-1">
         <Label htmlFor="gaps-from">{strings.filters.from}</Label>
         <Input id="gaps-from" type="date" value={dateRange.from}
@@ -133,6 +150,7 @@ export function EventGapsFilters({
             {strings.gaps.unitHours}
           </Button>
         </div>
+      </div>
       </div>
     </div>
   );

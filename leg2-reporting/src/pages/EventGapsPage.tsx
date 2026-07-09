@@ -20,7 +20,7 @@ export default function EventGapsPage() {
     dateRange, setDateRange, applyPreset,
     product, setProduct, productOptions, hasNoProduct, granularity, setGranularity, reload,
     originCountry, setOriginCountry, destCountry, setDestCountry, countryOptions,
-    unit, setUnit,
+    unit, setUnit, resetFilters, isDirty,
   } = useEventGaps();
 
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -83,6 +83,7 @@ export default function EventGapsPage() {
           countryOptions={countryOptions}
           granularity={granularity} onGranularityChange={setGranularity}
           unit={unit} onUnitChange={setUnit}
+          onClear={resetFilters} canClear={isDirty}
         />
       </div>
       <div className="flex-1 min-h-0 overflow-auto p-4">

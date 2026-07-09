@@ -22,6 +22,8 @@ function setup(over: Partial<React.ComponentProps<typeof EventGapsFilters>> = {}
     onGranularityChange: vi.fn(),
     unit: "days" as const,
     onUnitChange: vi.fn(),
+    onClear: vi.fn(),
+    canClear: false,
     ...over,
   };
   render(<EventGapsFilters {...props} />);
@@ -90,5 +92,14 @@ describe("EventGapsFilters", () => {
       expect(screen.getByRole("button", { name: label }))
         .toHaveAttribute("aria-pressed", "false");
     }
+  });
+  it("disables Clear filters when canClear is false", () => {
+    setup({ canClear: false });
+    expect(screen.getByRole("button", { name: strings.filters.clearFilters })).toBeDisabled();
+  });
+  it("clicking Clear filters fires onClear when enabled", () => {
+    const props = setup({ canClear: true });
+    fireEvent.click(screen.getByRole("button", { name: strings.filters.clearFilters }));
+    expect(props.onClear).toHaveBeenCalledTimes(1);
   });
 });
