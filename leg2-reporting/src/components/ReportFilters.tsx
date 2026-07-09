@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { FilterX } from "lucide-react";
 
 const ALL = "__all__";
 
@@ -24,6 +25,8 @@ export function ReportFilters({
   dateRange,
   onDateChange,
   onApplyPreset,
+  onClear,
+  canClear,
 }: {
   filter: ReportFilterState;
   setFilter: Dispatch<SetStateAction<ReportFilterState>>;
@@ -35,6 +38,8 @@ export function ReportFilters({
   dateRange: DateRange;
   onDateChange: (r: DateRange) => void;
   onApplyPreset: (p: DatePreset) => void;
+  onClear: () => void;
+  canClear: boolean;
 }) {
   const active = activePreset(dateRange);
   return (
@@ -74,14 +79,26 @@ export function ReportFilters({
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="tz">{strings.timeMode.utc}</Label>
-          <Switch
-            id="tz"
-            checked={timeMode === "local"}
-            onCheckedChange={(c) => onTimeModeChange(c ? "local" : "utc")}
-          />
-          <Label htmlFor="tz">{strings.timeMode.local}</Label>
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!canClear}
+            onClick={onClear}
+          >
+            <FilterX />
+            {strings.filters.clearFilters}
+          </Button>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="tz">{strings.timeMode.utc}</Label>
+            <Switch
+              id="tz"
+              checked={timeMode === "local"}
+              onCheckedChange={(c) => onTimeModeChange(c ? "local" : "utc")}
+            />
+            <Label htmlFor="tz">{strings.timeMode.local}</Label>
+          </div>
         </div>
       </div>
       <div className="flex flex-wrap items-end gap-3">

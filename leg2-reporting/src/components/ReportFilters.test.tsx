@@ -26,6 +26,8 @@ describe("ReportFilters", () => {
         dateRange={baseDateRange}
         onDateChange={() => {}}
         onApplyPreset={() => {}}
+        onClear={() => {}}
+        canClear={false}
       />
     );
     fireEvent.change(screen.getByPlaceholderText("Search S9"), { target: { value: "abc" } });
@@ -46,6 +48,8 @@ describe("ReportFilters", () => {
         dateRange={baseDateRange}
         onDateChange={() => {}}
         onApplyPreset={onApplyPreset}
+        onClear={() => {}}
+        canClear={false}
       />
     );
     fireEvent.click(screen.getByText(strings.datePresets.last90Days));
@@ -65,6 +69,8 @@ describe("ReportFilters", () => {
         dateRange={presetRange("thisMonth")}
         onDateChange={() => {}}
         onApplyPreset={() => {}}
+        onClear={() => {}}
+        canClear={false}
       />
     );
     expect(screen.getByRole("button", { name: strings.datePresets.thisMonth }))
@@ -86,6 +92,8 @@ describe("ReportFilters", () => {
         dateRange={{ from: "2026-01-01", to: "2026-03-15" }}
         onDateChange={() => {}}
         onApplyPreset={() => {}}
+        onClear={() => {}}
+        canClear={false}
       />
     );
     for (const label of Object.values(strings.datePresets)) {
@@ -108,6 +116,8 @@ describe("ReportFilters", () => {
         dateRange={baseDateRange}
         onDateChange={() => {}}
         onApplyPreset={() => {}}
+        onClear={() => {}}
+        canClear={false}
       />
     );
     fireEvent.click(screen.getByLabelText(strings.filters.onlyNoEventCode));
@@ -127,8 +137,52 @@ describe("ReportFilters", () => {
         dateRange={baseDateRange}
         onDateChange={() => {}}
         onApplyPreset={() => {}}
+        onClear={() => {}}
+        canClear={false}
       />
     );
     expect(screen.getByLabelText(strings.filters.onlyNoEventCode)).toBeDisabled();
+  });
+
+  it("disables Clear filters when canClear is false", () => {
+    render(
+      <ReportFilters
+        filter={base}
+        setFilter={() => {}}
+        originOptions={[]}
+        destOptions={[]}
+        hasIncidents
+        timeMode="utc"
+        onTimeModeChange={() => {}}
+        dateRange={baseDateRange}
+        onDateChange={() => {}}
+        onApplyPreset={() => {}}
+        onClear={() => {}}
+        canClear={false}
+      />
+    );
+    expect(screen.getByRole("button", { name: strings.filters.clearFilters })).toBeDisabled();
+  });
+
+  it("clicking Clear filters fires onClear when enabled", () => {
+    const onClear = vi.fn();
+    render(
+      <ReportFilters
+        filter={base}
+        setFilter={() => {}}
+        originOptions={[]}
+        destOptions={[]}
+        hasIncidents
+        timeMode="utc"
+        onTimeModeChange={() => {}}
+        dateRange={baseDateRange}
+        onDateChange={() => {}}
+        onApplyPreset={() => {}}
+        onClear={onClear}
+        canClear
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: strings.filters.clearFilters }));
+    expect(onClear).toHaveBeenCalledTimes(1);
   });
 });
