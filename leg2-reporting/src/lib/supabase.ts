@@ -388,8 +388,21 @@ export interface EventPairDetailParams {
   granularity: Granularity;
 }
 
+export interface EventPairProductsParams {
+  from: string;
+  to: string;
+  originCountry: string;  // "" = no constraint
+  destCountry: string;    // "" = no constraint
+}
+
+export interface AvailableProduct {
+  code: string | null;    // null = null-product records exist
+  name: string | null;
+}
+
 const REF_COMPARISON_VIEW = "ref_event_comparison";
 const EVENT_PAIR_MATRIX_RPC = "event_pair_matrix";
+const EVENT_PAIR_PRODUCTS_RPC = "event_pair_products";
 const EVENT_PAIR_GAPS_VIEW = "vw_event_pair_gaps_s9";
 const EVENT_PAIR_DETAIL_VIEW = "vw_event_pair_detail_s9";
 const EVENT_PAIR_EXCLUSION_TABLE = "event_pair_exclusion";
@@ -405,6 +418,15 @@ const EVENT_PAIR_DETAIL_SELECT_COLS = [
 
 export function buildEventPairMatrixBody(p: EventPairMatrixParams): Record<string, unknown> {
   return { p_from: p.from, p_to: p.to, p_product: p.product, p_granularity: p.granularity };
+}
+
+export function buildEventPairProductsBody(p: EventPairProductsParams): Record<string, unknown> {
+  return {
+    p_from: p.from,
+    p_to: p.to,
+    p_origin_country: p.originCountry === "" ? null : p.originCountry,
+    p_dest_country: p.destCountry === "" ? null : p.destCountry,
+  };
 }
 
 export function buildEventPairDetailUrl(
@@ -514,6 +536,18 @@ export async function fetchEventPairMatrix(
   });
   if (!res.ok) throw new Error(`Leg2 event_pair_matrix failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as EventPairMatrixRow[];
+}
+
+export async function fetchEventPairProducts(
+  params: EventPairProductsParams, deps: FetchDeps = {}
+): Promise<AvailableProduct[]> {
+  const { fetchFn, headers } = resolveAuth(deps);
+  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/rpc/${EVENT_PAIR_PRODUCTS_RPC}`;
+  const res = await fetchFn(baseUrl, {
+    method: "POST", headers, body: JSON.stringify(buildEventPairProductsBody(params)),
+  });
+  if (!res.ok) throw new Error(`Leg2 event_pair_products failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as AvailableProduct[];
 }
 
 export async function fetchEventPairDetail(
