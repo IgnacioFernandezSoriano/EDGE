@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { EventGapsFilters } from "@/components/EventGapsFilters";
 
 function setup(over: Partial<React.ComponentProps<typeof EventGapsFilters>> = {}) {
@@ -9,7 +9,8 @@ function setup(over: Partial<React.ComponentProps<typeof EventGapsFilters>> = {}
     onApplyPreset: vi.fn(),
     product: "all",
     onProductChange: vi.fn(),
-    productOptions: [{ code: "A", name: "Aéreo / Prioritario" }],
+    productOptions: [{ code: "A", name: "Airmail / Priority" }],
+    hasNoProduct: false,
     originCountry: "",
     destCountry: "",
     onOriginCountryChange: vi.fn(),
@@ -44,7 +45,18 @@ describe("EventGapsFilters", () => {
   it("shows the product option's name, not its code", () => {
     setup();
     fireEvent.click(screen.getAllByRole("combobox")[0]);
-    expect(screen.getByText("Aéreo / Prioritario")).toBeInTheDocument();
+    expect(screen.getByText("Airmail / Priority")).toBeInTheDocument();
+  });
+  it("hides (no product) when hasNoProduct is false", () => {
+    setup({ hasNoProduct: false });
+    fireEvent.click(screen.getAllByRole("combobox")[0]);
+    expect(screen.queryByText("(no product)")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("listbox")).getByText("All products")).toBeInTheDocument();
+  });
+  it("shows (no product) when hasNoProduct is true", () => {
+    setup({ hasNoProduct: true });
+    fireEvent.click(screen.getAllByRole("combobox")[0]);
+    expect(screen.getByText("(no product)")).toBeInTheDocument();
   });
   it("renders origin and destination country selects", () => {
     setup();

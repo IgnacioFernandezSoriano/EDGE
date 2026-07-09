@@ -17,6 +17,7 @@ export interface EventGapsFiltersProps {
   product: string;
   onProductChange: (p: string) => void;
   productOptions: MailCategory[];
+  hasNoProduct: boolean;
   originCountry: string;
   destCountry: string;
   onOriginCountryChange: (c: string) => void;
@@ -30,7 +31,7 @@ export interface EventGapsFiltersProps {
 
 export function EventGapsFilters({
   dateRange, onDateChange, onApplyPreset,
-  product, onProductChange, productOptions,
+  product, onProductChange, productOptions, hasNoProduct,
   originCountry, destCountry, onOriginCountryChange, onDestCountryChange, countryOptions,
   granularity, onGranularityChange,
   unit, onUnitChange,
@@ -60,7 +61,9 @@ export function EventGapsFilters({
           <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value={PRODUCT_ALL}>{strings.gaps.allProducts}</SelectItem>
-            <SelectItem value={PRODUCT_NONE}>{strings.gaps.noProduct}</SelectItem>
+            {hasNoProduct && (
+              <SelectItem value={PRODUCT_NONE}>{strings.gaps.noProduct}</SelectItem>
+            )}
             {productOptions.map((c) => (
               <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
             ))}
