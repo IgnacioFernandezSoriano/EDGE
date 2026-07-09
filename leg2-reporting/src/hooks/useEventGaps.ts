@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  supabase, fetchEventComparisons, fetchEventPairMatrix, fetchMailCategories,
+  supabase, fetchEventComparisons, fetchEventPairMatrix, fetchEventPairProducts,
 } from "@/lib/supabase";
 import {
-  pivotMatrix, endpointCountry, PRODUCT_ALL,
+  pivotMatrix, endpointCountry, PRODUCT_ALL, PRODUCT_NONE,
   type Granularity, type EventComparison, type EventPairMatrixRow, type CorridorRow,
   type MailCategory, type GapUnit,
 } from "@/lib/eventGaps";
@@ -20,6 +20,7 @@ export function useEventGaps() {
   const [originCountry, setOriginCountry] = useState<string>("");
   const [destCountry, setDestCountry] = useState<string>("");
   const [productOptions, setProductOptions] = useState<MailCategory[]>([]);
+  const [hasNoProduct, setHasNoProduct] = useState(false);
   const [unit, setUnit] = useState<GapUnit>("days");
 
   async function token(): Promise<{ token: string } | {}> {
@@ -42,19 +43,35 @@ export function useEventGaps() {
     return () => { cancelled = true; };
   }, []);
 
-  // Mail categories load once.
+  // Product options follow the current date/country filters (never the product).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const c = await fetchMailCategories(await token());
-        if (!cancelled) setProductOptions(c);
+        const rows = await fetchEventPairProducts(
+          { from: dateRange.from, to: dateRange.to, originCountry, destCountry },
+          await token()
+        );
+        if (cancelled) return;
+        const named = rows
+          .filter((r): r is { code: string; name: string } => r.code != null)
+          .map((r) => ({ code: r.code, name: r.name ?? r.code }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        const noneAvail = rows.some((r) => r.code == null);
+        setProductOptions(named);
+        setHasNoProduct(noneAvail);
+        const codes = new Set(named.map((c) => c.code));
+        setProduct((prev) =>
+          prev === PRODUCT_ALL ? prev
+            : prev === PRODUCT_NONE ? (noneAvail ? prev : PRODUCT_ALL)
+            : codes.has(prev) ? prev : PRODUCT_ALL
+        );
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [dateRange.from, dateRange.to, originCountry, destCountry]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,7 +113,7 @@ export function useEventGaps() {
     dateRange, setDateRange, applyPreset,
     product, setProduct, granularity, setGranularity, unit, setUnit,
     originCountry, setOriginCountry, destCountry, setDestCountry,
-    countryOptions, productOptions,
+    countryOptions, productOptions, hasNoProduct,
     reload: load,
   };
 }
