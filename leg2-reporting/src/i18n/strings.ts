@@ -57,6 +57,7 @@ export const strings = {
     from: "From",
     to: "To",
     onlyNoEventCode: "Only No RFID event code",
+    clearFilters: "Clear filters",
   },
   datePresets: {
     today: "Today",
