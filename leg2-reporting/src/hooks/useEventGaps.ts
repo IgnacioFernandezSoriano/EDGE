@@ -54,7 +54,7 @@ export function useEventGaps() {
         );
         if (cancelled) return;
         const named = rows
-          .filter((r): r is { code: string; name: string } => r.code != null)
+          .filter((r): r is { code: string; name: string } => r.code != null && r.code !== "")
           .map((r) => ({ code: r.code, name: r.name ?? r.code }))
           .sort((a, b) => a.name.localeCompare(b.name));
         const noneAvail = rows.some((r) => r.code == null);

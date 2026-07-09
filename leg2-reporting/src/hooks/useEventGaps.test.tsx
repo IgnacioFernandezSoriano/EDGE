@@ -43,6 +43,17 @@ describe("useEventGaps", () => {
     expect(result.current.countryOptions).toEqual(["BR", "IN", "JP", "PT"]);
   });
 
+  it("filters out empty-string product codes", async () => {
+    (fetchEventPairProducts as any).mockResolvedValueOnce([
+      { code: "A", name: "Airmail / Priority" },
+      { code: "", name: "" },
+    ]);
+    const { result } = renderHook(() => useEventGaps());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.productOptions).toEqual([{ code: "A", name: "Airmail / Priority" }]);
+    expect(result.current.hasNoProduct).toBe(false);
+  });
+
   it("re-fetches product options when the date range changes", async () => {
     const { result } = renderHook(() => useEventGaps());
     await waitFor(() => expect(result.current.loading).toBe(false));
