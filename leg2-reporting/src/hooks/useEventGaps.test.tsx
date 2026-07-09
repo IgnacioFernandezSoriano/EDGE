@@ -109,4 +109,37 @@ describe("useEventGaps", () => {
       )
     );
   });
+
+  it("isDirty is false at defaults and true after a filter change", async () => {
+    const { result } = renderHook(() => useEventGaps());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.isDirty).toBe(false);
+
+    act(() => result.current.setOriginCountry("IN"));
+    await waitFor(() => expect(result.current.isDirty).toBe(true));
+  });
+
+  it("resetFilters returns product, countries, granularity, unit and dateRange to defaults", async () => {
+    const { result } = renderHook(() => useEventGaps());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.setProduct("A");
+      result.current.setOriginCountry("IN");
+      result.current.setDestCountry("JP");
+      result.current.setGranularity("country");
+      result.current.setUnit("hours");
+      result.current.setDateRange({ from: "2026-01-01", to: "2026-01-31" });
+    });
+    await waitFor(() => expect(result.current.isDirty).toBe(true));
+
+    act(() => result.current.resetFilters());
+    await waitFor(() => expect(result.current.isDirty).toBe(false));
+    expect(result.current.product).toBe("all");
+    expect(result.current.originCountry).toBe("");
+    expect(result.current.destCountry).toBe("");
+    expect(result.current.granularity).toBe("centre");
+    expect(result.current.unit).toBe("days");
+  });
 });

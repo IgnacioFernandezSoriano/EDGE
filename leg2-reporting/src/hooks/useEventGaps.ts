@@ -7,7 +7,7 @@ import {
   type Granularity, type EventComparison, type EventPairMatrixRow, type CorridorRow,
   type MailCategory, type GapUnit,
 } from "@/lib/eventGaps";
-import { presetRange, type DateRange, type DatePreset } from "@/lib/datePresets";
+import { presetRange, activePreset, type DateRange, type DatePreset } from "@/lib/datePresets";
 
 export function useEventGaps() {
   const [comparisons, setComparisons] = useState<EventComparison[]>([]);
@@ -92,6 +92,24 @@ export function useEventGaps() {
   useEffect(() => { load(); }, [load]);
 
   const applyPreset = useCallback((p: DatePreset) => setDateRange(presetRange(p)), []);
+
+  const resetFilters = useCallback(() => {
+    setProduct(PRODUCT_ALL);
+    setOriginCountry("");
+    setDestCountry("");
+    setGranularity("centre");
+    setUnit("days");
+    setDateRange(presetRange("last90Days"));
+  }, []);
+
+  const isDirty =
+    product !== PRODUCT_ALL ||
+    originCountry !== "" ||
+    destCountry !== "" ||
+    granularity !== "centre" ||
+    unit !== "days" ||
+    activePreset(dateRange) !== "last90Days";
+
   const allRows: CorridorRow[] = useMemo(() => pivotMatrix(matrix), [matrix]);
 
   const countryOptions: string[] = useMemo(() => {
@@ -114,6 +132,7 @@ export function useEventGaps() {
     product, setProduct, granularity, setGranularity, unit, setUnit,
     originCountry, setOriginCountry, destCountry, setDestCountry,
     countryOptions, productOptions, hasNoProduct,
+    resetFilters, isDirty,
     reload: load,
   };
 }
