@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import type { RfidMovement } from "@/lib/supabase";
+import { presetRange } from "@/lib/datePresets";
 
 const fetchMovements = vi.fn();
 const fetchReaderMaster = vi.fn().mockResolvedValue([
@@ -137,5 +138,6 @@ describe("useRfidEventsReport", () => {
     expect(result.current.filter).toEqual({
       originCountry: null, destCountry: null, s9Query: "", rteQuery: "", onlyNoEventCode: false,
     });
+    expect(result.current.dateRange).toEqual(presetRange("last90Days"));
   });
 });

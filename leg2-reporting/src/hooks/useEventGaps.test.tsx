@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
+import { presetRange } from "@/lib/datePresets";
 
 const { comparisons, matrix, products } = vi.hoisted(() => ({
   comparisons: [{ comparison_key: "ho_rescon", priority: 1, label: "HO vs RESCON" }],
@@ -141,5 +142,6 @@ describe("useEventGaps", () => {
     expect(result.current.destCountry).toBe("");
     expect(result.current.granularity).toBe("centre");
     expect(result.current.unit).toBe("days");
+    expect(result.current.dateRange).toEqual(presetRange("last90Days"));
   });
 });
