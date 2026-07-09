@@ -18,7 +18,7 @@ export default function EventGapsPage() {
   const {
     loading, error, comparisons, rows,
     dateRange, setDateRange, applyPreset,
-    product, setProduct, productOptions, granularity, setGranularity, reload,
+    product, setProduct, productOptions, hasNoProduct, granularity, setGranularity, reload,
     originCountry, setOriginCountry, destCountry, setDestCountry, countryOptions,
     unit, setUnit,
   } = useEventGaps();
@@ -76,7 +76,8 @@ export default function EventGapsPage() {
       <div className="shrink-0 border-b bg-background px-4 py-3">
         <EventGapsFilters
           dateRange={dateRange} onDateChange={setDateRange} onApplyPreset={applyPreset}
-          product={product} onProductChange={setProduct} productOptions={productOptions}
+          product={product} onProductChange={setProduct}
+          productOptions={productOptions} hasNoProduct={hasNoProduct}
           originCountry={originCountry} onOriginCountryChange={setOriginCountry}
           destCountry={destCountry} onDestCountryChange={setDestCountry}
           countryOptions={countryOptions}

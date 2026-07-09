@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import {
   PRODUCT_ALL, PRODUCT_NONE,
-  type Granularity, type EventComparison, type EventPairMatrixRow, type MailCategory,
+  type Granularity, type EventComparison, type EventPairMatrixRow,
   type EventVocabItem,
 } from "@/lib/eventGaps";
 
@@ -559,17 +559,6 @@ export async function fetchEventPairDetail(
     (offset, limit) => buildEventPairDetailUrl(baseUrl, { ...params, offset, limit }),
     fetchFn, headers, "Leg2 event_pair detail fetch"
   );
-}
-
-export async function fetchMailCategories(deps: FetchDeps = {}): Promise<MailCategory[]> {
-  const { fetchFn, headers } = resolveAuth(deps);
-  const baseUrl = deps.baseUrl ?? `${SUPABASE_URL}/rest/v1/ref_mail_category`;
-  const url = new URL(baseUrl);
-  url.searchParams.set("select", "code,name");
-  url.searchParams.set("order", "code");
-  const res = await fetchFn(url.toString(), { headers });
-  if (!res.ok) throw new Error(`Leg2 mail categories fetch failed: ${res.status} ${await res.text()}`);
-  return (await res.json()) as MailCategory[];
 }
 
 export async function setEventPairExclusion(
