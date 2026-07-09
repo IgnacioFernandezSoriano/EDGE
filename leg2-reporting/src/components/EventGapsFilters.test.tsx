@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { EventGapsFilters } from "@/components/EventGapsFilters";
+import { presetRange } from "@/lib/datePresets";
+import { strings } from "@/i18n/strings";
 
 function setup(over: Partial<React.ComponentProps<typeof EventGapsFilters>> = {}) {
   const props = {
@@ -74,5 +76,19 @@ describe("EventGapsFilters", () => {
     const props = setup();
     fireEvent.click(screen.getByRole("button", { name: "Hours" }));
     expect(props.onUnitChange).toHaveBeenCalledWith("hours");
+  });
+  it("highlights the preset matching the current range and no other", () => {
+    setup({ dateRange: presetRange("lastWeek") });
+    expect(screen.getByRole("button", { name: strings.datePresets.lastWeek }))
+      .toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: strings.datePresets.today }))
+      .toHaveAttribute("aria-pressed", "false");
+  });
+  it("highlights no preset when the range was hand-edited", () => {
+    setup({ dateRange: { from: "2026-01-01", to: "2026-03-15" } });
+    for (const label of Object.values(strings.datePresets)) {
+      expect(screen.getByRole("button", { name: label }))
+        .toHaveAttribute("aria-pressed", "false");
+    }
   });
 });

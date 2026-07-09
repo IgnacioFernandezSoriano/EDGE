@@ -1,4 +1,4 @@
-import { PRESET_ORDER, type DateRange, type DatePreset } from "@/lib/datePresets";
+import { PRESET_ORDER, activePreset, type DateRange, type DatePreset } from "@/lib/datePresets";
 import { PRODUCT_ALL, PRODUCT_NONE, type Granularity, type GapUnit, type MailCategory } from "@/lib/eventGaps";
 import { strings } from "@/i18n/strings";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,7 @@ export function EventGapsFilters({
   granularity, onGranularityChange,
   unit, onUnitChange,
 }: EventGapsFiltersProps) {
+  const active = activePreset(dateRange);
   return (
     <div className="flex flex-wrap items-end gap-3">
       <div className="flex flex-col gap-1">
@@ -50,7 +51,10 @@ export function EventGapsFilters({
       </div>
       <div className="flex items-end gap-2">
         {PRESET_ORDER.map((p) => (
-          <Button key={p} type="button" variant="outline" size="sm" onClick={() => onApplyPreset(p)}>
+          <Button key={p} type="button" size="sm"
+            variant={active === p ? "default" : "outline"}
+            aria-pressed={active === p}
+            onClick={() => onApplyPreset(p)}>
             {strings.datePresets[p]}
           </Button>
         ))}

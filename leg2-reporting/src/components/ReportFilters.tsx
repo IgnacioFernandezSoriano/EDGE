@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { ReportFilterState } from "@/lib/filter";
 import type { TimeMode } from "@/lib/time";
-import { PRESET_ORDER, type DateRange, type DatePreset } from "@/lib/datePresets";
+import { PRESET_ORDER, activePreset, type DateRange, type DatePreset } from "@/lib/datePresets";
 import { strings } from "@/i18n/strings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +36,7 @@ export function ReportFilters({
   onDateChange: (r: DateRange) => void;
   onApplyPreset: (p: DatePreset) => void;
 }) {
+  const active = activePreset(dateRange);
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -63,7 +64,8 @@ export function ReportFilters({
               <Button
                 key={p}
                 type="button"
-                variant="outline"
+                variant={active === p ? "default" : "outline"}
+                aria-pressed={active === p}
                 size="sm"
                 onClick={() => onApplyPreset(p)}
               >

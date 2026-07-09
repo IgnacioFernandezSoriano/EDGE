@@ -26,6 +26,17 @@ function formatLocal(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+// The preset whose computed range equals `range`, or null when the range was
+// hand-edited (or otherwise matches no preset). Lets the UI highlight the active
+// preset button without tracking extra state — it self-clears on manual edits.
+export function activePreset(range: DateRange, now: Date = new Date()): DatePreset | null {
+  for (const p of PRESET_ORDER) {
+    const r = presetRange(p, now);
+    if (r.from === range.from && r.to === range.to) return p;
+  }
+  return null;
+}
+
 export function presetRange(preset: DatePreset, now: Date = new Date()): DateRange {
   const y = now.getFullYear();
   const m = now.getMonth();

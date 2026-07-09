@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ReportFilters } from "@/components/ReportFilters";
 import type { ReportFilterState } from "@/lib/filter";
+import { presetRange } from "@/lib/datePresets";
 import { strings } from "@/i18n/strings";
 
 const base: ReportFilterState = {
@@ -49,6 +50,48 @@ describe("ReportFilters", () => {
     );
     fireEvent.click(screen.getByText(strings.datePresets.last90Days));
     expect(onApplyPreset).toHaveBeenCalledWith("last90Days");
+  });
+
+  it("highlights the preset matching the current range and no other", () => {
+    render(
+      <ReportFilters
+        filter={base}
+        setFilter={() => {}}
+        originOptions={[]}
+        destOptions={[]}
+        hasIncidents
+        timeMode="utc"
+        onTimeModeChange={() => {}}
+        dateRange={presetRange("thisMonth")}
+        onDateChange={() => {}}
+        onApplyPreset={() => {}}
+      />
+    );
+    expect(screen.getByRole("button", { name: strings.datePresets.thisMonth }))
+      .toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: strings.datePresets.today }))
+      .toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("highlights no preset when the range was hand-edited", () => {
+    render(
+      <ReportFilters
+        filter={base}
+        setFilter={() => {}}
+        originOptions={[]}
+        destOptions={[]}
+        hasIncidents
+        timeMode="utc"
+        onTimeModeChange={() => {}}
+        dateRange={{ from: "2026-01-01", to: "2026-03-15" }}
+        onDateChange={() => {}}
+        onApplyPreset={() => {}}
+      />
+    );
+    for (const label of Object.values(strings.datePresets)) {
+      expect(screen.getByRole("button", { name: label }))
+        .toHaveAttribute("aria-pressed", "false");
+    }
   });
 
   it("toggling 'Only No Event Code' updates the filter", () => {

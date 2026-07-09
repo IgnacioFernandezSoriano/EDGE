@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { presetRange, PRESET_ORDER, type DatePreset } from "./datePresets";
+import { presetRange, activePreset, PRESET_ORDER, type DatePreset } from "./datePresets";
 
 describe("datePresets", () => {
   const fixedNow = new Date(2026, 6, 4, 12, 0, 0); // local 2026-07-04 (Saturday)
@@ -63,5 +63,15 @@ describe("datePresets", () => {
       from: "2026-01-01",
       to: "2026-01-31",
     });
+  });
+
+  it("activePreset returns the preset whose range matches", () => {
+    for (const p of PRESET_ORDER) {
+      expect(activePreset(presetRange(p, fixedNow), fixedNow)).toBe(p);
+    }
+  });
+
+  it("activePreset returns null for a manually-edited range", () => {
+    expect(activePreset({ from: "2026-01-01", to: "2026-03-15" }, fixedNow)).toBeNull();
   });
 });
