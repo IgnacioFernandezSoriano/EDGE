@@ -91,12 +91,12 @@ create table if not exists public.ref_mail_category (
   name text not null
 );
 insert into public.ref_mail_category (code, name) values
-  ('A',  'Aéreo / Prioritario'),
-  ('B',  'No prioritario'),
+  ('A',  'Airmail / Priority'),
+  ('B',  'Non-priority'),
   ('C',  'S.A.L. (Surface Air Lifted)'),
-  ('D',  'Superficie'),
+  ('D',  'Surface'),
   ('E',  'EMS'),
-  ('LC', 'Cartas (LC/AO)')
+  ('LC', 'Letters (LC/AO)')
 on conflict (code) do update set name = excluded.name;
 alter table public.ref_mail_category enable row level security;
 drop policy if exists rmc_read on public.ref_mail_category;
@@ -199,6 +199,24 @@ language sql stable security invoker as $$
   group by 1, 2, g.comparison_key
 $$;
 grant execute on function public.event_pair_matrix(date, date, text, text) to authenticated;
+
+-- 5b) Distinct products present for the current filters (name-joined). Powers the
+-- Product dropdown: only codes with records; new codes appear automatically. NOT
+-- filtered by the selected product. Country columns are granularity-independent.
+create or replace function public.event_pair_products(
+  p_from date, p_to date, p_origin_country text, p_dest_country text
+) returns table(code text, name text)
+language sql stable security invoker as $$
+  select distinct g.product as code,
+         coalesce(m.name, g.product) as name
+    from public.vw_event_pair_gaps_s9 g
+    left join public.ref_mail_category m on m.code = g.product
+   where not g.excluded
+     and g.a_utc::date between p_from and p_to
+     and (p_origin_country is null or g.origin_country = p_origin_country)
+     and (p_dest_country  is null or g.dest_country  = p_dest_country)
+$$;
+grant execute on function public.event_pair_products(date, date, text, text) to authenticated;
 
 -- 6) Detail-enrichment view: base + ORIGIN/DESTINATION-role reading gate+site.
 -- drop+recreate (g.* would reorder on a base-view column change).
